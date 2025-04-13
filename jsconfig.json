@@ -1,0 +1,10 @@
+{
+    "compilerOptions": {
+        "target": "ES6",
+        "noImplicitAny": true,
+        "alwaysStrict":true,
+        "checkJs": true
+    },
+    "include": ["js/*.js","js/**/*.js"]
+}
+  
