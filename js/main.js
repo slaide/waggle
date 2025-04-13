@@ -179,7 +179,7 @@ function makeBuffers(gl){
 
     buffers.position=gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position)
-    const positions=new Float32Array([1,1,-1,1,1,-1,-1,-1])
+    const positions=new Float32Array([1,1, -1,1, 1,-1, -1,-1])
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW)
 
     buffers.color=gl.createBuffer()
@@ -190,20 +190,25 @@ function makeBuffers(gl){
     return buffers
 }
 
-async function main(){
-    const canvas_element_id="main-canvas"
-    const el=document.getElementById(canvas_element_id)
-    if(!(el instanceof HTMLCanvasElement)){
-        const error=`element #${canvas_element_id} not found`
-        alert(error);throw error
-    }
-
-    const gl=el.getContext("webgl2",{})
-    if(!gl){
-        const error=`could not create webgl2 context`
-        alert(error);throw error
-    }
-
+/**
+ * @typedef {{
+*     program: WebGLProgram,
+*     attribLocations: {
+*         vertexPosition: GLint,
+*         vertexColor:GLint,
+*     },
+*     uniformLocations: {
+*         projectionMatrix: WebGLUniformLocation,
+*         modelViewMatrix: WebGLUniformLocation,
+*     }
+* }} ProgramInfo
+* */
+/**
+ * 
+ * @param {WebGL2RenderingContext} gl
+ * @returns {ProgramInfo}
+ */
+function makeProgram(gl){
     const shaderProgram=createShaderProgram(gl,{
         vs:`
             attribute vec4 aVertexPosition;
@@ -228,19 +233,6 @@ async function main(){
         `
     })
 
-    /**
-     * @typedef {{
-    *     program: WebGLProgram,
-    *     attribLocations: {
-    *         vertexPosition: GLint,
-    *         vertexColor:GLint,
-    *     },
-    *     uniformLocations: {
-    *         projectionMatrix: WebGLUniformLocation,
-    *         modelViewMatrix: WebGLUniformLocation,
-    *     }
-    * }} ProgramInfo
-    * */
     /** @type {ProgramInfo} */
     const programInfo = {
         program: shaderProgram,
@@ -254,6 +246,24 @@ async function main(){
         },
     };
 
+    return programInfo
+}
+
+async function main(){
+    const canvas_element_id="main-canvas"
+    const el=document.getElementById(canvas_element_id)
+    if(!(el instanceof HTMLCanvasElement)){
+        const error=`element #${canvas_element_id} not found`
+        alert(error);throw error
+    }
+
+    const gl=el.getContext("webgl2",{})
+    if(!gl){
+        const error=`could not create webgl2 context`
+        alert(error);throw error
+    }
+
+    const programInfo=makeProgram(gl)
     const buffers=makeBuffers(gl)
 
     /** @type {Scene} */
