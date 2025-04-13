@@ -1,5 +1,8 @@
 // @ts-check
 
+const GL=WebGL2RenderingContext
+/** @typedef {WebGL2RenderingContext} GL */
+
 /** @typedef {Float32Array} mat4 */
 /**
  * import from glMatrix
@@ -7,7 +10,8 @@
  *      mat4:{
  *          create():mat4,
  *          perspective(out:mat4,fov_radians:number,aspect:number,znear:number,zfar:number):void,
- *          translate(out:mat4,src:mat4,distance:number[]):void,
+*           translate(out:mat4,src:mat4,distance:number[]):void,
+*           rotate(out:mat4,src:mat4,angle:number,axis:number[]):void,
 *           clone(a:mat4):mat4,
 *           copy(out:mat4,a:mat4):void,
  *      }
@@ -16,7 +20,7 @@
 const {mat4}=glMatrix
 
 /**
- * @param {WebGL2RenderingContext} gl
+ * @param {GL} gl
  * @param {{vs:string,fs:string}} stageSources
  * @returns {WebGLProgram}
  **/
@@ -31,7 +35,7 @@ function createShaderProgram(gl,stageSources){
     gl.attachShader(shaderProgram,fsShader)
     gl.linkProgram(shaderProgram)
 
-    if(!gl.getProgramParameter(shaderProgram,gl.LINK_STATUS)){
+    if(!gl.getProgramParameter(shaderProgram,GL.LINK_STATUS)){
         const error=`failed to create shader because ${gl.getProgramInfoLog(shaderProgram)}`
         alert(error);throw error
     }
@@ -46,14 +50,14 @@ function createShaderProgram(gl,stageSources){
      */
     function createShaderStage(stage, source){
         const shader=gl.createShader({
-            "vert":gl.VERTEX_SHADER,
-            "frag":gl.FRAGMENT_SHADER,
+            "vert":GL.VERTEX_SHADER,
+            "frag":GL.FRAGMENT_SHADER,
         }[stage])
 
         gl.shaderSource(shader,source)
         gl.compileShader(shader)
 
-        if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){
+        if(!gl.getShaderParameter(shader,GL.COMPILE_STATUS)){
             const error=`error compiling shader ${gl.getShaderInfoLog(shader)}`
             alert(error);throw error
         }
@@ -66,14 +70,14 @@ function createShaderProgram(gl,stageSources){
 
 /**
  * 
- * @param {WebGL2RenderingContext} gl 
+ * @param {GL} gl 
  * @param {Scene} scene 
  */
 function drawScene(gl,scene){
     gl.clearColor(0,0,0,1)
     gl.clearDepth(1)
-    gl.enable(gl.DEPTH_TEST)
-    gl.depthFunc(gl.LEQUAL)
+    gl.enable(GL.DEPTH_TEST)
+    gl.depthFunc(GL.LEQUAL)
 
     const {buffers,programInfo}=scene
 
@@ -93,22 +97,22 @@ function drawScene(gl,scene){
     )
 
     // bind vertex data: position
-    gl.bindBuffer(gl.ARRAY_BUFFER,buffers.position)
+    gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position)
     gl.vertexAttribPointer(
         programInfo.attribLocations.vertexPosition,
-        2,
-        gl.FLOAT,
+        3,
+        GL.FLOAT,
         false,
         0, // stride of zero means 'auto'
         0,
     )
 
     // bind vertex data: colors
-    gl.bindBuffer(gl.ARRAY_BUFFER,buffers.color)
+    gl.bindBuffer(GL.ARRAY_BUFFER,buffers.color)
     gl.vertexAttribPointer(
         programInfo.attribLocations.vertexColor,
         4,
-        gl.FLOAT,
+        GL.FLOAT,
         false,
         0,
         0,
@@ -128,19 +132,39 @@ function drawScene(gl,scene){
     )
 
     let last_frametime=performance.now()
+
+    let rotation=0
     const draw=()=>{
         /** delta time in ms */
         const deltatime=(performance.now()-last_frametime)*1e-3
         last_frametime=performance.now()
 
         // animate quad rotation
-        const rotation=1.2*deltatime
+        rotation+=1.2*deltatime
 
+        const modelViewMatrix=mat4.create()
+        mat4.translate(
+            modelViewMatrix,
+            modelViewMatrix,
+            [0,0,-6]
+        )
         mat4.rotate(
             modelViewMatrix,
             modelViewMatrix,
             rotation,
             [0, 0, 1],
+        );
+        mat4.rotate(
+            modelViewMatrix,
+            modelViewMatrix,
+            rotation*0.7,
+            [0, 1, 0],
+        );
+        mat4.rotate(
+            modelViewMatrix,
+            modelViewMatrix,
+            rotation*0.3,
+            [1, 0, 0],
         );
 
         gl.useProgram(programInfo.program)
@@ -151,7 +175,11 @@ function drawScene(gl,scene){
         )
 
         // clear screen to draw over
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+        gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
+
+        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position)
+        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.color)
+        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
 
         // prepare draw: enable vertex data 
         gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition)
@@ -160,17 +188,23 @@ function drawScene(gl,scene){
         gl.useProgram(programInfo.program)
 
         // draw mesh
-        gl.drawArrays(gl.TRIANGLE_STRIP,/*offset*/0,/*vertexCount*/4)
+        gl.drawElements(GL.TRIANGLES,36,GL.UNSIGNED_SHORT,0)
 
         requestAnimationFrame(draw)
     }
     draw()
 }
 
-/** @typedef {{position:WebGLBuffer,color:WebGLBuffer}} Buffer */
+/**
+ * @typedef {{
+ * position:WebGLBuffer,
+ * color:WebGLBuffer,
+ * indices:WebGLBuffer,
+ * }} Buffer
+ * */
 /**
  * 
- * @param {WebGL2RenderingContext} gl 
+ * @param {GL} gl 
  * @returns {Buffer}
  */
 function makeBuffers(gl){
@@ -178,14 +212,53 @@ function makeBuffers(gl){
     const buffers={}
 
     buffers.position=gl.createBuffer()
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position)
-    const positions=new Float32Array([1,1, -1,1, 1,-1, -1,-1])
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW)
+    gl.bindBuffer(GL.ARRAY_BUFFER, buffers.position)
+    const positions=new Float32Array([
+        // Front face (4 edges)
+        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+
+        // Back face (4 edges)
+        -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
+
+        // Top face (4 edges)
+        -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
+
+        // Bottom face (4 edges)
+        -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0,
+
+        // Right face (4 edges)
+        1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
+
+        // Left face (4 edges)
+        -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0,
+    ])
+    gl.bufferData(GL.ARRAY_BUFFER, positions, GL.STATIC_DRAW)
 
     buffers.color=gl.createBuffer()
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color)
-    const colors=new Float32Array([1,1,1,1, 1,0,0,1, 0,1,0,1, 0,0,1,1])
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW)
+    gl.bindBuffer(GL.ARRAY_BUFFER, buffers.color)
+    const colors=new Float32Array([
+        // repeat color once for each vertex per edge
+        Array(4).fill([1.0, 1.0, 1.0, 1.0]), // Front face: white
+        Array(4).fill([1.0, 0.0, 0.0, 1.0]), // Back face: red
+        Array(4).fill([0.0, 1.0, 0.0, 1.0]), // Top face: green
+        Array(4).fill([0.0, 0.0, 1.0, 1.0]), // Bottom face: blue
+        Array(4).fill([1.0, 1.0, 0.0, 1.0]), // Right face: yellow
+        Array(4).fill([1.0, 0.0, 1.0, 1.0]), // Left face: purple
+        // then flatten
+    ].flat(3))
+    gl.bufferData(GL.ARRAY_BUFFER, colors, GL.STATIC_DRAW)
+
+    buffers.indices=gl.createBuffer()
+    gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER,buffers.indices)
+    const indices=new Uint16Array([
+        0,  1,  2,      0,  2,  3,    // front
+        4,  5,  6,      4,  6,  7,    // back
+        8,  9,  10,     8,  10, 11,   // top
+        12, 13, 14,     12, 14, 15,   // bottom
+        16, 17, 18,     16, 18, 19,   // right
+        20, 21, 22,     20, 22, 23,   // left
+    ])
+    gl.bufferData(GL.ELEMENT_ARRAY_BUFFER,indices,GL.STATIC_DRAW)
     
     return buffers
 }
