@@ -22,9 +22,9 @@ const {mat4}=glMatrix
 /**
  * @param {GL} gl
  * @param {{vs:string,fs:string}} stageSources
- * @returns {WebGLProgram}
+ * @returns {Promise<WebGLProgram>}
  **/
-function createShaderProgram(gl,stageSources){
+async function createShaderProgram(gl,stageSources){
     const {vs,fs}=stageSources
 
     const vsShader=createShaderStage("vert",vs)
@@ -83,10 +83,10 @@ function createShaderProgram(gl,stageSources){
 /**
  * 
  * @param {WebGL2RenderingContext} gl
- * @returns {ProgramInfo}
+ * @returns {Promise<ProgramInfo>}
  */
-function makeProgram(gl){
-    const shaderProgram=createShaderProgram(gl,{
+async function makeProgram(gl){
+    const shaderProgram=await createShaderProgram(gl,{
         vs:`
             attribute vec4 aVertexPosition;
             attribute vec2 aVertexTexCoord;
@@ -140,9 +140,9 @@ function makeProgram(gl){
 /**
  * 
  * @param {GL} gl 
- * @returns {Buffer}
+ * @returns {Promise<Buffer>}
  */
-function makeBuffers(gl){
+async function makeBuffers(gl){
     /** @type {Buffer} */
     const buffers={}
 
@@ -201,23 +201,267 @@ function makeBuffers(gl){
 
     buffers.texture=gl.createTexture()
     gl.bindTexture(GL.TEXTURE_2D, buffers.texture)
-    const width=4;const height=3;
-    const imgData=new Uint8Array([
-        255,0,0,255,
-          0,0,0,255,
-        255,0,0,255,
-        255,0,0,255,
-        
-        255,0,0,255,
-          0,0,0,255,
-        255,0,0,255,
-        255,0,0,255,
 
-        255,0,0,255,
-        255,0,0,255,
-          0,0,0,255,
-        255,0,0,255,
-    ])
+    /**
+     * 
+     * @param {string} str 
+     * @returns {Uint8Array}
+     */
+    function stringToUint8Array(str) {
+        const uint8Array = new Uint8Array(str.length);
+        for (let i = 0; i < str.length; i++) {
+            uint8Array[i] = str.charCodeAt(i);  // Get ASCII value of each character
+        }
+        return uint8Array;
+    }
+    /**
+     * 
+     * @param {Uint8Array} ar 
+     * @returns {string}
+     */
+    function uint8ArrayToString(ar){
+        let ret=""
+        for(let i=0;i<ar.length;i++){
+            ret+=String.fromCharCode(ar[i])
+        }
+        return ret
+    }
+    /**
+     * 
+     * @param {Uint8Array} a 
+     * @param {Uint8Array} b 
+     * @returns {boolean}
+     */
+    function arrayBeginsWith(a,b){
+        const len=Math.min(a.length,b.length)
+        for(let i=0;i<len;i++){
+            if(a[i]!=b[i])return false;
+        }
+        return true;
+    }
+    /**
+     * 
+     * @param {Uint8Array} uint8Array 
+     * @returns {number}
+     */
+    function arrToUint32(uint8Array) {
+        const numbytes=4
+        if (uint8Array.length < numbytes) {
+            throw new Error("Not enough bytes to form a Uint32.");
+        }
+      
+        // Slice a portion of the array (length 4) and convert to Uint32
+        let ret=0
+        for(let i=0;i<numbytes;i++){
+            ret|=uint8Array[i]<<(8*(numbytes-1-i))
+        }
+      
+        return ret
+    }
+    /**
+     * 
+     * @param {Uint8Array} uint8Array 
+     * @returns {number}
+     */
+    function arrToUint16(uint8Array) {
+        const numbytes=2
+        if (uint8Array.length < numbytes) {
+            throw new Error("Not enough bytes to form a Uint32.");
+        }
+      
+        // Slice a portion of the array (length 4) and convert to Uint32
+        let ret=0
+        for(let i=0;i<numbytes;i++){
+            ret|=uint8Array[i]<<(8*(numbytes-1-i))
+        }
+      
+        return ret
+    }
+    /**
+     * 
+     * @param {Uint8Array} uint8Array 
+     * @returns {number}
+     */
+    function arrToUint8(uint8Array) {
+        const numbytes=1
+        if (uint8Array.length < numbytes) {
+            throw new Error("Not enough bytes to form a Uint32.");
+        }
+      
+        // Slice a portion of the array (length 4) and convert to Uint32
+        let ret=0
+        for(let i=0;i<numbytes;i++){
+            ret|=uint8Array[i]<<(8*(numbytes-1-i))
+        }
+      
+        return ret
+    }
+
+    /**
+     * spec at https://www.w3.org/TR/png-3/#10Compression
+     * 
+     * zlib [rfc1950](https://www.rfc-editor.org/rfc/rfc1950)
+     * deflate [rfc1951](https://www.rfc-editor.org/rfc/rfc1951)
+     * 
+     * @param {string} src 
+     * @returns {Promise<{width:number,height:number,data:Uint8Array}>}
+     */
+    async function parsePng(src){
+        let responseData=await (new Promise((resolve,reject)=>{
+            const xhr=new XMLHttpRequest()
+            xhr.open("GET",src,true)
+            xhr.responseType = 'arraybuffer'
+            xhr.onload=ev=>{
+                resolve(xhr.response)
+            }
+            xhr.onerror=ev=>{
+                alert(`failed to fetch png`)
+                reject({xhr,ev})
+            }
+            xhr.send()
+        }));
+
+        /**
+         * @typedef {{
+         * width:number,
+         * height:number,
+         * bitdepth:number,
+         * colortype:"RBG"|"RGBA"|"G"|"GA"|"Indexed",
+         * compressionmethod:number,
+         * filtermethod:number,
+         * interlacemethod:"nointerlace"|"Adam7",
+         * }} IHDR_chunk
+         */
+        /** @type {IHDR_chunk?} */
+        let IHDR=null
+        /** @type {Uint8Array?} */
+        let IDAT=null
+
+        let width
+        let height
+
+        const pngdata=new Uint8Array(responseData)
+        console.log(`got ${pngdata.length} bytes`)
+
+        let pngslice=pngdata.slice(0)
+
+        const png_start=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        if(!arrayBeginsWith(pngslice,png_start)){const error=`png start invalid`;alert(error);throw error;}
+        pngslice=pngslice.slice(png_start.length)
+
+        while(pngslice.length>0){
+            let chunklength=arrToUint32(pngslice.slice(0,4))
+            let header=uint8ArrayToString(pngslice.slice(4,8))
+            let chunkdata=pngslice.slice(8,8+chunklength)
+            let crc=pngslice.slice(8+chunklength,8+chunklength+4)
+
+            pngslice=pngslice.slice(8+chunklength+4)
+
+            console.log(`chunk: ${header} len ${chunklength}`)
+            if(header=="IHDR"){
+                /**
+                 * Width	4 bytes
+                    Height	4 bytes
+                    Bit depth	1 byte
+                    Color type	1 byte
+                    Compression method	1 byte
+                    Filter method	1 byte
+                    Interlace method	1 byte
+                 */
+                width=arrToUint32(chunkdata.slice(0,4))
+                height=arrToUint32(chunkdata.slice(4,8))
+                const bitdepth=arrToUint8(chunkdata.slice(8,9))
+                const colortype_raw=arrToUint8(chunkdata.slice(9,10))
+                const compressionmethod=arrToUint8(chunkdata.slice(10,11))
+                const filtermethod=arrToUint8(chunkdata.slice(11,12))
+                const interlacemethod_raw=arrToUint8(chunkdata.slice(12,13))
+
+                const colortype={
+                    0:"G",
+                    2:"RGB",
+                    3:"Indexed",
+                    4:"GA",
+                    6:"RGBA",
+                }[colortype_raw]
+                if(compressionmethod!=0){const error=`compressionmethod ${compressionmethod}!=0`;alert(error);throw error;}
+                if(filtermethod!=0){const error=`filtermethod ${filtermethod}!=0`;alert(error);throw error;}
+                const interlacemethod={
+                    0:"nointerlace",
+                    1:"Adam7",
+                }[interlacemethod_raw]
+
+                IHDR={
+                    width,height,
+                    bitdepth,
+                    /// @ts-ignore
+                    colortype,
+                    compressionmethod,
+                    filtermethod,
+                    /// @ts-ignore
+                    interlacemethod,
+                }
+                console.log("IHDR:",JSON.stringify(IHDR))
+            }else if(header=="IDAT"){
+                if(!IDAT){
+                    IDAT=chunkdata
+                }else{
+                    /** @type {Uint8Array} */
+                    const newar=new Uint8Array(IDAT.length+chunkdata.length)
+                    newar.set(IDAT)
+                    newar.set(chunkdata,IDAT.length)
+                    IDAT=newar
+                }
+            }
+        }
+
+        console.log(`IDAT length: ${IDAT.length}.. TODO decode`)
+        // idat is a zlib compressed stream. zlib only supports one compression method: deflate. (compression method 0 in the png ihdr)
+
+        /**
+         * 
+         * @param {Uint8Array} zlibCompressedData 
+         * @returns {Uint8Array}
+         */
+        function zlib(zlibCompressedData){
+            /** @type {number[]} */
+            const ret=[]
+            let d=zlibCompressedData
+
+            while(1){
+                const cmf=arrToUint8(d.slice(0,1))
+                const flg=arrToUint8(d.slice(1,2))
+                d=d.slice(2)
+
+                const compression_method=cmf&0xf
+                const compression_info=cmf>>4
+                if(compression_method!=8){const error=`${compression_method}!=8`;alert(error);throw error}
+                const window_size=1<<(compression_info+8)
+                console.log(`window size ${window_size}`)
+
+                const preset_dict=flg&(1<<5)
+                console.log(`preset_dict? ${preset_dict}`)
+
+                const dictid=preset_dict?arrToUint32(d.slice(2,6)):0
+                if(preset_dict){d=d.slice(4)}
+
+                // TODO implement deflate
+
+                break
+            }
+
+            return new Uint8Array(ret)
+        }
+        const filteredData=zlib(IDAT)
+
+        const data=new Uint8Array(width*height*4)
+
+        // TODO 
+
+        return {width,height,data}
+    }
+
+    // from http://pluspng.com/cat-png-1149.html, but hosted on a different platform with more permissive CORS
+    const {width,height,data}=await parsePng("https://i.ibb.co/d0FsH21r/cat.png")
 
     // Flip image pixels into the bottom-to-top order that WebGL expects.
     // must be called BEFORE image data is uploaded!
@@ -231,7 +475,7 @@ function makeBuffers(gl){
         0,
         GL.RGBA,
         GL.UNSIGNED_BYTE,
-        imgData
+        data
     )
 
     // set these parameters on the bound texture (anytime between creation and usage)
@@ -390,8 +634,8 @@ async function main(){
         alert(error);throw error
     }
 
-    const programInfo=makeProgram(gl)
-    const buffers=makeBuffers(gl)
+    const programInfo=await makeProgram(gl)
+    const buffers=await makeBuffers(gl)
 
     /** @type {Scene} */
     const scene={programInfo,buffers}
