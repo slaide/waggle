@@ -3,6 +3,10 @@
 import os
 import argparse
 from pathlib import Path
+try:
+    import git
+except:
+    git=None
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -18,9 +22,7 @@ PORT=args.port
 # try to use flask, which is a very robust web server framework
 # (if it not installed, fall back to a hand rolled implementation)
 try:
-    import flask
-    
-    from flask import Flask, send_file, send_from_directory
+    from flask import Flask, send_file, send_from_directory, request
     
     # no need to specify port or manually start flask
     app = Flask(__name__)
@@ -245,6 +247,17 @@ def serve_script(requested_path:str):
 @app.route('/css/<path:requested_path>')
 def serve_style(requested_path:str):
     return send_file(str(Path("css")/requested_path))
+
+@app.route("/update_server", methods=["POST"])
+def update_server():
+    if request.method=="POST" and git is not None:
+        repo=git.Repo(".")
+        origin=repo.remotes.origin
+        origin.pull()
+
+        return "Updated successfully", 200
+    else:
+        return "Update failed", 400
 
 # implement routes regardless, but only start server here if this is the main entry point
 if __name__ == '__main__':
