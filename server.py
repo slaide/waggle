@@ -253,7 +253,7 @@ def serve_style(requested_path:str):
 @app.route("/update_server", methods=["POST"])
 def update_server():
     if request.method=="POST" and git is not None:
-        repo=git.Repo(".")
+        repo=git.Repo("./waggle")
         origin=repo.remotes.origin
         origin.pull()
 
