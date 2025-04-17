@@ -10,10 +10,10 @@ const GL=WebGL2RenderingContext
  *      mat4:{
  *          create():mat4,
  *          perspective(out:mat4,fov_radians:number,aspect:number,znear:number,zfar:number):void,
-*           translate(out:mat4,src:mat4,distance:number[]):void,
-*           rotate(out:mat4,src:mat4,angle:number,axis:number[]):void,
-*           clone(a:mat4):mat4,
-*           copy(out:mat4,a:mat4):void,
+ *          translate(out:mat4,src:mat4,distance:number[]):void,
+ *          rotate(out:mat4,src:mat4,angle:number,axis:number[]):void,
+ *          clone(a:mat4):mat4,
+ *          copy(out:mat4,a:mat4):void,
  *      }
  * }}
  * @ts-ignore */ 

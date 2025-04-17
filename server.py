@@ -248,6 +248,8 @@ def serve_script(requested_path:str):
 def serve_style(requested_path:str):
     return send_file(str(Path("css")/requested_path))
 
+# target for webhook that triggers code pull on commit.
+# from https://medium.com/@aadibajpai/deploying-to-pythonanywhere-via-github-6f967956e664
 @app.route("/update_server", methods=["POST"])
 def update_server():
     if request.method=="POST" and git is not None:
