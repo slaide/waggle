@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>waggle</title>
+		<script type="importmap">
+			{
+				"imports":{
+					"main":"./src/main.js",
+					"glm": "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js"
+				}
+			}
+		</script>
+		<script type="module">
+			import {main} from "main";
+			window.addEventListener("load",main);
+		</script>
+	</head>
+	<body>
+		<canvas id="main-canvas" width="800" height="600" style="height:600px; width:800px;"></canvas>
+	</body>
+</html>
