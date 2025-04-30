@@ -1,3 +1,4 @@
 {
-    "javascript.inlayHints.parameterNames.enabled": "all"
+    "javascript.inlayHints.parameterNames.enabled": "all",
+    "python.defaultInterpreterPath": ".venv/bin/python3"
 }
