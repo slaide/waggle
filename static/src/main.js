@@ -1,3 +1,4 @@
+//# allFunctionsCalledOnLoad
 "use strict";
 
 import { mat4 } from "glm";
@@ -396,9 +397,43 @@ export async function main(){
     drawScene(gl,scene)
 }
 
+/**
+ * @typedef {{
+ * touchId:number,
+ * surfaceId:number,
+ * position: DOMPointReadOnly,
+ * surfaceDimensions?:DOMRectReadOnly,
+ * }} GamepadTouch
+ * */
+/**
+ * @typedef {{
+ * hasOrientation:boolean,
+ * hasPosition:boolean,
+ * position:Float32Array,
+ * linearVelocity:Float32Array,
+ * linearAcceleration:Float32Array,
+ * orientation:Float32Array,
+ * angularVelocity:number,
+ * angularAcceleration:number,
+ * }} GamepadPose
+ * https://developer.mozilla.org/en-US/docs/Web/API/GamepadPose
+ * */
+/**
+ * @typedef {""|"right"|"left"} GamepadHand
+ * https://developer.mozilla.org/en-US/docs/Web/API/Gamepad/hand
+ * */
+/**
+ * @typedef {{
+ * hand?:GamepadHand,
+ * pose?:GamepadPose,
+ * hapticActuators?:GamepadHapticActuator[],
+ * touches?:GamepadTouch[],
+ * }} Gamepad2
+ * */
 window.addEventListener("gamepadconnected",async (e)=>{
     const gpid=e.gamepad.index;
 
+    /** @type {(Gamepad&Gamepad2)|null} */
     const gp=navigator.getGamepads()[gpid];
     if(gp==null)throw`gamepad not found (this is a bug)`;
     console.log(
@@ -414,6 +449,7 @@ window.addEventListener("gamepadconnected",async (e)=>{
     console.log(`pose: ${gp.pose}`);
 
     setInterval(async ()=>{
+        /** @type {(Gamepad&Gamepad2)|null} */
         const gp=navigator.getGamepads()[gpid];
         if(gp==null)throw`gamepad not found (this is a bug)`;
 

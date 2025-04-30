@@ -1,3 +1,4 @@
+//# allFunctionsCalledOnLoad
 "use strict";
 
 /**
