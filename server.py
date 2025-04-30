@@ -5,13 +5,16 @@ import git
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
+PROJROOTDIR=Path(__file__).resolve().parent
 
 app = FastAPI()
 
 app.mount(
     "/",
     # html=True -> serve index.html on path=="/"
-    StaticFiles(directory="static", html=True),
+    StaticFiles(directory=PROJROOTDIR/"static", html=True),
     name="static",
 )
 
@@ -20,7 +23,7 @@ app.mount(
 @app.post("/update_server")
 def update_server(request:Request):
     if request.method=="POST" and git is not None:
-        repo=git.Repo(".")
+        repo=git.Repo(PROJROOTDIR)
         origin=repo.remotes.origin
         origin.pull()
 
