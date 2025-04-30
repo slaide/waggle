@@ -1,2 +1,9 @@
-GitPython==3.1.44
-flask==3.1.0
+# https://www.pythonanywhere.com/batteries_included/
+
+# update git repo on demand
+GitPython>=3.1.44
+# server infrastructure
+fastapi>=0.115.5
+uvicorn>=0.32.1
+# wrap fastapi server in wsgi interface for pythonanywhere compatibility
+asgiref>=3.8.1
