@@ -8,6 +8,7 @@ import {
     arrToUint32,
     arrToUint16,
     arrToUint8,
+    arrToUint,
     reverseBits,
     binstr,
     bitmask,
@@ -166,9 +167,7 @@ class HuffmanTree{
      * @returns {HuffmanLeaf}
      */
     parse(ibuffer){
-        const tree=this;
-
-        let branch=tree.tree;
+        let branch=this.tree;
         let curnumbits=0;
 
         while(1){
@@ -234,6 +233,14 @@ class BitBuffer{
         this.bufferlen=bufferlen;
     }
 
+    #fillBuffer(){
+        const numbytes=4;
+        this.buffer=arrToUint(numbytes,false)(this.data.subarray(this.dataindex));
+        this.bufferlen=8*numbytes;
+
+        this.dataindex+=numbytes;
+    }
+
     /**
      * returns next 1 bit (peeks by default. will refill automatically though.)
      * calls skip after return if alsoskip is true.
@@ -241,45 +248,18 @@ class BitBuffer{
      * @returns {number}
      */
     bit(alsoskip){
-        const ibuffer=this;
-
-        if(ibuffer.bufferlen<1){
-            // just read 1 byte from input
-            ibuffer.buffer=this.data[ibuffer.dataindex]
-            ibuffer.bufferlen=8
-
-            ibuffer.dataindex++
+        if(this.bufferlen===0){
+            this.#fillBuffer();
         }
 
         if(rtl){
-            const ret=ibuffer.buffer&1;
+            const ret=this.buffer&1;
             if(alsoskip)this.next();
             return ret;
         }else{
-            const ret=(ibuffer.buffer>>(this.bufferlen-1))&1;
+            const ret=(this.buffer>>(this.bufferlen-1))&1;
             if(alsoskip)this.next();
             return ret;
-        }
-    }
-
-    /**
-     * skip numbits bits
-     * @param {number} [numbits=1] 
-     */
-    next(numbits=1){
-        const ibuffer=this;
-
-        if(numbits<0)throw `cannot skip ${numbits}<0 bits`;
-        if(ibuffer.bufferlen<numbits)throw `invalid bufferlength`;
-
-        if(rtl){
-            // shift out leading bit
-            ibuffer.buffer>>=numbits;
-            ibuffer.bufferlen--;
-        }else{
-            // mask out leading bit
-            ibuffer.buffer&=bitmask(this.bufferlen-1);
-            ibuffer.bufferlen--;
         }
     }
 
@@ -303,6 +283,25 @@ class BitBuffer{
             }
         }
         return ret;
+    }
+
+    /**
+     * skip numbits bits
+     * @param {number} [numbits=1] 
+     */
+    next(numbits=1){
+        if(numbits<0)throw `cannot skip ${numbits}<0 bits`;
+        if(this.bufferlen<numbits)throw `invalid bufferlength`;
+
+        if(rtl){
+            // shift out leading bit
+            this.buffer>>=numbits;
+            this.bufferlen--;
+        }else{
+            // mask out leading bit
+            this.buffer&=bitmask(this.bufferlen-1);
+            this.bufferlen--;
+        }
     }
 }
 
@@ -353,14 +352,14 @@ function parseNcodelengths(code_length_tree,ibuffer,n){
 // -- begin fixed huffman tree stuff
 const code_lengths=new Uint8Array(288).map((v,i)=>{
     if(i>=0 && i<=143){
-        return 8
+        return 8;
     }else if(i>=144 && i<=255){
-        return 9
+        return 9;
     }else if(i>=256 && i<=279){
-        return 7
+        return 7;
     }else if(i>=280 && i<=287){
-        return 8
-    }else{throw ``}
+        return 8;
+    }else{throw ``;}
 });
 const dist_lengths=new Uint8Array(30).map(()=>5);
 const fixed_huffman_litlen_tree=HuffmanTree.make(code_lengths);
@@ -410,11 +409,16 @@ function decode_deflate(i,maxlen){
             // no compression
 
             // skip to byte boundary
-            ibuffer.next(ibuffer.bufferlen);
+            // 1) skip fractional byte
+            ibuffer.next(ibuffer.bufferlen%8);
+            // 2) shift index into array back by full bytes
+            ibuffer.dataindex-=ibuffer.bufferlen/8;
+            // 3) indicate that buffer is now empty
+            ibuffer.bufferlen=0;
 
-            const LEN=arrToUint16(ibuffer.data.slice(ibuffer.dataindex))
+            const LEN=arrToUint16(ibuffer.data.subarray(ibuffer.dataindex))
             ibuffer.dataindex+=2
-            const NLEN=arrToUint16(ibuffer.data.slice(ibuffer.dataindex))
+            const NLEN=arrToUint16(ibuffer.data.subarray(ibuffer.dataindex))
             ibuffer.dataindex+=2
 
             if((LEN|NLEN)!=0xffff)throw `len+nlen invalid ${LEN}+${NLEN}=${LEN+NLEN} != ${0xffff}`
@@ -454,8 +458,9 @@ function decode_deflate(i,maxlen){
             const code_length_tree=HuffmanTree.make(code_lengths);
             // console.log("made codelen tree");
 
-            const litlen_code_lengths=parseNcodelengths(code_length_tree,ibuffer,hlit);
-            const dist_code_lengths=parseNcodelengths(code_length_tree,ibuffer,hdist);
+            const combined=parseNcodelengths(code_length_tree,ibuffer,hlit+hdist);
+            const litlen_code_lengths=combined.subarray(0,hlit);
+            const dist_code_lengths=combined.subarray(hlit);
 
             litlen_tree=HuffmanTree.make(litlen_code_lengths);
             // console.log("made litlen tree")
@@ -488,20 +493,22 @@ function decode_deflate(i,maxlen){
             let length;
             if(code>=257 && code<=264){
                 length=code-257+3;
-            }else if(code>=265 && code<=268){
-                length=(code-265)*(1<<1)+11+ibuffer.nbits(1);
-            }else if(code>=269 && code<=272){
-                length=(code-269)*(1<<2)+19+ibuffer.nbits(2);
-            }else if(code>=273 && code<=276){
-                length=(code-273)*(1<<3)+35+ibuffer.nbits(3);
-            }else if(code>=277 && code<=280){
-                length=(code-277)*(1<<4)+67+ibuffer.nbits(4);
-            }else if(code>=281 && code<=284){
-                length=(code-281)*(1<<5)+131+ibuffer.nbits(5);
-            }else if(code==285){
-                length=258;
             }else{
-                throw `invalid length code`;
+                if(code>=265 && code<=268){
+                    length=(code-265)*(1<<1)+11+ibuffer.nbits(1);
+                }else if(code>=269 && code<=272){
+                    length=(code-269)*(1<<2)+19+ibuffer.nbits(2);
+                }else if(code>=273 && code<=276){
+                    length=(code-273)*(1<<3)+35+ibuffer.nbits(3);
+                }else if(code>=277 && code<=280){
+                    length=(code-277)*(1<<4)+67+ibuffer.nbits(4);
+                }else if(code>=281 && code<=284){
+                    length=(code-281)*(1<<5)+131+ibuffer.nbits(5);
+                }else if(code==285){
+                    length=258;
+                }else{
+                    throw `invalid length code`;
+                }
             }
 
             const dist_leaf=dist_tree.parse(ibuffer);
@@ -509,48 +516,29 @@ function decode_deflate(i,maxlen){
 
             let dist;
             if(dist_code>=0 && dist_code<=3){
-                dist=(dist_code-0)*(1<<0)+1;
-            }else if(dist_code>=4 && dist_code<=5){
-                dist=(dist_code-4)*(1<<1)+(1<<2)+1+ibuffer.nbits(1);
-            }else if(dist_code>=6 && dist_code<=7){
-                dist=(dist_code-6)*(1<<2)+(1<<3)+1+ibuffer.nbits(2);
-            }else if(dist_code>=8 && dist_code<=9){
-                dist=(dist_code-8)*(1<<3)+(1<<4)+1+ibuffer.nbits(3);
-            }else if(dist_code>=10 && dist_code<=11){
-                dist=(dist_code-10)*(1<<4)+(1<<5)+1+ibuffer.nbits(4);
-            }else if(dist_code>=12 && dist_code<=13){
-                dist=(dist_code-12)*(1<<5)+(1<<6)+1+ibuffer.nbits(5);
-            }else if(dist_code>=14 && dist_code<=15){
-                dist=(dist_code-14)*(1<<6)+(1<<7)+1+ibuffer.nbits(6);
-            }else if(dist_code>=16 && dist_code<=17){
-                dist=(dist_code-16)*(1<<7)+(1<<8)+1+ibuffer.nbits(7);
-            }else if(dist_code>=18 && dist_code<=19){
-                dist=(dist_code-18)*(1<<8)+(1<<9)+1+ibuffer.nbits(8);
-            }else if(dist_code>=20 && dist_code<=21){
-                dist=(dist_code-20)*(1<<9)+(1<<10)+1+ibuffer.nbits(9);
-            }else if(dist_code>=22 && dist_code<=23){
-                dist=(dist_code-22)*(1<<10)+(1<<11)+1+ibuffer.nbits(10);
-            }else if(dist_code>=24 && dist_code<=25){
-                dist=(dist_code-24)*(1<<11)+(1<<12)+1+ibuffer.nbits(11);
-            }else if(dist_code>=26 && dist_code<=27){
-                dist=(dist_code-26)*(1<<12)+(1<<13)+1+ibuffer.nbits(12);
-            }else if(dist_code>=28 && dist_code<=29){
-                dist=(dist_code-28)*(1<<13)+(1<<14)+1+ibuffer.nbits(13);
+                dist=dist_code+1;
             }else{
-                throw `invalid dist_code`;
+                const dist_level=Math.floor(dist_code/2);
+                if(dist_level>14)throw``;
+
+                const num_extra_bits=dist_level-1;
+                const dist_code_offset=2*dist_level;
+
+                dist=(
+                    (dist_code-dist_code_offset)*(1<<num_extra_bits)
+                    +1+(1<<(num_extra_bits+1))
+                    +ibuffer.nbits(num_extra_bits)
+                );
             }
 
             for(let i=0;i<length;i++){
                 const offset=nret-dist;
-                if(offset<0)throw (`deflate decode out of bounds: ${offset} `
+
+                if(offset<0) throw (`deflate decode out of bounds: ${offset} `
                     +`(length_code ${code} length ${length}, `
                     +`dist_code ${dist_code} ${dist})`);
-                try{
-                    ret[nret++]=ret[offset];
-                }catch(e){
-                    console.log(`array len ${nret}`);
-                    throw e;
-                }
+
+                ret[nret++]=ret[offset];
             }
         }
     }
@@ -570,28 +558,25 @@ function decode_deflate(i,maxlen){
 export function zlibDecode(zlibCompressedData,maxlen){
     let d=zlibCompressedData;
 
-    const cmf=arrToUint8(d.slice(0,1));
-    const flg=arrToUint8(d.slice(1,2));
-    d=d.slice(2);
+    const cmf=arrToUint8(d.subarray(0,1));
+    const flg=arrToUint8(d.subarray(1,2));
+    d=d.subarray(2);
 
     const compression_method=cmf&0xf;
     const compression_info=cmf>>4;
     if(compression_method!=8){const error=`${compression_method}!=8`;alert(error);throw error}
     const window_size=1<<(compression_info+8);
-    console.log(`window size ${window_size}`);
 
     const preset_dict=flg&(1<<5);
-    console.log(`preset_dict? ${preset_dict}`);
 
     let dictid=0;
     if(preset_dict){
-        dictid=arrToUint32(d.slice(0,4));
-        d=d.slice(4);
+        dictid=arrToUint32(d.subarray(0,4));
+        d=d.subarray(4);
+        throw `zlib preset dict unimplemented`;
     }
 
-    const deflated=decode_deflate(new Uint8Array(d),maxlen);
-
-    // TODO process DEFLATE data, followed by adler32 value (32bits)
+    const deflated=decode_deflate(d,maxlen);
 
     return deflated;
 }
