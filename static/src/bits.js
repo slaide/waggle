@@ -106,15 +106,6 @@ export function binstr(b,n){
     return b.toString(2).padStart(n,'0');
 }
 /**
- * for testing
- * @param {number} b 
- * @param {number} n 
- */
-function printreversedbits(b,n){
-    let forward=b;
-    let backward=reverseBits(b,n);
-    console.log(`----\nforward  ${binstr(forward,n)}\nbackward ${binstr(backward,n)}\n----`)
-}
 /**
  * 
  * @param {number} n 
@@ -122,4 +113,93 @@ function printreversedbits(b,n){
  */
 export function bitmask(n){
     return ((1<<n)-1);
+}
+
+const rtl=true;
+
+export class BitBuffer{
+    /**
+     * 
+     * @param {Uint8Array} data 
+     * @param {number} dataindex 
+     * @param {number} buffer 
+     * @param {number} bufferlen 
+     */
+    constructor(data,dataindex,buffer,bufferlen){
+        this.data=data;
+        this.dataindex=dataindex;
+        this.buffer=buffer;
+        this.bufferlen=bufferlen;
+    }
+
+    #fillBuffer(){
+        const numbytes=4;
+        this.buffer=arrToUint(numbytes,false)(this.data.subarray(this.dataindex));
+        this.bufferlen=8*numbytes;
+
+        this.dataindex+=numbytes;
+    }
+
+    /**
+     * returns next 1 bit (peeks by default. will refill automatically though.)
+     * calls skip after return if alsoskip is true.
+     * @param {boolean?} [alsoskip=undefined]
+     * @returns {number}
+     */
+    bit(alsoskip){
+        if(this.bufferlen===0){
+            this.#fillBuffer();
+        }
+
+        if(rtl){
+            const ret=this.buffer&1;
+            if(alsoskip)this.next();
+            return ret;
+        }else{
+            const ret=(this.buffer>>(this.bufferlen-1))&1;
+            if(alsoskip)this.next();
+            return ret;
+        }
+    }
+
+    /**
+     * get n bits as number
+     * @param {number} n
+     * @returns {number}
+     */
+    nbits(n){
+        if(n<1)throw `n must be >=1, but is ${n}`;
+
+        let ret=0;
+
+        if(rtl){
+            for(let i=0;i<n;i++){
+                ret|=this.bit(true)<<i;
+            }
+        }else{
+            for(let i=0;i<n;i++){
+                ret|=this.bit(true)<<i;
+            }
+        }
+        return ret;
+    }
+
+    /**
+     * skip numbits bits
+     * @param {number} [numbits=1] 
+     */
+    next(numbits=1){
+        if(numbits<0)throw `cannot skip ${numbits}<0 bits`;
+        if(this.bufferlen<numbits)throw `invalid bufferlength`;
+
+        if(rtl){
+            // shift out leading bit
+            this.buffer>>=numbits;
+            this.bufferlen--;
+        }else{
+            // mask out leading bit
+            this.buffer&=bitmask(this.bufferlen-1);
+            this.bufferlen--;
+        }
+    }
 }
