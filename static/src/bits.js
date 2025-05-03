@@ -96,3 +96,45 @@ export function arrToUint8(arr) {
 
     return ret
 }
+
+/**
+ * 
+ * @param {number} b bits to reverse
+ * @param {number} n number of bits to reverse
+ * @returns {number}
+ */
+export function reverseBits(b,n){
+    let ret=0;
+    for(let i=0;i<n;i++){
+        ret|=((b>>(n-1-i))&1)<<(i);
+    }
+    //console.log(`----\nforward  ${binstr(b,n)}\nbackward ${binstr(ret,n)}\n----`)
+    return ret;
+}
+/**
+ * 
+ * @param {number} b 
+ * @param {number} n 
+ * @returns {string}
+ */
+export function binstr(b,n){
+    return b.toString(2).padStart(n,'0');
+}
+/**
+ * for testing
+ * @param {number} b 
+ * @param {number} n 
+ */
+function printreversedbits(b,n){
+    let forward=b;
+    let backward=reverseBits(b,n);
+    console.log(`----\nforward  ${binstr(forward,n)}\nbackward ${binstr(backward,n)}\n----`)
+}
+/**
+ * 
+ * @param {number} n 
+ * @returns {number}
+ */
+export function bitmask(n){
+    return ((1<<n)-1);
+}
