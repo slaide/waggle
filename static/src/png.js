@@ -12,6 +12,37 @@ import {
 
 import {zlibDecode} from "./zlib.js";
 
+/**
+ * from png spec https://www.w3.org/TR/png-3/#9Filter-type-4-Paeth
+ * @param {number} a 
+ * @param {number} b 
+ * @param {number} c 
+ * @returns {number}
+ */
+function paethPredictor(a,b,c){
+    // PaethPredictor(a,b,c)
+    // p = a + b - c
+    // pa = abs(p - a)
+    // pb = abs(p - b)
+    // pc = abs(p - c)
+    // if pa <= pb and pa <= pc then Pr = a
+    // else if pb <= pc then Pr = b
+    // else Pr = c
+    // return Pr
+    // end
+    const p=a + b - c;
+    const pa=Math.abs(p - a);
+    const pb=Math.abs(p - b);
+    const pc=Math.abs(p - c);
+    if((pa <= pb) && (pa <= pc)){
+        return a;
+    }else if(pb <= pc){
+        return b;
+    }else{
+        return c;
+    }
+}
+
 /** @typedef {"G"|"RGB"|"Indexed"|"GA"|"RGBA"} IHDRColortype */
 /** @type {{[i:number]:IHDRColortype}} */
 const IHDR_COLORTYPE_ENUMS={
@@ -44,7 +75,6 @@ const IHDR_INTERLACEMETHOD_ENUMS={
  * spec at https://www.w3.org/TR/png-3/#10Compression
  * 
  * zlib [rfc1950](https://www.rfc-editor.org/rfc/rfc1950)
- * deflate [rfc1951](https://www.rfc-editor.org/rfc/rfc1951)
  * 
  * @param {string} src 
  * @returns {Promise<{width:number,height:number,data:Uint8Array}>}
@@ -142,11 +172,81 @@ export async function parsePng(src){
     if(!IHDR)throw``;
     const {width,height}=IHDR;
 
-    const outdata=new Uint8Array(width*height*4)
+    const bpp={
+        "G":1,
+        "GA":2,
+        "RGB":3,
+        "RGBA":4,
+        "Indexed":1,
+    }[IHDR.colortype];
 
-    throw `TODO (process filteredData into outdata)`;
-    // TODO
+    const ScanlineCompressionType=Object.freeze({
+        None:0,
+        Sub:1,
+        Up:2,
+        Average:3,
+        Paeth:4
+    })
 
-    const ret={width,height,outdata};
-    //return ret;
+    // this does modulo on copy into it, which is the desired behaviour
+    const outdata=new Uint8Array(width*height*bpp);
+
+    const scanline_numbytes=(1+width*bpp);
+    if((height*scanline_numbytes)!=(filteredData.length)){
+        throw `unexpected size ${height*scanline_numbytes} != ${filteredData.length}`;
+    }
+
+    for(let row=0;row<height;row++){
+        const scanline=filteredData.slice(row*(width*bpp+1));
+        const scanline_compression_type=scanline[0];
+        
+        // positions:
+        // c (top left) , b (top)
+        // a (left),      x (current)
+
+        if(scanline_compression_type==ScanlineCompressionType.None){
+            // Recon(x) = Filt(x)
+            for(let col=0;col<width*bpp;col++){
+                const x=scanline[1+col];
+                outdata[row*width*bpp+col]=x;
+            }
+        }else if(scanline_compression_type==ScanlineCompressionType.Sub){
+            // Recon(x) = Filt(x) + Recon(a)
+            for(let col=0;col<width*bpp;col++){
+                const x=scanline[1+col];
+                const a= (col>=bpp) ? outdata[row*width*bpp+col-bpp] : 0;
+                outdata[row*width*bpp+col]=x + a;
+            }
+        }else if(scanline_compression_type==ScanlineCompressionType.Up){
+            // Recon(x) = Filt(x) + Recon(b)
+            for(let col=0;col<width*bpp;col++){
+                const x=scanline[1+col];
+                const b= (row>=(1)) ? outdata[(row-1)*width*bpp+col] : 0;
+                outdata[row*width*bpp+col]=x + b;
+            }
+        }else if(scanline_compression_type==ScanlineCompressionType.Average){
+            // Recon(x) = Filt(x) + floor((Recon(a) + Recon(b)) / 2)
+            for(let col=0;col<width*bpp;col++){
+                const x=scanline[1+col];
+                const a= (col>=(bpp)) ? outdata[row*width*bpp+col-bpp] : 0;
+                const b= (row>=(1)) ? outdata[(row-1)*width*bpp+col] : 0;
+                outdata[row*width*bpp+col]=x + Math.floor((a + b)/2);
+            }
+        }else if(scanline_compression_type==ScanlineCompressionType.Paeth){
+            // Recon(x) = Filt(x) + PaethPredictor(Recon(a), Recon(b), Recon(c))
+
+            for(let col=0;col<width*bpp;col++){
+                const x=scanline[1+col];
+                const a= (col>=(bpp)) ? outdata[row*width*bpp+col-bpp] : 0;
+                const b= (row>=(1)) ? outdata[(row-1)*width*bpp+col] : 0;
+                const c= ((col>=bpp)&&(row>=1)) ? outdata[(row-1)*width*bpp+col-bpp] : 0;
+                outdata[row*width*bpp+col]=(x + paethPredictor(a,b,c));
+            }
+        }else{
+            throw `png scanline type ${scanline_compression_type} is invalid.`;
+        }
+    }
+
+    const ret={width,height,data:outdata};
+    return ret;
 }
