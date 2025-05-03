@@ -466,7 +466,7 @@ function decode_deflate(i){
             // calculate length
             let length;
             if(code>=257 && code<=264){
-                length=code-257+10;
+                length=code-257+3;
             }else if(code>=265 && code<=268){
                 length=(code-265)*(1<<1)+11+ibuffer.nbits(1);
             }else if(code>=269 && code<=272){
