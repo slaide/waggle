@@ -11,25 +11,23 @@ PROJROOTDIR=Path(__file__).resolve().parent
 
 app = FastAPI()
 
+# target for webhook that triggers code pull on commit.
+# from https://medium.com/@aadibajpai/deploying-to-pythonanywhere-via-github-6f967956e664
+@app.post("/update_server")
+def update_server(request:Request):
+    repo=git.Repo(PROJROOTDIR)
+    origin=repo.remotes.origin
+    origin.pull()
+
+    return "Updated successfully", 200
+
+# this matches all requests, so any other path that should be registered must be registered before!
 app.mount(
     "/",
     # html=True -> serve index.html on path=="/"
     StaticFiles(directory=PROJROOTDIR/"static", html=True),
     name="static",
 )
-
-# target for webhook that triggers code pull on commit.
-# from https://medium.com/@aadibajpai/deploying-to-pythonanywhere-via-github-6f967956e664
-@app.post("/update_server")
-def update_server(request:Request):
-    if request.method=="POST" and git is not None:
-        repo=git.Repo(PROJROOTDIR)
-        origin=repo.remotes.origin
-        origin.pull()
-
-        return "Updated successfully", 200
-    else:
-        return "Update failed", 400
 
 # implement routes regardless, but only start server here if this is the main entry point
 if __name__ == '__main__':
