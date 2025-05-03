@@ -71,6 +71,9 @@ const IHDR_INTERLACEMETHOD_ENUMS={
 * }} IHDR_chunk
 */
 
+/** PNG header magic */
+const PNG_START=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
 /**
  * spec at https://www.w3.org/TR/png-3/#10Compression
  * 
@@ -80,33 +83,24 @@ const IHDR_INTERLACEMETHOD_ENUMS={
  * @returns {Promise<{width:number,height:number,data:Uint8Array}>}
  */
 export async function parsePng(src){
-    let responseData=await (new Promise((resolve,reject)=>{
-        const xhr=new XMLHttpRequest()
-        xhr.open("GET",src,true)
-        xhr.responseType = 'arraybuffer'
-        xhr.onload=ev=>{
-            resolve(xhr.response)
-        }
-        xhr.onerror=ev=>{
-            alert(`failed to fetch png`)
-            reject({xhr,ev})
-        }
-        xhr.send()
-    }));
+    const responseData=await fetch(src,{method:"GET"}).then(async e=>{
+        return await e.arrayBuffer();
+    }).catch(e=>{
+        alert(`failed to fetch png`);
+        throw e;
+    });
 
     /** @type {IHDR_chunk?} */
     let IHDR=null;
     /** @type {Uint8Array?} */
     let IDAT=null;
 
-    const pngdata=new Uint8Array(responseData)
-    console.log(`got ${pngdata.length} bytes`)
+    const pngdata=new Uint8Array(responseData);
 
     let pngslice=pngdata.subarray(0);
 
-    const png_start=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-    if(!arrayBeginsWith(pngslice,png_start)){const error=`png start invalid`;alert(error);throw error;}
-    pngslice=pngslice.subarray(png_start.length)
+    if(!arrayBeginsWith(pngslice,PNG_START)){const error=`png start invalid`;alert(error);throw error;}
+    pngslice=pngslice.subarray(PNG_START.length)
 
     while(pngslice.length>0){
         let chunklength=arrToUint32(pngslice.subarray(0,4))
@@ -116,7 +110,6 @@ export async function parsePng(src){
 
         pngslice=pngslice.subarray(8+chunklength+4)
 
-        console.log(`chunk: ${header} len ${chunklength}`)
         if(header=="IHDR"){
             /**
              * Width	4 bytes
@@ -163,12 +156,11 @@ export async function parsePng(src){
         }else if(header=="IEND"){
             break;
         }else{
-            console.log(`png block header ${header} unimplemented.`);
+            console.log(`png chunk: ${header} ( len ${chunklength} ) unimplemented.`)
         }
     }
 
     if(IDAT==null){const error=`IDAT is missing`;console.error(error);throw error;}
-    console.log(`IDAT length: ${IDAT.length}`);
     // idat is a zlib compressed stream. zlib only supports one compression method: deflate. (compression method 0 in the png ihdr)
 
     if(!IHDR)throw``;
@@ -190,9 +182,7 @@ export async function parsePng(src){
         Paeth:4
     });
 
-    const start=performance.now();
     const filteredData=zlibDecode(IDAT,(1+(width*bpp))*height);
-    console.log(`png zlib decode done in ${performance.now()-start}ms`);
 
     // this does modulo on copy into it, which is the desired behaviour
     const outdata=new Uint8Array(width*height*bpp);
