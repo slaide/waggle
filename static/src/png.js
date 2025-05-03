@@ -102,19 +102,19 @@ export async function parsePng(src){
     const pngdata=new Uint8Array(responseData)
     console.log(`got ${pngdata.length} bytes`)
 
-    let pngslice=pngdata.slice(0)
+    let pngslice=pngdata.subarray(0);
 
     const png_start=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
     if(!arrayBeginsWith(pngslice,png_start)){const error=`png start invalid`;alert(error);throw error;}
-    pngslice=pngslice.slice(png_start.length)
+    pngslice=pngslice.subarray(png_start.length)
 
     while(pngslice.length>0){
-        let chunklength=arrToUint32(pngslice.slice(0,4))
-        let header=uint8ArrayToString(pngslice.slice(4,8))
-        let chunkdata=pngslice.slice(8,8+chunklength)
-        let crc=pngslice.slice(8+chunklength,8+chunklength+4)
+        let chunklength=arrToUint32(pngslice.subarray(0,4))
+        let header=uint8ArrayToString(pngslice.subarray(4,8))
+        let chunkdata=pngslice.subarray(8,8+chunklength)
+        let crc=pngslice.subarray(8+chunklength,8+chunklength+4)
 
-        pngslice=pngslice.slice(8+chunklength+4)
+        pngslice=pngslice.subarray(8+chunklength+4)
 
         console.log(`chunk: ${header} len ${chunklength}`)
         if(header=="IHDR"){
@@ -127,13 +127,13 @@ export async function parsePng(src){
                 Filter method	1 byte
                 Interlace method	1 byte
                 */
-            const width=arrToUint32(chunkdata.slice(0,4))
-            const height=arrToUint32(chunkdata.slice(4,8))
-            const bitdepth=arrToUint8(chunkdata.slice(8,9))
-            const colortype_raw=arrToUint8(chunkdata.slice(9,10))
-            const compressionmethod=arrToUint8(chunkdata.slice(10,11))
-            const filtermethod=arrToUint8(chunkdata.slice(11,12))
-            const interlacemethod_raw=arrToUint8(chunkdata.slice(12,13))
+            const width=arrToUint32(chunkdata.subarray(0,4))
+            const height=arrToUint32(chunkdata.subarray(4,8))
+            const bitdepth=arrToUint8(chunkdata.subarray(8,9))
+            const colortype_raw=arrToUint8(chunkdata.subarray(9,10))
+            const compressionmethod=arrToUint8(chunkdata.subarray(10,11))
+            const filtermethod=arrToUint8(chunkdata.subarray(11,12))
+            const interlacemethod_raw=arrToUint8(chunkdata.subarray(12,13))
 
             const colortype=IHDR_COLORTYPE_ENUMS[colortype_raw];
             if(compressionmethod!=0){const error=`compressionmethod ${compressionmethod}!=0`;alert(error);throw error;}
@@ -160,6 +160,10 @@ export async function parsePng(src){
                 newar.set(chunkdata,IDAT.length);
                 IDAT=newar;
             }
+        }else if(header=="IEND"){
+            break;
+        }else{
+            console.log(`png block header ${header} unimplemented.`);
         }
     }
 
@@ -186,7 +190,9 @@ export async function parsePng(src){
         Paeth:4
     });
 
+    const start=performance.now();
     const filteredData=zlibDecode(IDAT,(1+(width*bpp))*height);
+    console.log(`png zlib decode done in ${performance.now()-start}ms`);
 
     // this does modulo on copy into it, which is the desired behaviour
     const outdata=new Uint8Array(width*height*bpp);
@@ -199,9 +205,6 @@ export async function parsePng(src){
     /** just to make typing faster ( s[so] is start of scanline ) */
     const s=filteredData;
     for(let row=0;row<height;row++){
-        const msg=`processing row ${row+1} / ${height}`;
-        console.log(msg);
-
         const so=row*(width*bpp+1)+1;
         const scanline_compression_type=s[so-1];
         
@@ -251,6 +254,8 @@ export async function parsePng(src){
             throw `png scanline type ${scanline_compression_type} is invalid.`;
         }
     }
+
+    console.log(`png scanline decoding done`);
 
     const ret={width,height,data:outdata};
     return ret;
