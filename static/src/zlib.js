@@ -67,8 +67,9 @@ class HuffmanTree{
             }
             next_code[code_length]++;
 
-            const code_binary_asString=binstr(codes[i],code_length);
-            //console.log(`leaf ${i} has len ${code_length} code ${code_binary_asString}`);
+            // debug:
+            // const code_binary_asString=binstr(codes[i],code_length);
+            // console.log(`leaf ${i} has len ${code_length} code ${code_binary_asString}`);
 
             leafs.push(new HuffmanLeaf(
                 code_length,
@@ -98,33 +99,9 @@ class HuffmanTree{
         if(leafs.length==1)return leafs[0];
 
         // get all leafs that have bit 0 at next position
-        const leafs0=leafs.filter(l=>{
-            // filter all leafs that have no next position
-            if(l.len<curlen)return false;
-
-            // check for last bit
-            if(rtl){
-                const last_bit=(l.code>>(curlen-1)) & 1;
-                return last_bit === 0;
-            }else{
-                const last_bit=(l.code>>(l.len-1-curlen)) & 1;
-                return last_bit === 0;
-            }
-        });
+        const leafs0=leafs.filter(l=>HuffmanTree.#filterLeaf0(l,curlen));
         // get all leafs that have bit 1 at next position
-        const leafs1=leafs.filter(l=>{
-            // filter all leafs that have no next position
-            if(l.len<curlen)return false;
-
-            // check for last bit
-            if(rtl){
-                const last_bit=(l.code>>(curlen-1)) & 1;
-                return last_bit === 1;
-            }else{
-                const last_bit=(l.code>>(l.len-1-curlen)) & 1;
-                return last_bit === 1;
-            }
-        });
+        const leafs1=leafs.filter(l=>HuffmanTree.#filterLeaf1(l,curlen));
 
         const leaf0=HuffmanTree.sortLeafs(
             leafs0,
@@ -142,6 +119,45 @@ class HuffmanTree{
             leaf0,
             leaf1,
         );
+    }
+
+    /**
+     * 
+     * @param {HuffmanLeaf} l
+     * @param {number} curlen
+     * @returns {boolean}
+     */
+    static #filterLeaf0(l,curlen){
+        // filter all leafs that have no next position
+        if(l.len<curlen)return false;
+
+        // check for last bit
+        if(rtl){
+            const last_bit=(l.code>>(curlen-1)) & 1;
+            return last_bit === 0;
+        }else{
+            const last_bit=(l.code>>(l.len-1-curlen)) & 1;
+            return last_bit === 0;
+        }
+    }
+    /**
+     * 
+     * @param {HuffmanLeaf} l
+     * @param {number} curlen
+     * @returns {boolean}
+     */
+    static #filterLeaf1(l,curlen){
+        // filter all leafs that have no next position
+        if(l.len<curlen)return false;
+
+        // check for last bit
+        if(rtl){
+            const last_bit=(l.code>>(curlen-1)) & 1;
+            return last_bit === 1;
+        }else{
+            const last_bit=(l.code>>(l.len-1-curlen)) & 1;
+            return last_bit === 1;
+        }
     }
 
     /**
@@ -336,6 +352,9 @@ function parseNcodelengths(code_length_tree,ibuffer,n){
 
 /**
  * decode DEFLATE compressed data
+ * 
+ * deflate [rfc1951](https://www.rfc-editor.org/rfc/rfc1951)
+ * 
  * @param {Uint8Array} i 
  * @returns {Uint8Array}
  */
