@@ -350,15 +350,38 @@ function parseNcodelengths(code_length_tree,ibuffer,n){
     return ret;
 }
 
+// -- begin fixed huffman tree stuff
+const code_lengths=new Uint8Array(288).map((v,i)=>{
+    if(i>=0 && i<=143){
+        return 8
+    }else if(i>=144 && i<=255){
+        return 9
+    }else if(i>=256 && i<=279){
+        return 7
+    }else if(i>=280 && i<=287){
+        return 8
+    }else{throw ``}
+});
+const dist_lengths=new Uint8Array(30).map(()=>5);
+const fixed_huffman_litlen_tree=HuffmanTree.make(code_lengths);
+const fixed_huffman_dist_tree=HuffmanTree.make(dist_lengths);
+// -- end fixed huffman tree stuff
+
+// code lengths are read in this order
+const code_length_parse_order=Object.freeze([
+    16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15
+]);
+
 /**
  * decode DEFLATE compressed data
  * 
  * deflate [rfc1951](https://www.rfc-editor.org/rfc/rfc1951)
  * 
  * @param {Uint8Array} i 
+ * @param {number} maxlen 
  * @returns {Uint8Array}
  */
-function decode_deflate(i){
+function decode_deflate(i,maxlen){
     const ibuffer=new BitBuffer(
         i,
         0,
@@ -366,30 +389,28 @@ function decode_deflate(i){
         0,
     );
 
-    /** @type {number[]} */
-    let ret=[];
+    /// number of items currently in ret
+    let nret=0;
+    // dev note: for debugging, ret=[] also works
+    const ret=new Uint8Array(maxlen);
 
     let bfinal=0;
     while(bfinal!==1){
         // read one block
-        bfinal=ibuffer.nbits(1);
-        console.log(`bfinal: ${bfinal}`);
 
+        bfinal=ibuffer.nbits(1);
         const btype=ibuffer.nbits(2);
-        console.log(`btype ${btype}`);
 
         /** @type {HuffmanTree?} */
         let litlen_tree=null;
         /** @type {HuffmanTree?} */
         let dist_tree=null;
 
-        if(btype==0){
+        if(btype===0){
             // no compression
 
             // skip to byte boundary
-            console.log(`index ${ibuffer.dataindex}`)
             ibuffer.next(ibuffer.bufferlen);
-            console.log(`index ${ibuffer.dataindex}`)
 
             const LEN=arrToUint16(ibuffer.data.slice(ibuffer.dataindex))
             ibuffer.dataindex+=2
@@ -402,31 +423,16 @@ function decode_deflate(i){
 
             // copy LEN bytes into output
             for(let i=0;i<LEN;i++){
-                ret.push(ibuffer.data[ibuffer.dataindex++]);
+                ret[nret++]=ibuffer.data[ibuffer.dataindex++];
             }
 
             continue;
-        }else if(btype==0b01){
+        }else if(btype===0b01){
             // fixed huffman
 
-            const code_lengths=new Uint8Array(288).map((v,i)=>{
-                if(i>=0 && i<=143){
-                    return 8
-                }else if(i>=144 && i<=255){
-                    return 9
-                }else if(i>=256 && i<=279){
-                    return 7
-                }else if(i>=280 && i<=287){
-                    return 8
-                }else{throw ``}
-            });
-
-            // should just need 30, but 31 is a bit easier to handle
-            const dist_lengths=new Uint8Array(31).map(()=>5);
-
-            litlen_tree=HuffmanTree.make(code_lengths);
-            dist_tree=HuffmanTree.make(dist_lengths);
-        }else if(btype==0b10){
+            litlen_tree=fixed_huffman_litlen_tree;
+            dist_tree=fixed_huffman_dist_tree;
+        }else if(btype===0b10){
             // dynamic huffman
 
             // 1) get number of entries in each list
@@ -434,7 +440,7 @@ function decode_deflate(i){
             const hdist=ibuffer.nbits(5)+1;
             // number of code length codes
             const hclen=ibuffer.nbits(4)+4;
-            console.log(`hlit ${hlit} hdist ${hdist} hclen ${hclen}`);
+            // console.log(`hlit ${hlit} hdist ${hdist} hclen ${hclen}`);
 
             // 2) parse code length table
             const code_lengths=new Uint8Array(/*see code_length_parse_order*/19);
@@ -442,26 +448,22 @@ function decode_deflate(i){
                 // get next code length (as 3 bit unsigned integer)
                 const code_length=ibuffer.nbits(3);
 
-                // code lengths are read in this order
-                const code_length_parse_order=[
-                    16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15
-                ];
                 // console.log(`length ${code_length} for code ${code_length_parse_order[i]}`);
                 code_lengths[code_length_parse_order[i]]=code_length;
             }
             const code_length_tree=HuffmanTree.make(code_lengths);
-            console.log("made codelen tree");
+            // console.log("made codelen tree");
 
             const litlen_code_lengths=parseNcodelengths(code_length_tree,ibuffer,hlit);
             const dist_code_lengths=parseNcodelengths(code_length_tree,ibuffer,hdist);
 
             litlen_tree=HuffmanTree.make(litlen_code_lengths);
-            console.log("made litlen tree")
+            // console.log("made litlen tree")
             dist_tree=HuffmanTree.make(dist_code_lengths);
-            console.log("made dist tree")
-        }else if(btype==0b11){
+            // console.log("made dist tree")
+        }else if(btype===0b11){
             throw `invalid btype ${btype}`;
-        }
+        }else{throw `super duper invalid btype ${btype}`}
 
         // these cases can never happen, but TS does not know that.
         if(litlen_tree==null)throw `bug: litlen_tree invalid`;
@@ -473,7 +475,7 @@ function decode_deflate(i){
             
             const code=leaf.value;
             if(code<256){
-                ret.push(code);
+                ret[nret++]=code;
                 
                 continue;
             }else if(code==256){
@@ -539,26 +541,33 @@ function decode_deflate(i){
             }
 
             for(let i=0;i<length;i++){
-                const offset=ret.length-dist;
+                const offset=nret-dist;
                 if(offset<0)throw (`deflate decode out of bounds: ${offset} `
                     +`(length_code ${code} length ${length}, `
                     +`dist_code ${dist_code} ${dist})`);
-                ret.push(ret[offset]);
+                try{
+                    ret[nret++]=ret[offset];
+                }catch(e){
+                    console.log(`array len ${nret}`);
+                    throw e;
+                }
             }
         }
     }
 
-    return new Uint8Array(ret);
+    if(!(ret instanceof Uint8Array)){
+        return new Uint8Array(ret);
+    }
+    return ret;
 }
 
 /**
  * 
  * @param {Uint8Array} zlibCompressedData 
+ * @param {number} maxlen 
  * @returns {Uint8Array}
  */
-export function zlibDecode(zlibCompressedData){
-    /** @type {number[]} */
-    const ret=[];
+export function zlibDecode(zlibCompressedData,maxlen){
     let d=zlibCompressedData;
 
     const cmf=arrToUint8(d.slice(0,1));
@@ -580,7 +589,7 @@ export function zlibDecode(zlibCompressedData){
         d=d.slice(4);
     }
 
-    const deflated=decode_deflate(new Uint8Array(d));
+    const deflated=decode_deflate(new Uint8Array(d),maxlen);
 
     // TODO process DEFLATE data, followed by adler32 value (32bits)
 
