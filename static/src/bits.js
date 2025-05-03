@@ -43,58 +43,43 @@ export function arrayBeginsWith(a,b){
  * @param {Uint8Array} arr 
  * @returns {number}
  */
-export function arrToUint32(arr) {
-    const numbytes=4
-    if (arr.length < numbytes) {
-        throw new Error("Not enough bytes to form a Uint32.");
-    }
-    
-    // Slice a portion of the array (length 4) and convert to Uint32
-    let ret=0
-    for(let i=0;i<numbytes;i++){
-        ret|=arr[i]<<(8*(numbytes-1-i))
-    }
-    
-    return ret
-}
-
+export const arrToUint32=arrToUint(4);
 /**
  * return first x bytes as u16
  * @param {Uint8Array} arr 
  * @returns {number}
  */
-export function arrToUint16(arr) {
-    const numbytes=2
-    if (arr.length < numbytes) {
-        throw new Error("Not enough bytes to form a Uint32.");
-    }
-
-    // Slice a portion of the array (length 4) and convert to Uint32
-    let ret=0
-    for(let i=0;i<numbytes;i++){
-        ret|=arr[i]<<(8*(numbytes-1-i))
-    }
-
-    return ret
-}
+export const arrToUint16=arrToUint(2);
 /**
  * return first x bytes as u8
  * @param {Uint8Array} arr 
  * @returns {number}
  */
-export function arrToUint8(arr) {
-    const numbytes=1
-    if (arr.length < numbytes) {
-        throw new Error("Not enough bytes to form a Uint32.");
-    }
+export const arrToUint8=arrToUint(1);
 
-    // Slice a portion of the array (length 4) and convert to Uint32
-    let ret=0
-    for(let i=0;i<numbytes;i++){
-        ret|=arr[i]<<(8*(numbytes-1-i))
-    }
+/**
+ * @param {number} n number of bytes
+ * @param {boolean} [littleendian=true]
+ * @returns {function(Uint8Array):number}
+ */
+export function arrToUint(n,littleendian=true){
+    return function(arr){
+        if (arr.length < n) {
+            throw new Error(`Not enough bytes to form an unsigned integer with ${n} bytes.`);
+        }
 
-    return ret
+        // Slice a portion of the array (length 4) and convert to Uint32
+        let ret=0;
+        for(let i=0;i<n;i++){
+            if(littleendian){
+                ret|=arr[i]<<(8*(n-1-i));
+            }else{
+                ret|=arr[i]<<(8*i);
+            }
+        }
+
+        return ret;
+    }
 }
 
 /**
