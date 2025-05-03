@@ -167,8 +167,6 @@ export async function parsePng(src){
     console.log(`IDAT length: ${IDAT.length}`);
     // idat is a zlib compressed stream. zlib only supports one compression method: deflate. (compression method 0 in the png ihdr)
 
-    const filteredData=zlibDecode(IDAT);
-
     if(!IHDR)throw``;
     const {width,height}=IHDR;
 
@@ -186,7 +184,9 @@ export async function parsePng(src){
         Up:2,
         Average:3,
         Paeth:4
-    })
+    });
+
+    const filteredData=zlibDecode(IDAT,(1+(width*bpp))*height);
 
     // this does modulo on copy into it, which is the desired behaviour
     const outdata=new Uint8Array(width*height*bpp);
@@ -196,9 +196,14 @@ export async function parsePng(src){
         throw `unexpected size ${height*scanline_numbytes} != ${filteredData.length}`;
     }
 
+    /** just to make typing faster ( s[so] is start of scanline ) */
+    const s=filteredData;
     for(let row=0;row<height;row++){
-        const scanline=filteredData.slice(row*(width*bpp+1));
-        const scanline_compression_type=scanline[0];
+        const msg=`processing row ${row+1} / ${height}`;
+        console.log(msg);
+
+        const so=row*(width*bpp+1)+1;
+        const scanline_compression_type=s[so-1];
         
         // positions:
         // c (top left) , b (top)
@@ -207,27 +212,27 @@ export async function parsePng(src){
         if(scanline_compression_type==ScanlineCompressionType.None){
             // Recon(x) = Filt(x)
             for(let col=0;col<width*bpp;col++){
-                const x=scanline[1+col];
+                const x= s[so+col];
                 outdata[row*width*bpp+col]=x;
             }
         }else if(scanline_compression_type==ScanlineCompressionType.Sub){
             // Recon(x) = Filt(x) + Recon(a)
             for(let col=0;col<width*bpp;col++){
-                const x=scanline[1+col];
+                const x= s[so+col];
                 const a= (col>=bpp) ? outdata[row*width*bpp+col-bpp] : 0;
                 outdata[row*width*bpp+col]=x + a;
             }
         }else if(scanline_compression_type==ScanlineCompressionType.Up){
             // Recon(x) = Filt(x) + Recon(b)
             for(let col=0;col<width*bpp;col++){
-                const x=scanline[1+col];
+                const x=s[so+col];
                 const b= (row>=(1)) ? outdata[(row-1)*width*bpp+col] : 0;
                 outdata[row*width*bpp+col]=x + b;
             }
         }else if(scanline_compression_type==ScanlineCompressionType.Average){
             // Recon(x) = Filt(x) + floor((Recon(a) + Recon(b)) / 2)
             for(let col=0;col<width*bpp;col++){
-                const x=scanline[1+col];
+                const x= s[so+col];
                 const a= (col>=(bpp)) ? outdata[row*width*bpp+col-bpp] : 0;
                 const b= (row>=(1)) ? outdata[(row-1)*width*bpp+col] : 0;
                 outdata[row*width*bpp+col]=x + Math.floor((a + b)/2);
@@ -236,7 +241,7 @@ export async function parsePng(src){
             // Recon(x) = Filt(x) + PaethPredictor(Recon(a), Recon(b), Recon(c))
 
             for(let col=0;col<width*bpp;col++){
-                const x=scanline[1+col];
+                const x= s[so+col];
                 const a= (col>=(bpp)) ? outdata[row*width*bpp+col-bpp] : 0;
                 const b= (row>=(1)) ? outdata[(row-1)*width*bpp+col] : 0;
                 const c= ((col>=bpp)&&(row>=1)) ? outdata[(row-1)*width*bpp+col-bpp] : 0;
