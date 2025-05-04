@@ -1,12 +1,8 @@
 declare module "glm/common"{
     // https://glmatrix.net/docs/common.js.html
 
-    /**
-     * Convert Degree To Radian
-     *
-     * @param a Angle in Degrees
-     */
-    function toRadian(a:number):number;
+    /** default is 0.000001 */
+    let EPSILON:number;
     /**
      * Tests whether or not the arguments have approximately the same value, within an absolute
      * or relative tolerance of glMatrix.EPSILON (an absolute tolerance is used for values less
@@ -17,6 +13,23 @@ declare module "glm/common"{
      * @returns True if the numbers are approximately equal, false otherwise.
      */
     function equals(a:number, b:number):boolean;
+
+    /** Intrinsic order for rot3->matrix conversion, default is xyz (i.e. first around x etc.). */
+    let ANGLE_ORDER:'xyz'|'xzy'|'yxz'|'yzx'|'zxy'|'zyx';
+
+    /**
+     * Convert Degree To Radian
+     *
+     * @param {Number} a Angle in Degrees
+     */
+    function toRadian(a:number):number;
+    
+    /**
+     * Convert Radian To Degree
+     *
+     * @param {Number} a Angle in Radians
+     */
+    function toDegree(a:number):number;
 }
 
 declare module "glm/mat2"{
@@ -101,7 +114,7 @@ declare module "glm/quat"{
          * @param {Number} x Angle to rotate around X axis in degrees.
          * @param {Number} y Angle to rotate around Y axis in degrees.
          * @param {Number} z Angle to rotate around Z axis in degrees.
-         * @param {'xyz'|'xzy'|'yxz'|'yzx'|'zxy'|'zyx'} [order=glMatrix.ANGLE_ORDER] Intrinsic order for conversion, default is zyx.
+         * @param {'xyz'|'xzy'|'yxz'|'yzx'|'zxy'|'zyx'} [order=glMatrix.ANGLE_ORDER] Intrinsic order for conversion, default is ANGLE_ORDER.
          * @returns {quat} out
          * @function
          */
@@ -191,17 +204,17 @@ declare module "glm/vec4"{
 declare module "glm"{
     // https://glmatrix.net/docs
 
-    export { toRadian } from "glm/common";
+    export { ANGLE_ORDER, EPSILON, toDegree, toRadian, equals } from "glm/common";
 
-    export { mat4 } from "glm/mat4";
-    export { mat3 } from "glm/mat3";
     export { mat2 } from "glm/mat2";
+    export { mat3 } from "glm/mat3";
+    export { mat4 } from "glm/mat4";
 
     export { mat2d } from "glm/mat2d";
 
-    export { vec4 } from "glm/vec4";
-    export { vec3 } from "glm/vec3";
     export { vec2 } from "glm/vec2";
+    export { vec3 } from "glm/vec3";
+    export { vec4 } from "glm/vec4";
 
     export { quat } from "glm/quat";
     export { quat2 } from "glm/quat2";
