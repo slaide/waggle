@@ -74,27 +74,34 @@ export async function createShaderProgram(gl,stageSources){
  */
 export async function makeProgram(gl){
     const shaderProgram=await createShaderProgram(gl,{
-        vs:`
-            attribute vec4 aVertexPosition;
-            attribute vec2 aVertexTexCoord;
+        vs:`#version 300 es // vert
+            
+            precision highp float;
+
+            in vec4 aVertexPosition;
+            in vec2 aVertexTexCoord;
 
             uniform mat4 uModelViewMatrix;
             uniform mat4 uProjectionMatrix;
 
-            varying highp vec2 vTextureCoord;
+            out vec2 vTextureCoord;
 
             void main() {
                 gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
                 vTextureCoord = aVertexTexCoord;
             }
         `,
-        fs:`
-            varying highp vec2 vTextureCoord;
+        fs:`#version 300 es // frag
+
+            precision highp float;
+
+            in vec2 vTextureCoord;
+            out vec4 fragColor;
 
             uniform sampler2D uSampler;
 
             void main() {
-                gl_FragColor = texture2D(uSampler, vTextureCoord);
+                fragColor = texture(uSampler, vTextureCoord);
             }
         `
     })
