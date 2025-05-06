@@ -6,7 +6,7 @@ import { vec3 } from "glm";
 /// @ts-ignore
 console.log(`running in strict mode? ${(function(){return !this})()}`)
 
-import {Scene,GameObject,makeBuffers,makeProgram} from "./scene.js";
+import {Transform,Scene,GameObject,makeBuffers,makeProgram} from "./scene.js";
 
 export async function main(){
     const canvas_element_id="main-canvas";
@@ -17,7 +17,14 @@ export async function main(){
         alert(error);throw error;
     }
 
-    const gl=el.getContext("webgl2",{});
+    const gl=el.getContext("webgl2",{
+        depth: true,
+        desynchronized: false,
+        antialias: false,
+        failIfMajorPerformanceCaveat: true,
+        powerPreference: 'default',
+        preserveDrawingBuffer: false,
+    });
     if(!gl){
         const error=`could not create webgl2 context`;
         alert(error);throw error;
@@ -25,13 +32,42 @@ export async function main(){
 
     const scene=new Scene(gl);
 
-    const newobject=new GameObject(
-        gl,
-        await makeBuffers(gl),
-        await makeProgram(gl),
-    );
-    newobject.transform.position=vec3.fromValues(0,0,-6);
-    scene.objects.push(newobject);
+    window.addEventListener("keydown",ev=>{
+        if(ev.key=="f"){
+            console.log("requesting fullscreen")
+            el.requestFullscreen()
+        }
+    })
+
+    const onresize=()=>{
+        const dpr=1;//window.devicePixelRatio;
+        const {width,height}={
+            width:Math.floor(el.clientWidth*dpr),
+            height:Math.floor(el.clientHeight*dpr),
+        };
+
+        // update canvas size (actual drawable surface)
+        el.width=width;
+        el.height=height;
+        // update viewport (active drawing area in canvas area)
+        gl.viewport(0,0,width,height);
+
+        scene.camera.aspect=width/height;
+    };
+    onresize();
+    window.addEventListener("resize",onresize);
+
+    for(let i=0;i<2;i++){
+        const transform=new Transform();
+        transform.position=vec3.fromValues(-1.5+i*3,0,-6);
+        const newobject=new GameObject(
+            gl,
+            await makeBuffers(gl),
+            await makeProgram(gl),
+            transform,
+        );
+        scene.objects.push(newobject);
+    }
 
     scene.draw();
 }

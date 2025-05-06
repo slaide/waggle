@@ -2,7 +2,7 @@
 
 import { GL } from "./gl.js";
 import { parsePng } from "./png.js";
-import { mat4, vec3, quat } from "glm";
+import { mat4, vec3, quat, glMatrix as glm } from "glm";
 
 /**
  * 
@@ -18,15 +18,15 @@ function createShaderStage(gl,stage, source){
     }[stage]);
     if(!shader){const error=`shader compilation failed`;console.error(error);throw error;}
 
-    gl.shaderSource(shader,source)
-    gl.compileShader(shader)
+    gl.shaderSource(shader,source);
+    gl.compileShader(shader);
 
     if(!gl.getShaderParameter(shader,GL.COMPILE_STATUS)){
-        const error=`error compiling shader ${gl.getShaderInfoLog(shader)}`
-        alert(error);throw error
+        const error=`error compiling shader ${gl.getShaderInfoLog(shader)}`;
+        alert(error);throw error;
     }
     
-    return shader
+    return shader;
 }
 
 /**
@@ -128,7 +128,7 @@ export async function makeProgram(gl){
         },
     };
 
-    return programInfo
+    return programInfo;
 }
 
 /**
@@ -237,6 +237,77 @@ export async function makeBuffers(gl){
     return buffers;
 }
 
+export class Camera{
+    constructor(){
+        this.fov=45;
+        this.aspect=800/600;
+        this.znear=0.1;
+        this.zfar=100;
+
+        this.position=vec3.fromValues(0,0,0);
+        this.rotation=quat.identity(quat.create());
+    }
+    get #target(){
+        const worldForward=vec3.create();
+        vec3.transformQuat(worldForward,vec3.fromValues(0,0,-1),this.rotation);
+        const target=vec3.create();
+        //subtract(vec3.create(),this.position,vec3.fromValues(0,0,1));
+        vec3.add(target,this.position,worldForward);
+
+        return target;
+    }
+    get forward(){
+        const target=this.#target;
+
+        // 1) forward  = normalize(center – eye)
+        const forward = vec3.create();
+        vec3.subtract(forward, this.position, target);
+        vec3.normalize(forward, forward);
+
+        return forward;
+    }
+    get right(){
+        const forward=this.forward;
+        const worldUp=vec3.fromValues(0,1,0);
+
+        // 2) right    = normalize(cross(forward, worldUp))
+        const right = vec3.create();
+        vec3.cross(right, forward, worldUp);
+        vec3.normalize(right, right);
+
+        return right;
+    }
+    get up(){
+        const forward=this.forward;
+        const right = this.right;
+
+        // 3) up       = cross(right, forward)
+        const up = vec3.create();
+        vec3.cross(up, right, forward);
+
+        return up;
+    }
+    get viewMatrix(){
+        const camTransform=mat4.fromRotationTranslation(
+            mat4.create(),
+            this.rotation,
+            this.position,
+        );
+        const ret=mat4.invert(mat4.create(),camTransform);
+        if(ret==null)throw `unable to invert matrix`;
+        return ret;
+    }
+    get projectionMatrix(){
+        return mat4.perspective(
+            mat4.create(),
+            glm.toRadian(this.fov),
+            this.aspect,
+            this.znear,
+            this.zfar
+        );
+    }
+}
+
 export class Scene{
     /**
      * 
@@ -248,6 +319,7 @@ export class Scene{
         this.gl=gl;
         /** @type {GameObject[]} */
         this.objects=[];
+        this.camera=new Camera();
     }
 
     /**
@@ -261,67 +333,138 @@ export class Scene{
         gl.enable(GL.DEPTH_TEST);
         gl.depthFunc(GL.LEQUAL);
 
-        const fov=(45*Math.PI)/180;
-        const aspect=800/600;
-        const znear=0.1;
-        const zfar=100;
-        
-        // set up camera
-        const projectionMatrix=mat4.create();
-        mat4.perspective(projectionMatrix,fov,aspect,znear,zfar);
-
-        // init model matrices
-        for(const object of this.objects){
-            const {buffers,programInfo}=object;
-
-            const modelViewMatrix=mat4.create();
-            mat4.translate(
-                modelViewMatrix,
-                modelViewMatrix,
-                [0,0,-6]
-            );
-
-            // bind vertex data: position
-            gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position);
-            gl.vertexAttribPointer(
-                programInfo.attribLocations.vertexPosition,
-                3,
-                GL.FLOAT,
-                false,
-                0, // stride of zero means 'auto'
-                0,
-            );
-
-            // bind vertex data: uv coords
-            gl.bindBuffer(GL.ARRAY_BUFFER,buffers.uvs);
-            gl.vertexAttribPointer(
-                programInfo.attribLocations.vertexUVCoords,
-                2,
-                GL.FLOAT,
-                false,
-                0,
-                0,
-            );
-
-            // upload shader binding data
-            gl.useProgram(programInfo.program);
-            gl.uniformMatrix4fv(
-                programInfo.uniformLocations.projectionMatrix,
-                false,
-                projectionMatrix,
-            );
-            gl.uniformMatrix4fv(
-                programInfo.uniformLocations.modelViewMatrix,
-                false,
-                modelViewMatrix,
-            );
-        }
-
         // this is used as part of game logic
         let rotation=0;
 
+        const cameraSpeedFactor={
+            move:2,
+            rotate:0.8
+        };
+        const cameraSpeed={
+            x:0,
+            y:0,
+            z:0,
+            rotx:0,
+            roty:0,
+        };
+        window.addEventListener("keydown",ev=>{
+            ev.preventDefault();
+
+            if(ev.key.toLowerCase()=="w"){
+                cameraSpeed.z=-cameraSpeedFactor.move;
+            }
+            if(ev.key.toLowerCase()=="s"){
+                cameraSpeed.z=cameraSpeedFactor.move;
+            }
+            if(ev.key.toLowerCase()=="a"){
+                cameraSpeed.x=-cameraSpeedFactor.move;
+            }
+            if(ev.key.toLowerCase()=="d"){
+                cameraSpeed.x=cameraSpeedFactor.move;
+            }
+            if(ev.key.toLowerCase()=="e"){
+                cameraSpeed.y=cameraSpeedFactor.move;
+            }
+            if(ev.key.toLowerCase()=="q"){
+                cameraSpeed.y=-cameraSpeedFactor.move;
+            }
+            if(ev.key==" "){
+                cameraSpeed.y=cameraSpeedFactor.move;
+            }
+            if(ev.key=="ArrowRight"){
+                cameraSpeed.roty=-cameraSpeedFactor.rotate;
+            }
+            if(ev.key=="ArrowLeft"){
+                cameraSpeed.roty=cameraSpeedFactor.rotate;
+            }
+            if(ev.key=="ArrowUp"){
+                cameraSpeed.rotx=cameraSpeedFactor.rotate;
+            }
+            if(ev.key=="ArrowDown"){
+                cameraSpeed.rotx=-cameraSpeedFactor.rotate;
+            }
+        })
+        window.addEventListener("keyup",ev=>{
+            ev.preventDefault();
+
+            if(ev.key.toLowerCase()=="w"){
+                cameraSpeed.z=0;
+            }
+            if(ev.key.toLowerCase()=="s"){
+                cameraSpeed.z=0;
+            }
+            if(ev.key.toLowerCase()=="a"){
+                cameraSpeed.x=0;
+            }
+            if(ev.key.toLowerCase()=="d"){
+                cameraSpeed.x=0;
+            }
+            if(ev.key.toLowerCase()=="e"){
+                cameraSpeed.y=0;
+            }
+            if(ev.key.toLowerCase()=="q"){
+                cameraSpeed.y=0;
+            }
+            if(ev.key==" "){
+                cameraSpeed.y=0;
+            }
+            if(ev.key=="ArrowRight"){
+                cameraSpeed.roty=0;
+            }
+            if(ev.key=="ArrowLeft"){
+                cameraSpeed.roty=0;
+            }
+            if(ev.key=="ArrowUp"){
+                cameraSpeed.rotx=0;
+            }
+            if(ev.key=="ArrowDown"){
+                cameraSpeed.rotx=0;
+            }
+        })
+
         /** @type {function(number):void} */
         const onFrameLogic=(deltatime_ms)=>{
+            const xStep=-cameraSpeed.x*deltatime_ms;
+            vec3.add(this.camera.position,this.camera.position,vec3.multiply(
+                vec3.create(),
+                this.camera.right,
+                vec3.fromValues(xStep,xStep,xStep)
+            ));
+            const yStep=cameraSpeed.y*deltatime_ms;
+            vec3.add(this.camera.position,this.camera.position,vec3.multiply(
+                vec3.create(),
+                vec3.fromValues(0,1,0),
+                vec3.fromValues(yStep,yStep,yStep)
+            ));
+            const zStep=cameraSpeed.z*deltatime_ms;
+            vec3.add(this.camera.position,this.camera.position,vec3.multiply(
+                vec3.create(),
+                this.camera.forward,
+                vec3.fromValues(zStep,zStep,zStep)
+            ));
+
+            quat.multiply( 
+                this.camera.rotation,
+                quat.setAxisAngle(
+                    quat.create(),
+                    this.camera.right,
+                    -cameraSpeed.rotx*deltatime_ms
+                ),
+                this.camera.rotation,
+            );
+            quat.multiply( 
+                this.camera.rotation,
+                quat.setAxisAngle(
+                    quat.create(),
+                    [0,1,0],
+                    cameraSpeed.roty*deltatime_ms
+                ),
+                this.camera.rotation,
+            );
+
+            // set up camera
+            const projectionMatrix=this.camera.projectionMatrix;
+
             for(const object of this.objects){
                 const {programInfo}=object;
 
@@ -329,21 +472,43 @@ export class Scene{
                 rotation+=40*deltatime_ms;
                 object.transform.rotation=quat.fromEuler(quat.create(),rotation*0.3,rotation*0.7,rotation);
 
-                const modelViewMatrix=object.transform.matrix;
+                const modelViewMatrix=mat4.multiply(
+                    mat4.create(),
+                    this.camera.viewMatrix,
+                    object.transform.matrix
+                );
 
                 gl.useProgram(programInfo.program);
+                // ensure transform is up to date
                 gl.uniformMatrix4fv(
                     programInfo.uniformLocations.modelViewMatrix,
                     false,
                     modelViewMatrix,
                 );
+                // also update camera projection matrix (TODO optimize to share this between draws)
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.projectionMatrix,
+                    false,
+                    projectionMatrix,
+                );
             }
         };
+
+        const frametimes=new Float32Array(30);
+        let framenum=0;
+        const original_title=document.title;
 
         let last_frametime=performance.now();
         const draw=()=>{
             const deltatime_ms=(performance.now()-last_frametime)*1e-3
             last_frametime=performance.now()
+
+            frametimes[(framenum++)%frametimes.length]=deltatime_ms;
+
+            const average_fps=frametimes.length/frametimes.reduce((o,n)=>o+n,0);
+            const min_fps=1/frametimes.reduce((o,n)=>Math.max(o,n));
+            const max_fps=1/frametimes.reduce((o,n)=>Math.min(o,n));
+            document.title=`${original_title} | fps ${average_fps.toFixed(1)} (${min_fps.toFixed(1)}, ${max_fps.toFixed(1)})`
 
             // run logic step
             onFrameLogic(deltatime_ms);
@@ -357,7 +522,9 @@ export class Scene{
                 gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position)
                 gl.bindBuffer(GL.ARRAY_BUFFER,buffers.uvs)
                 gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
-                
+
+                // prepare draw: activate shader
+                gl.useProgram(programInfo.program)
                 // prepare draw: bind texture
                 gl.activeTexture(gl.TEXTURE0)
                 gl.bindTexture(gl.TEXTURE_2D, buffers.texture)
@@ -365,8 +532,6 @@ export class Scene{
                 // prepare draw: enable vertex data 
                 gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition)
                 gl.enableVertexAttribArray(programInfo.attribLocations.vertexUVCoords)
-                // prepare draw: activate shader
-                gl.useProgram(programInfo.program)
 
                 // draw mesh
                 gl.drawElements(GL.TRIANGLES,36,GL.UNSIGNED_SHORT,0)
@@ -402,12 +567,42 @@ export class GameObject{
      * @param {GL} gl 
      * @param {Buffer} buffers 
      * @param {ProgramInfo} programInfo
+     * @param {Transform} transform
      */
-    constructor( gl, buffers, programInfo, ){
+    constructor( gl, buffers, programInfo, transform ){
         this.gl=gl;
         this.buffers=buffers;
         this.programInfo=programInfo;
+        this.transform=transform;
 
-        this.transform=new Transform();
+        // bind vertex data: position
+        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.vertexPosition,
+            3,
+            GL.FLOAT,
+            false,
+            0, // stride of zero means 'auto'
+            0,
+        );
+
+        // bind vertex data: uv coords
+        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.uvs);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.vertexUVCoords,
+            2,
+            GL.FLOAT,
+            false,
+            0,
+            0,
+        );
+
+        // upload shader binding data
+        gl.useProgram(programInfo.program);
+        gl.uniformMatrix4fv(
+            programInfo.uniformLocations.modelViewMatrix,
+            false,
+            this.transform.matrix,
+        );
     }
 }
