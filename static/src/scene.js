@@ -320,6 +320,8 @@ export class Scene{
         /** @type {GameObject[]} */
         this.objects=[];
         this.camera=new Camera();
+
+        this.shouldDraw=true;
     }
 
     /**
@@ -500,6 +502,11 @@ export class Scene{
 
         let last_frametime=performance.now();
         const draw=()=>{
+            if(!this.shouldDraw){
+                requestAnimationFrame(draw);
+                return;
+            }
+
             const deltatime_ms=(performance.now()-last_frametime)*1e-3
             last_frametime=performance.now()
 

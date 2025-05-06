@@ -57,6 +57,10 @@ export async function main(){
     onresize();
     window.addEventListener("resize",onresize);
 
+    window.addEventListener("visibilitychange",ev=>{
+        scene.shouldDraw=!document.hidden;
+    });
+
     for(let i=0;i<2;i++){
         const transform=new Transform();
         transform.position=vec3.fromValues(-1.5+i*3,0,-6);
