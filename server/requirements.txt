@@ -1,6 +1,6 @@
 # https://www.pythonanywhere.com/batteries_included/
 
-"uvicorn[standard]>=0.32.1"
+uvicorn[standard]>=0.32.1
 # update git repo on demand
 GitPython>=3.1.44
 # server infrastructure
