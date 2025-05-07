@@ -15,19 +15,29 @@
 			import {main} from "main";
 			window.addEventListener("load",main);
 		</script>
-	</head>
-	<body>
 		<style>
 			*{
 				border:0;
 				margin:0;
 				padding:0;
+				box-sizing:border-box;
+			}
+			body{
+				/* setting height to 100vh does not work on chromium on rpi5, so this workaround is used instead. */
+				top: 0;
+				left: 0; 
+				right: 0;
+				bottom: 0;
 			}
 			#main-canvas{
-				width:100vw;
-				height:100vh;
+				background:black;
+				position: absolute;
+				width:100%;
+				height:100%;
 			}
 		</style>
+	</head>
+	<body>
 		<canvas id="main-canvas"></canvas>
 	</body>
 </html>
