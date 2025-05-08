@@ -141,66 +141,28 @@ export async function makeProgram(gl){
 
 /**
  * @typedef {{
- * vertexData:WebGLBuffer,
- * indices:WebGLBuffer,
- * texture:WebGLTexture,
+ *   vertexData:WebGLBuffer,
+ *   indices:WebGLBuffer,
+ *   texture:WebGLTexture,
  * }} Buffer
  */
 /**
  * 
  * @param {GL} gl 
+ * @param {Float32Array} vertexData
+ * @param {Uint16Array} indices
  * @returns {Promise<Buffer>}
  */
-export async function makeBuffers(gl){
+export async function makeBuffers(gl,vertexData,indices){
     /** @type {Buffer} */
     const buffers={};
 
     buffers.vertexData=gl.createBuffer();
     gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
-    const vertexData=new Float32Array([
-        // Front face (4 edges)         // Front
-        -1.0, -1.0, 1.0,         0.0, 0.0,
-        1.0, -1.0, 1.0,         1.0, 0.0,
-        1.0, 1.0, 1.0,         1.0, 1.0,
-        -1.0, 1.0, 1.0,         0.0, 1.0,
-        // Back face (4 edges)         // Back
-        -1.0, -1.0, -1.0,          0.0, 0.0,
-        -1.0, 1.0, -1.0,          1.0, 0.0, 
-        1.0, 1.0, -1.0,          1.0, 1.0, 
-        1.0, -1.0, -1.0,         0.0, 1.0,
-        // Top face (4 edges)         // Top
-        -1.0, 1.0, -1.0,          0.0, 0.0, 
-        -1.0, 1.0, 1.0,          1.0, 0.0, 
-        1.0, 1.0, 1.0,          1.0, 1.0, 
-        1.0, 1.0, -1.0,         0.0, 1.0,
-        // Bottom face (4 edges)         // Bottom
-        -1.0, -1.0, -1.0,          0.0, 0.0, 
-        1.0, -1.0, -1.0,          1.0, 0.0, 
-        1.0, -1.0, 1.0,          1.0, 1.0, 
-        -1.0, -1.0, 1.0,         0.0, 1.0,
-        // Right face (4 edges)         // Right
-        1.0, -1.0, -1.0,          0.0, 0.0, 
-        1.0, 1.0, -1.0,          1.0, 0.0, 
-        1.0, 1.0, 1.0,          1.0, 1.0, 
-        1.0, -1.0, 1.0,         0.0, 1.0,
-        // Left face (4 edges)         // Left
-        -1.0, -1.0, -1.0,          0.0, 0.0, 
-        -1.0, -1.0, 1.0,          1.0, 0.0, 
-        -1.0, 1.0, 1.0,          1.0, 1.0, 
-        -1.0, 1.0, -1.0,         0.0, 1.0,
-    ]);
     gl.bufferData(GL.ARRAY_BUFFER, vertexData, GL.STATIC_DRAW);
 
     buffers.indices=gl.createBuffer();
     gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER,buffers.indices);
-    const indices=new Uint16Array([
-        0,  1,  2,      0,  2,  3,    // front
-        4,  5,  6,      4,  6,  7,    // back
-        8,  9,  10,     8,  10, 11,   // top
-        12, 13, 14,     12, 14, 15,   // bottom
-        16, 17, 18,     16, 18, 19,   // right
-        20, 21, 22,     20, 22, 23,   // left
-    ]);
     gl.bufferData(GL.ELEMENT_ARRAY_BUFFER,indices,GL.STATIC_DRAW);
 
     buffers.texture=gl.createTexture();
@@ -543,7 +505,10 @@ export class Scene{
                 gl.enableVertexAttribArray(programInfo.attribLocations.vertexUVCoords)
 
                 // draw mesh
-                gl.drawElements(GL.TRIANGLES,numTris,GL.UNSIGNED_SHORT,0)
+                // in triangle mode: 3 elements per tri (hence count=numTris*3)
+                // in line mode: 2 elements per line (hence count=numLines*2)
+                // in point mode: 1 element per point (hence count=numPoints)
+                gl.drawElements(GL.TRIANGLES,numTris*3,GL.UNSIGNED_SHORT,0)
             }
 
             requestAnimationFrame(draw)
