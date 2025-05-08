@@ -58,7 +58,7 @@ export async function createShaderProgram(gl,stageSources){
  *     program: WebGLProgram,
  *     attribLocations: {
  *         vertexPosition: GLint,
- *         vertexUVCoords:GLint,
+ *         vertexUVCoords: GLint,
  *     },
  *     uniformLocations: {
  *         projectionMatrix: WebGLUniformLocation,
@@ -67,6 +67,7 @@ export async function createShaderProgram(gl,stageSources){
  *     }
  * }} ProgramInfo
  */
+
 /**
  * 
  * @param {WebGL2RenderingContext} gl
@@ -140,8 +141,7 @@ export async function makeProgram(gl){
 
 /**
  * @typedef {{
- * position:WebGLBuffer,
- * uvs:WebGLBuffer,
+ * vertexData:WebGLBuffer,
  * indices:WebGLBuffer,
  * texture:WebGLTexture,
  * }} Buffer
@@ -155,46 +155,41 @@ export async function makeBuffers(gl){
     /** @type {Buffer} */
     const buffers={};
 
-    buffers.position=gl.createBuffer();
-    gl.bindBuffer(GL.ARRAY_BUFFER, buffers.position);
-    const positions=new Float32Array([
-        // Front face (4 edges)
-        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
-
-        // Back face (4 edges)
-        -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
-
-        // Top face (4 edges)
-        -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
-
-        // Bottom face (4 edges)
-        -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0,
-
-        // Right face (4 edges)
-        1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
-
-        // Left face (4 edges)
-        -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0,
+    buffers.vertexData=gl.createBuffer();
+    gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
+    const vertexData=new Float32Array([
+        // Front face (4 edges)         // Front
+        -1.0, -1.0, 1.0,         0.0, 0.0,
+        1.0, -1.0, 1.0,         1.0, 0.0,
+        1.0, 1.0, 1.0,         1.0, 1.0,
+        -1.0, 1.0, 1.0,         0.0, 1.0,
+        // Back face (4 edges)         // Back
+        -1.0, -1.0, -1.0,          0.0, 0.0,
+        -1.0, 1.0, -1.0,          1.0, 0.0, 
+        1.0, 1.0, -1.0,          1.0, 1.0, 
+        1.0, -1.0, -1.0,         0.0, 1.0,
+        // Top face (4 edges)         // Top
+        -1.0, 1.0, -1.0,          0.0, 0.0, 
+        -1.0, 1.0, 1.0,          1.0, 0.0, 
+        1.0, 1.0, 1.0,          1.0, 1.0, 
+        1.0, 1.0, -1.0,         0.0, 1.0,
+        // Bottom face (4 edges)         // Bottom
+        -1.0, -1.0, -1.0,          0.0, 0.0, 
+        1.0, -1.0, -1.0,          1.0, 0.0, 
+        1.0, -1.0, 1.0,          1.0, 1.0, 
+        -1.0, -1.0, 1.0,         0.0, 1.0,
+        // Right face (4 edges)         // Right
+        1.0, -1.0, -1.0,          0.0, 0.0, 
+        1.0, 1.0, -1.0,          1.0, 0.0, 
+        1.0, 1.0, 1.0,          1.0, 1.0, 
+        1.0, -1.0, 1.0,         0.0, 1.0,
+        // Left face (4 edges)         // Left
+        -1.0, -1.0, -1.0,          0.0, 0.0, 
+        -1.0, -1.0, 1.0,          1.0, 0.0, 
+        -1.0, 1.0, 1.0,          1.0, 1.0, 
+        -1.0, 1.0, -1.0,         0.0, 1.0,
     ]);
-    gl.bufferData(GL.ARRAY_BUFFER, positions, GL.STATIC_DRAW);
-
-    buffers.uvs=gl.createBuffer();
-    gl.bindBuffer(GL.ARRAY_BUFFER, buffers.uvs);
-    const uvs=new Float32Array([
-        // Front
-        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        // Back
-        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        // Top
-        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        // Bottom
-        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        // Right
-        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        // Left
-        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-    ]);
-    gl.bufferData(GL.ARRAY_BUFFER, uvs, GL.STATIC_DRAW);
+    gl.bufferData(GL.ARRAY_BUFFER, vertexData, GL.STATIC_DRAW);
 
     buffers.indices=gl.createBuffer();
     gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER,buffers.indices);
@@ -456,6 +451,7 @@ export class Scene{
                 this.camera.rotation,
                 quat.setAxisAngle(
                     quat.create(),
+                    /// @ts-ignore
                     this.camera.right,
                     -cameraSpeed.rotx*deltatime_ms
                 ),
@@ -531,10 +527,9 @@ export class Scene{
             gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
 
             for(const object of this.objects){
-                const {buffers,programInfo}=object;
+                const {buffers,programInfo,numTris}=object;
 
-                gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position)
-                gl.bindBuffer(GL.ARRAY_BUFFER,buffers.uvs)
+                gl.bindBuffer(GL.ARRAY_BUFFER,buffers.vertexData)
                 gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
 
                 // prepare draw: activate shader
@@ -548,7 +543,7 @@ export class Scene{
                 gl.enableVertexAttribArray(programInfo.attribLocations.vertexUVCoords)
 
                 // draw mesh
-                gl.drawElements(GL.TRIANGLES,36,GL.UNSIGNED_SHORT,0)
+                gl.drawElements(GL.TRIANGLES,numTris,GL.UNSIGNED_SHORT,0)
             }
 
             requestAnimationFrame(draw)
@@ -579,36 +574,36 @@ export class GameObject{
     /**
      *
      * @param {GL} gl 
-     * @param {Buffer} buffers 
+     * @param {Buffer} buffers
+     * @param {number} numTris 
      * @param {ProgramInfo} programInfo
      * @param {Transform} transform
      */
-    constructor( gl, buffers, programInfo, transform ){
+    constructor( gl, buffers, numTris, programInfo, transform ){
         this.gl=gl;
         this.buffers=buffers;
+        this.numTris=numTris;
         this.programInfo=programInfo;
         this.transform=transform;
 
-        // bind vertex data: position
-        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.position);
+        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.vertexData);
+        // bind vertex data: position (in common vertexdata buffer)
         gl.vertexAttribPointer(
             programInfo.attribLocations.vertexPosition,
             3,
             GL.FLOAT,
             false,
-            0, // stride of zero means 'auto'
+            5*4, // 3 floats for vert pos, then 2 floats for uv
             0,
         );
-
-        // bind vertex data: uv coords
-        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.uvs);
+        // bind vertex data: uv coords (in common vertexdata buffer)
         gl.vertexAttribPointer(
             programInfo.attribLocations.vertexUVCoords,
             2,
             GL.FLOAT,
             false,
-            0,
-            0,
+            5*4, // 3 floats for vert pos, then 2 floats for uv
+            3*4, // starts past vert pos
         );
 
         // upload shader binding data

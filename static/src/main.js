@@ -67,6 +67,7 @@ export async function main(){
         const newobject=new GameObject(
             gl,
             await makeBuffers(gl),
+            36,
             await makeProgram(gl),
             transform,
         );
