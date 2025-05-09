@@ -149,11 +149,12 @@ export async function makeProgram(gl){
 /**
  * 
  * @param {GL} gl 
+ * @param {string} diffuseTexturePath
  * @param {Float32Array} vertexData
  * @param {Uint16Array} indices
  * @returns {Promise<Buffer>}
  */
-export async function makeBuffers(gl,vertexData,indices){
+export async function makeBuffers(gl,diffuseTexturePath,vertexData,indices){
     /** @type {Buffer} */
     const buffers={};
 
@@ -168,14 +169,7 @@ export async function makeBuffers(gl,vertexData,indices){
     buffers.texture=gl.createTexture();
     gl.bindTexture(GL.TEXTURE_2D, buffers.texture);
 
-    // from http://pluspng.com/cat-png-1149.html, but hosted on a different platform with more permissive CORS
-    // "https://i.ibb.co/d0FsH21r/cat.png"
-
-    // from https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Using_textures_in_WebGL
-    // "https://raw.githubusercontent.com/mdn/dom-examples/main/webgl-examples/tutorial/sample6/cubetexture.png"
-    const {width,height,data}=await parsePng(
-        "https://raw.githubusercontent.com/mdn/dom-examples/main/webgl-examples/tutorial/sample6/cubetexture.png"
-    );
+    const {width,height,data}=await parsePng(diffuseTexturePath);
 
     // Flip image pixels into the bottom-to-top order that WebGL expects.
     // must be called BEFORE image data is uploaded!
