@@ -2,6 +2,5 @@
 /types/**
 !/types/glm.d.ts
 /node_modules
-/package-lock.json
 /dist
 /**/*.js
