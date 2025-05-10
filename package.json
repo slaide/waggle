@@ -4,10 +4,10 @@
   "description": "rendering framework based on webgl2",
   "main": "index.js",
   "scripts": {
-    "build:ts": "tsc --project tsconfig.json --outDir .",
-    "build:wasm": "asc assembly/index.ts --outFile dist/wasm/game.wasm --optimize --bindings js",
+    "build:ts": "tsc --project tsconfig.json",
+    "build:wasm": "asc --config asconfig.json --target release -b esm",
     "bundle": "rollup -c",
-    "build": "npm run build:ts && npm run build:wasm && npm run bundle",
+    "build": "npm run build:ts && npm run build:wasm",
     "start": "serve dist"
   },
   "repository": {

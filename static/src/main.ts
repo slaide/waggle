@@ -67,10 +67,9 @@ export async function main(){
         transform.position=vec3.fromValues(-1.5+i*3,0,-6);
 
         const starttime=performance.now();
-        console.log("parsing...")
-        const {vertexData,indices,material}=await parseObj("./resources/cube.obj");
-        console.log("parsing done")
-        console.log(`${performance.now()-starttime}`);
+        const objpath="./resources/cube.obj";
+        const {vertexData,indices,material}=await parseObj(objpath);
+        console.log(`parsed ${objpath} in ${(performance.now()-starttime).toFixed(2)}ms`);
         const newobject=new GameObject(
             gl,
             await makeBuffers(gl,material?.map_diffuse??"",vertexData,indices),

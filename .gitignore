@@ -1,6 +1,8 @@
 /**/.DS_Store
 /types/**
 !/types/glm.d.ts
+/**/*.d.ts
+/**/*.js
+/**/*.wasm
 /node_modules
 /dist
-/**/*.js

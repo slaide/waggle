@@ -16,10 +16,11 @@
         "typeRoots": ["types"],
         "paths":{ }
     },
-    "exclude": [],
+    "exclude": [
+        "static/src/**/*.as.ts"
+    ],
     "include": [
-        "static/src/**/*.ts",
-        "static/src/**/*.d.ts"
+        "static/src/**/*.ts"
     ]
 }
   

@@ -1,0 +1,9 @@
+{
+    "entries": [
+    ],
+    "targets": {
+        "release": {
+            "optimize": true
+        }
+    }
+}

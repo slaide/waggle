@@ -15,12 +15,12 @@ class Reader{
         this.i=0;
     }
 
-    get c(){
+    get c():string{
         return this.bytes[this.i];
     }
 
     /** get next byte */
-    next(){
+    next():string{
         return this.bytes[this.i++];
     }
 
@@ -29,19 +29,19 @@ class Reader{
      * @param n 
      * @returns 
      */
-    getN(n:number){
+    getN(n:number):string{
         return this.bytes.substring(this.i,this.i+n);
     }
     /**
      * 
      * @param n 
      */
-    skipN(n:number){
+    skipN(n:number):void{
         this.i+=n;
     }
 
     /** returns true if `i` points past the current contents */
-    get empty(){
+    get empty():boolean{
         return this.bytes.length<=this.i;
     }
 
@@ -49,21 +49,21 @@ class Reader{
      * 
      * @param f returns true if `c`should be skipped
      */
-    skipWhile(f:(c:string)=>boolean){
+    skipWhile(f:(c:string)=>boolean):void{
         while(!this.empty && f(this.c))this.i++;
     }
     /**
      * 
      * @param f returns true if `c`should be skipped
      */
-    skipUntil(f:(c:string)=>boolean){
+    skipUntil(f:(c:string)=>boolean):void{
         while(!this.empty && !f(this.c))this.i++;
     }
     /**
      * 
      * @param f returns true if `c`should be included
      */
-    takeWhile(f:(c:string)=>boolean){
+    takeWhile(f:(c:string)=>boolean):string{
         let i=this.i;
         while(!this.empty && f(this.bytes[i]))i++;
         return this.bytes.substring(this.i,i);
@@ -72,7 +72,7 @@ class Reader{
      * 
      * @param f returns true if `c`should be included
      */
-    takeUntil(f:(c:string)=>boolean){
+    takeUntil(f:(c:string)=>boolean):string{
         let i=this.i;
         while(!this.empty && !f(this.bytes[i]))i++;
         return this.bytes.substring(this.i,i);
@@ -81,22 +81,22 @@ class Reader{
     /**
      * returns number as string (length may be zero)
      */
-    parseFloat(){
-        const number_charBytes=this.takeWhile(c=>"0123456789.e+-".indexOf(c)>=0);
-        this.skipN(number_charBytes.length);
-        return number_charBytes;
+    parseFloat():string{
+        const number=this.takeWhile(c=>"0123456789.e+-".indexOf(c)>=0);
+        this.skipN(number.length);
+        return number;
     }
     /**
      * returns number as string (length may be zero)
      */
-    parseInteger(){
-        const number_charBytes=this.takeWhile(c=>"0123456789+-".indexOf(c)>=0);
-        this.skipN(number_charBytes.length);
-        return number_charBytes;
+    parseInteger():string{
+        const number=this.takeWhile(c=>"0123456789+-".indexOf(c)>=0);
+        this.skipN(number.length);
+        return number;
     }
 
     /** skip to, and then over, newline */
-    skipOverLineEnd(){
+    skipOverLineEnd():void{
         this.skipWhile(c=>c!=="\n");
         this.skipN(1);
     }
@@ -104,55 +104,65 @@ class Reader{
 
 /**
  * 
- * @param {string} c 
+ * @param c 
  * @returns 
  */
-function isWhitespace(c:string){
+function isWhitespace(c:string):boolean{
     return " \t\r".indexOf(c)!==-1;
 }
 /**
  * 
- * @param {string} c 
+ * @param c 
  * @returns 
  */
-function isWhitespaceOrNewline(c:string){
+function isWhitespaceOrNewline(c:string):boolean{
     return " \t\r\n".indexOf(c)!==-1;
 }
 
-type ObjMaterialTexture={
+/*type ObjMaterialTexture={
     source:string;
     blendu?:boolean;
     blendv?:boolean;
     boost:number;
-};
+};*/
 
-type ObjMaterial={
-    ambient?:vec3;
-    diffuse?:vec3;
-    specular?:vec3;
-    specularExponent?:number;
-    transparency?:number;
+class ObjMaterial{
+    ambient:vec3|undefined=undefined;
+    diffuse:vec3|undefined=undefined;
+    specular:vec3|undefined=undefined;
+    specularExponent:number|undefined=undefined;
+    transparency:number|undefined=undefined;
 
-    illuminationMode?:number;
+    illuminationMode:number|undefined=undefined;
 
-    map_ambient?:string;
-    map_diffuse?:string;
-    map_specular?:string;
-    map_specularExponent?:string;
-};
+    map_ambient:string|undefined=undefined;
+    map_diffuse:string|undefined=undefined;
+    map_specular:string|undefined=undefined;
+    map_specularExponent:string|undefined=undefined;
+}
 
-type ObjMtlFile={
+class ObjMtlFile{
     path:string;
     materials:{
         [mtlName:string]:ObjMaterial|undefined;
     };
+    
+    constructor(
+        path:string,
+        materials:{
+            [mtlName:string]:ObjMaterial|undefined;
+        },
+    ){
+        this.path=path;
+        this.materials=materials;
+    }
 };
 
 function parseMtl(path:string,s:string):ObjMtlFile{
     const ret:ObjMtlFile={path,materials:{}};
     const reader=new Reader(s);
 
-    let lastMaterial:ObjMaterial={};
+    let lastMaterial=new ObjMaterial();
     while(!reader.empty){
         reader.skipWhile(isWhitespace);
 
@@ -176,7 +186,7 @@ function parseMtl(path:string,s:string):ObjMtlFile{
             const materialName=reader.takeUntil(isWhitespace);
             reader.skipN(materialName.length);
 
-            lastMaterial={};
+            lastMaterial=new ObjMaterial();
             ret.materials[materialName]=lastMaterial;
 
             reader.skipOverLineEnd();
