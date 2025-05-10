@@ -83,44 +83,35 @@ export async function main(){
     scene.draw();
 }
 
-/**
- * @typedef {{
- *   touchId:number,
- *   surfaceId:number,
- *   position: DOMPointReadOnly,
- *   surfaceDimensions?:DOMRectReadOnly,
- * }} GamepadTouch
- * */
-/**
- * @typedef {{
- *   hasOrientation:boolean,
- *   hasPosition:boolean,
- *   position:Float32Array,
- *   linearVelocity:Float32Array,
- *   linearAcceleration:Float32Array,
- *   orientation:Float32Array,
- *   angularVelocity:number,
- *   angularAcceleration:number,
- * }} GamepadPose
- * https://developer.mozilla.org/en-US/docs/Web/API/GamepadPose
- * */
-/**
- * @typedef {""|"right"|"left"} GamepadHand
- * https://developer.mozilla.org/en-US/docs/Web/API/Gamepad/hand
- * */
-/**
- * @typedef {{
- *   hand?:GamepadHand,
- *   pose?:GamepadPose,
- *   hapticActuators?:GamepadHapticActuator[],
- *   touches?:GamepadTouch[],
- * }} Gamepad2
- * */
+type GamepadTouch={
+  touchId:number,
+  surfaceId:number,
+  position: DOMPointReadOnly,
+  surfaceDimensions?:DOMRectReadOnly,
+};
+/** https://developer.mozilla.org/en-US/docs/Web/API/GamepadPose */
+type GamepadPose={
+  hasOrientation:boolean,
+  hasPosition:boolean,
+  position:Float32Array,
+  linearVelocity:Float32Array,
+  linearAcceleration:Float32Array,
+  orientation:Float32Array,
+  angularVelocity:number,
+  angularAcceleration:number,
+};
+/** https://developer.mozilla.org/en-US/docs/Web/API/Gamepad/hand */
+type GamepadHand=""|"right"|"left";
+type Gamepad2=Gamepad&{
+  hand?:GamepadHand,
+  pose?:GamepadPose,
+  hapticActuators?:GamepadHapticActuator[],
+  touches?:GamepadTouch[],
+};
 window.addEventListener("gamepadconnected",async (e)=>{
     const gpid=e.gamepad.index;
 
-    /** @type {(Gamepad&Gamepad2)|null} */
-    const gp=navigator.getGamepads()[gpid];
+    const gp:Gamepad2|null=navigator.getGamepads()[gpid];
     if(gp==null)throw`gamepad not found (this is a bug)`;
     console.log(
         `Gamepad connected at index ${gp.index}: `
@@ -135,8 +126,7 @@ window.addEventListener("gamepadconnected",async (e)=>{
     // 
 
     setInterval(async ()=>{
-        /** @type {(Gamepad&Gamepad2)|null} */
-        const gp=navigator.getGamepads()[gpid];
+        const gp:Gamepad2|null=navigator.getGamepads()[gpid];
         if(gp==null)throw`gamepad not found (this is a bug)`;
 
         gp.buttons.forEach((v,i)=>{
@@ -145,9 +135,9 @@ window.addEventListener("gamepadconnected",async (e)=>{
         gp.axes.forEach((v,i)=>{
             console.log(`axis ${i} value ${v.toFixed(3)}`)
         })
-        /*gp.touches?.forEach((v,i)=>{
+        gp.touches?.forEach((v,i)=>{
             console.log(`touch ${i} value ${v}`)
-        })*/
+        })
 
         // standard mapping: https://w3c.github.io/gamepad/#remapping
         const lefttriggervalue=Math.min(gp.buttons[6].value,1)
