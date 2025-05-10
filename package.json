@@ -22,9 +22,7 @@
   "homepage": "https://github.com/slaide/waggle#readme",
   "devDependencies": {
     "assemblyscript": "^0.27.36",
-    "esbuild": "^0.25.4",
     "gl-matrix": "^3.4.3",
-    "rollup": "^4.40.2",
     "typescript": "^5.8.3"
   }
 }

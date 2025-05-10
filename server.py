@@ -22,8 +22,8 @@ app = FastAPI()
 @app.post("/update_server")
 def update_server(request:Request):
     repo=git.Repo(PROJROOTDIR)
-    origin=repo.remotes.origin
-    origin.pull()
+    # git pull --depth=1 origin main
+    repo.git.fetch('origin', 'main', '--depth', '1')
 
     return "Updated successfully", 200
 
