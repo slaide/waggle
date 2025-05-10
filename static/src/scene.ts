@@ -103,7 +103,6 @@ export async function makeProgram(gl:GLC){
 
             void main() {
                 fragColor = texture(uSampler, vTextureCoord);
-                fragColor=vec4(1,1,1,1);
             }
         `
     })
@@ -177,7 +176,7 @@ export async function makeBuffers(
     buffers.texture=gl.createTexture();
     gl.bindTexture(GL.TEXTURE_2D, buffers.texture);
 
-    let imageres={width:1,height:1,data:new Uint8Array([1,1,1,1])};
+    let imageres={width:1,height:1,data:new Uint8Array([0.5,0.5,0.5,1])};
     if(diffuseTexturePath){
         // @ts-ignore
         imageres=await parsePng(diffuseTexturePath);

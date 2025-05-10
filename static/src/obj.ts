@@ -119,38 +119,42 @@ function isWhitespaceOrNewline(c:string):boolean{
     return " \t\r\n".indexOf(c)!==-1;
 }
 
-/*type ObjMaterialTexture={
+class ObjMaterialTexture{
     source:string;
     blendu?:boolean;
     blendv?:boolean;
-    boost:number;
-};*/
+    boost?:number;
+    
+    constructor(source:string){
+        this.source=source;
+    }
+};
 
 class ObjMaterial{
-    ambient:vec3|undefined=undefined;
-    diffuse:vec3|undefined=undefined;
-    specular:vec3|undefined=undefined;
-    specularExponent:number|undefined=undefined;
-    transparency:number|undefined=undefined;
+    ambient?:vec3;
+    diffuse?:vec3;
+    specular?:vec3;
+    specularExponent?:number;
+    transparency?:number;
+    
+    illuminationMode?:number;
 
-    illuminationMode:number|undefined=undefined;
-
-    map_ambient:string|undefined=undefined;
-    map_diffuse:string|undefined=undefined;
-    map_specular:string|undefined=undefined;
-    map_specularExponent:string|undefined=undefined;
+    map_ambient?:ObjMaterialTexture;
+    map_diffuse?:ObjMaterialTexture;
+    map_specular?:ObjMaterialTexture;
+    map_specularExponent?:ObjMaterialTexture;
 }
 
 class ObjMtlFile{
     path:string;
     materials:{
-        [mtlName:string]:ObjMaterial|undefined;
+        [mtlName:string]:ObjMaterial;
     };
     
     constructor(
         path:string,
         materials:{
-            [mtlName:string]:ObjMaterial|undefined;
+            [mtlName:string]:ObjMaterial;
         },
     ){
         this.path=path;
@@ -237,17 +241,23 @@ function parseMtl(path:string,s:string):ObjMtlFile{
             continue;
         }else if(directive=="map_Ka"){
             // map relative to absolute path
-            lastMaterial.map_ambient=path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespace);
+            lastMaterial.map_ambient=new ObjMaterialTexture(
+                path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespaceOrNewline)
+            );
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="map_Kd"){
             // map relative to absolute path
-            lastMaterial.map_diffuse=path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespace);
+            lastMaterial.map_diffuse=new ObjMaterialTexture(
+                path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespaceOrNewline)
+            );
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="map_Ks"){
             // map relative to absolute path
-            lastMaterial.map_specular=path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespace);
+            lastMaterial.map_specular=new ObjMaterialTexture(
+                path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespaceOrNewline)
+            );
             reader.skipOverLineEnd();
             continue;
         }else{
@@ -257,6 +267,10 @@ function parseMtl(path:string,s:string):ObjMtlFile{
     return ret;
 }
 
+/**
+ * performance comparison: https://aras-p.info/blog/2022/05/14/comparing-obj-parse-libraries/
+ * (this implementation is really slow..)
+ */
 class ObjFile{
     vertexData:Float32Array;
     indices:Uint32Array;

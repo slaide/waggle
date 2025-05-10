@@ -70,9 +70,11 @@ export async function main(){
         const objpath="./resources/cube.obj";
         const {vertexData,indices,material}=await parseObj(objpath);
         console.log(`parsed ${objpath} in ${(performance.now()-starttime).toFixed(2)}ms`);
+
+        const diffuse_map_source=material?.map_diffuse?.source??"";
         const newobject=new GameObject(
             gl,
-            await makeBuffers(gl,material?.map_diffuse??"",vertexData,indices),
+            await makeBuffers(gl,diffuse_map_source,vertexData,indices),
             indices.length/3,
             await makeProgram(gl),
             transform,
