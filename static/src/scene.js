@@ -151,7 +151,7 @@ export async function makeProgram(gl){
  * @param {GL} gl 
  * @param {string} diffuseTexturePath
  * @param {Float32Array} vertexData
- * @param {Uint16Array} indices
+ * @param {Uint32Array} indices
  * @returns {Promise<Buffer>}
  */
 export async function makeBuffers(gl,diffuseTexturePath,vertexData,indices){
@@ -169,7 +169,12 @@ export async function makeBuffers(gl,diffuseTexturePath,vertexData,indices){
     buffers.texture=gl.createTexture();
     gl.bindTexture(GL.TEXTURE_2D, buffers.texture);
 
-    const {width,height,data}=await parsePng(diffuseTexturePath);
+    let imageres={width:1,height:1,data:new Uint8Array([1,1,1,1])};
+    if(diffuseTexturePath){
+        // @ts-ignore
+        imageres=await parsePng(diffuseTexturePath);
+    }
+    const {width,height,data}=imageres;
 
     // Flip image pixels into the bottom-to-top order that WebGL expects.
     // must be called BEFORE image data is uploaded!
@@ -502,7 +507,7 @@ export class Scene{
                 // in triangle mode: 3 elements per tri (hence count=numTris*3)
                 // in line mode: 2 elements per line (hence count=numLines*2)
                 // in point mode: 1 element per point (hence count=numPoints)
-                gl.drawElements(GL.TRIANGLES,numTris*3,GL.UNSIGNED_SHORT,0)
+                gl.drawElements(GL.TRIANGLES,numTris*3,GL.UNSIGNED_INT,0)
             }
 
             requestAnimationFrame(draw)

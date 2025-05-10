@@ -214,7 +214,7 @@ class ObjFile{
     /**
      * 
      * @param {Float32Array} vertexData 
-     * @param {Uint16Array} indices 
+     * @param {Uint32Array} indices 
      * @param {ObjMaterial?} material
      */
     constructor(
@@ -338,7 +338,7 @@ export async function parseObj(filepath){
         }else if(directiveString=="f"){
             // format: v/vt/vn v/vt/vn v/vt/vn [v/vt/vn]
             // (data contains indices into vertexData, which entries are constructed on the fly)
-            const data=new Uint16Array([0,0,0,0]);
+            const data=new Uint32Array([0,0,0,0]);
             let isQuad=false;
 
             // skip over directive
@@ -355,7 +355,7 @@ export async function parseObj(filepath){
                 }
 
                 /** data for a single vertex in this face */
-                const faceVertexData=new Uint16Array([0,0,0]);
+                const faceVertexData=new Uint32Array([0,0,0]);
 
                 for(let s=0;s<3;){
                     const number_string=bytes.parseFloat();
@@ -443,7 +443,7 @@ export async function parseObj(filepath){
 
     return new ObjFile(
         new Float32Array(vertexData),
-        new Uint16Array(indices),
+        new Uint32Array(indices),
         material,
     );
 }
