@@ -1,0 +1,30 @@
+{
+  "name": "waggle",
+  "version": "1.0.0",
+  "description": "rendering framework based on webgl2",
+  "main": "index.js",
+  "scripts": {
+    "build:ts": "tsc --project tsconfig.json --outDir .",
+    "build:wasm": "asc assembly/index.ts --outFile dist/wasm/game.wasm --optimize --bindings js",
+    "bundle": "rollup -c",
+    "build": "npm run build:ts && npm run build:wasm && npm run bundle",
+    "start": "serve dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/slaide/waggle.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/slaide/waggle/issues"
+  },
+  "homepage": "https://github.com/slaide/waggle#readme",
+  "devDependencies": {
+    "assemblyscript": "^0.27.36",
+    "esbuild": "^0.25.4",
+    "gl-matrix": "^3.4.3",
+    "rollup": "^4.40.2",
+    "typescript": "^5.8.3"
+  }
+}

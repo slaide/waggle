@@ -1,4 +1,4 @@
 "use strict";
 
 export const GL=WebGL2RenderingContext;
-/** @typedef {WebGL2RenderingContext} GL */
+export type GLC = WebGL2RenderingContext;

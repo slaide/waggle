@@ -6,7 +6,7 @@
  * @param {string} str 
  * @returns {Uint8Array}
  */
-export function stringToUint8Array(str) {
+export function stringToUint8Array(str:string):Uint8Array {
     const uint8Array = new Uint8Array(str.length);
     for (let i = 0; i < str.length; i++) {
         uint8Array[i] = str.charCodeAt(i);  // Get ASCII value of each character
@@ -18,7 +18,7 @@ export function stringToUint8Array(str) {
  * @param {Uint8Array} arr 
  * @returns {string}
  */
-export function uint8ArrayToString(arr){
+export function uint8ArrayToString(arr:Uint8Array):string{
     let ret=""
     for(let i=0;i<arr.length;i++){
         ret+=String.fromCharCode(arr[i])
@@ -31,7 +31,7 @@ export function uint8ArrayToString(arr){
  * @param {Uint8Array} b 
  * @returns {boolean}
  */
-export function arrayBeginsWith(a,b){
+export function arrayBeginsWith(a:Uint8Array,b:Uint8Array):boolean{
     const len=Math.min(a.length,b.length)
     for(let i=0;i<len;i++){
         if(a[i]!=b[i])return false;
@@ -62,7 +62,7 @@ export const arrToUint8=arrToUint(1);
  * @param {boolean} [littleendian=true]
  * @returns {function(Uint8Array):number}
  */
-export function arrToUint(n,littleendian=true){
+export function arrToUint(n:number,littleendian:boolean=true):(ar:Uint8Array)=>number{
     return function(arr){
         if (arr.length < n) {
             throw new Error(`Not enough bytes to form an unsigned integer with ${n} bytes.`);
@@ -88,7 +88,7 @@ export function arrToUint(n,littleendian=true){
  * @param {number} n number of bits to reverse
  * @returns {number}
  */
-export function reverseBits(b,n){
+export function reverseBits(b:number,n:number):number{
     let ret=0;
     for(let i=0;i<n;i++){
         ret|=((b>>(n-1-i))&1)<<(i);
@@ -102,7 +102,7 @@ export function reverseBits(b,n){
  * @param {number} n 
  * @returns {string}
  */
-export function binstr(b,n){
+export function binstr(b:number,n:number):string{
     return b.toString(2).padStart(n,'0');
 }
 /**
@@ -111,13 +111,18 @@ export function binstr(b,n){
  * @param {number} n 
  * @returns {number}
  */
-export function bitmask(n){
+export function bitmask(n:number):number{
     return ((1<<n)-1);
 }
 
 const rtl=true;
 
 export class BitBuffer{
+    data:Uint8Array;
+    dataindex:number;
+    buffer:number;
+    bufferlen:number;
+
     /**
      * 
      * @param {Uint8Array} data 
@@ -125,7 +130,7 @@ export class BitBuffer{
      * @param {number} buffer 
      * @param {number} bufferlen 
      */
-    constructor(data,dataindex,buffer,bufferlen){
+    constructor(data:Uint8Array,dataindex:number,buffer:number,bufferlen:number){
         this.data=data;
         this.dataindex=dataindex;
         this.buffer=buffer;
@@ -146,7 +151,7 @@ export class BitBuffer{
      * @param {boolean?} [alsoskip=undefined]
      * @returns {number}
      */
-    bit(alsoskip){
+    bit(alsoskip:boolean|undefined){
         if(this.bufferlen===0){
             this.#fillBuffer();
         }
@@ -167,7 +172,7 @@ export class BitBuffer{
      * @param {number} n
      * @returns {number}
      */
-    nbits(n){
+    nbits(n:number){
         if(n<1)throw `n must be >=1, but is ${n}`;
 
         let ret=0;
@@ -188,7 +193,7 @@ export class BitBuffer{
      * skip numbits bits
      * @param {number} [numbits=1] 
      */
-    next(numbits=1){
+    next(numbits:number=1){
         if(numbits<0)throw `cannot skip ${numbits}<0 bits`;
         if(this.bufferlen<numbits)throw `invalid bufferlength`;
 

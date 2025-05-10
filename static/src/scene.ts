@@ -1,17 +1,17 @@
 "use strict";
 
-import { GL } from "./gl.js";
+import { GL, GLC } from "./gl.js";
 import { parsePng } from "./png.js";
-import { mat4, vec3, quat, glMatrix as glm } from "glm";
+import { mat4, vec3, quat, glMatrix as glm } from "gl-matrix";
 
 /**
  * 
- * @param {GL} gl 
+ * @param {GLC} gl 
  * @param {("vert"|"frag")} stage 
  * @param {string} source 
  * @returns {WebGLShader}
  */
-function createShaderStage(gl,stage, source){
+function createShaderStage(gl:GLC,stage:"vert"|"frag", source:string):WebGLShader{
     const shader=gl.createShader({
         "vert":GL.VERTEX_SHADER,
         "frag":GL.FRAGMENT_SHADER,
@@ -30,11 +30,13 @@ function createShaderStage(gl,stage, source){
 }
 
 /**
- * @param {GL} gl
+ * @param {GLC} gl
  * @param {{vs:string,fs:string}} stageSources
  * @returns {Promise<WebGLProgram>}
  **/
-export async function createShaderProgram(gl,stageSources){
+export async function createShaderProgram(gl:GLC,stageSources:{
+    fs:string,vs:string
+}):Promise<WebGLProgram>{
     const { vs, fs }=stageSources;
 
     const vsShader=createShaderStage(gl,"vert",vs);
@@ -53,27 +55,25 @@ export async function createShaderProgram(gl,stageSources){
     return shaderProgram;
 }
 
-/**
- * @typedef {{
- *     program: WebGLProgram,
- *     attribLocations: {
- *         vertexPosition: GLint,
- *         vertexUVCoords: GLint,
- *     },
- *     uniformLocations: {
- *         projectionMatrix: WebGLUniformLocation,
- *         modelViewMatrix: WebGLUniformLocation,
- *         uSampler: WebGLUniformLocation,
- *     }
- * }} ProgramInfo
- */
+type ProgramInfo={
+    program: WebGLProgram,
+    attribLocations: {
+        vertexPosition: GLint,
+        vertexUVCoords: GLint,
+    },
+    uniformLocations: {
+        projectionMatrix: WebGLUniformLocation,
+        modelViewMatrix: WebGLUniformLocation,
+        uSampler: WebGLUniformLocation,
+    }
+};
 
 /**
  * 
- * @param {WebGL2RenderingContext} gl
+ * @param {GLC} gl
  * @returns {Promise<ProgramInfo>}
  */
-export async function makeProgram(gl){
+export async function makeProgram(gl:GLC){
     const shaderProgram=await createShaderProgram(gl,{
         vs:`#version 300 es // vert
             
@@ -103,6 +103,7 @@ export async function makeProgram(gl){
 
             void main() {
                 fragColor = texture(uSampler, vTextureCoord);
+                fragColor=vec4(1,1,1,1);
             }
         `
     })
@@ -139,24 +140,31 @@ export async function makeProgram(gl){
     return programInfo;
 }
 
-/**
- * @typedef {{
- *   vertexData:WebGLBuffer,
- *   indices:WebGLBuffer,
- *   texture:WebGLTexture,
- * }} Buffer
- */
+type Buffer={
+  vertexData:WebGLBuffer;
+  indices:WebGLBuffer;
+  texture:WebGLTexture;
+};
+
 /**
  * 
- * @param {GL} gl 
+ * @param {GLC} gl 
  * @param {string} diffuseTexturePath
  * @param {Float32Array} vertexData
  * @param {Uint32Array} indices
  * @returns {Promise<Buffer>}
  */
-export async function makeBuffers(gl,diffuseTexturePath,vertexData,indices){
-    /** @type {Buffer} */
-    const buffers={};
+export async function makeBuffers(
+    gl:GLC,
+    diffuseTexturePath:string,
+    vertexData:Float32Array,
+    indices:Uint32Array
+):Promise<Buffer>{
+    const buffers:Buffer={
+        vertexData:0,
+        indices:0,
+        texture:0,
+    };
 
     buffers.vertexData=gl.createBuffer();
     gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
@@ -201,6 +209,13 @@ export async function makeBuffers(gl,diffuseTexturePath,vertexData,indices){
 }
 
 export class Camera{
+    fov:number;
+    aspect:number;
+    znear:number;
+    zfar:number;
+    position:vec3;
+    rotation:quat;
+
     constructor(){
         this.fov=45;
         this.aspect=800/600;
@@ -272,12 +287,17 @@ export class Camera{
 }
 
 export class Scene{
+    gl:GLC;
+    objects:GameObject[];
+    camera:Camera;
+    shouldDraw:boolean;
+
     /**
      * 
-     * @param {GL} gl 
+     * @param {GLC} gl 
      */
     constructor(
-        gl,
+        gl:GLC,
     ){
         this.gl=gl;
         /** @type {GameObject[]} */
@@ -388,7 +408,7 @@ export class Scene{
         })
 
         /** @type {function(number):void} */
-        const onFrameLogic=(deltatime_ms)=>{
+        const onFrameLogic=(deltatime_ms:number)=>{
             const xStep=-cameraSpeed.x*deltatime_ms;
             vec3.add(this.camera.position,this.camera.position,vec3.multiply(
                 vec3.create(),
@@ -517,6 +537,10 @@ export class Scene{
 }
 
 export class Transform{
+    position:vec3;
+    rotation:quat;
+    scale:vec3;
+    
     constructor(){
         this.position=vec3.create();
         this.rotation=quat.identity(quat.create());
@@ -535,15 +559,21 @@ export class Transform{
 }
 
 export class GameObject{
+    gl:GLC;
+    buffers:Buffer;
+    numTris:number;
+    programInfo:ProgramInfo;
+    transform:Transform;
+
     /**
      *
-     * @param {GL} gl 
+     * @param {GLC} gl 
      * @param {Buffer} buffers
      * @param {number} numTris 
      * @param {ProgramInfo} programInfo
      * @param {Transform} transform
      */
-    constructor( gl, buffers, numTris, programInfo, transform ){
+    constructor( gl:GLC, buffers:Buffer, numTris:number, programInfo:ProgramInfo, transform:Transform ){
         this.gl=gl;
         this.buffers=buffers;
         this.numTris=numTris;

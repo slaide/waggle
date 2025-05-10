@@ -1,13 +1,16 @@
 "use strict";
 
-import {vec3} from "glm";
+import {vec3} from "gl-matrix";
 
 class Reader{
+    bytes:string;
+    i:number;
+
     /**
      * 
-     * @param {string} bytes 
+     * @param bytes 
      */
-    constructor(bytes){
+    constructor(bytes:string){
         this.bytes=bytes;
         this.i=0;
     }
@@ -23,17 +26,17 @@ class Reader{
 
     /**
      * get next `n` bytes
-     * @param {number} n 
+     * @param n 
      * @returns 
      */
-    getN(n){
+    getN(n:number){
         return this.bytes.substring(this.i,this.i+n);
     }
     /**
      * 
-     * @param {number} n 
+     * @param n 
      */
-    skipN(n){
+    skipN(n:number){
         this.i+=n;
     }
 
@@ -44,32 +47,32 @@ class Reader{
 
     /**
      * 
-     * @param {(c:string)=>boolean} f returns true if `c`should be skipped
+     * @param f returns true if `c`should be skipped
      */
-    skipWhile(f){
+    skipWhile(f:(c:string)=>boolean){
         while(!this.empty && f(this.c))this.i++;
     }
     /**
      * 
-     * @param {(c:string)=>boolean} f returns true if `c`should be skipped
+     * @param f returns true if `c`should be skipped
      */
-    skipUntil(f){
+    skipUntil(f:(c:string)=>boolean){
         while(!this.empty && !f(this.c))this.i++;
     }
     /**
      * 
-     * @param {(c:string)=>boolean} f returns true if `c`should be included
+     * @param f returns true if `c`should be included
      */
-    takeWhile(f){
+    takeWhile(f:(c:string)=>boolean){
         let i=this.i;
         while(!this.empty && f(this.bytes[i]))i++;
         return this.bytes.substring(this.i,i);
     }
     /**
      * 
-     * @param {(c:string)=>boolean} f returns true if `c`should be included
+     * @param f returns true if `c`should be included
      */
-    takeUntil(f){
+    takeUntil(f:(c:string)=>boolean){
         let i=this.i;
         while(!this.empty && !f(this.bytes[i]))i++;
         return this.bytes.substring(this.i,i);
@@ -94,7 +97,7 @@ class Reader{
 
     /** skip to, and then over, newline */
     skipOverLineEnd(){
-        this.skipWhile(c=>c!="\n");
+        this.skipWhile(c=>c!=="\n");
         this.skipN(1);
     }
 }
@@ -104,31 +107,52 @@ class Reader{
  * @param {string} c 
  * @returns 
  */
-function isWhitespace(c){
-    return " \t\r".indexOf(c)!=-1;
+function isWhitespace(c:string){
+    return " \t\r".indexOf(c)!==-1;
 }
 /**
  * 
  * @param {string} c 
  * @returns 
  */
-function isWhitespaceOrNewline(c){
-    return " \t\r\n".indexOf(c)!=-1;
+function isWhitespaceOrNewline(c:string){
+    return " \t\r\n".indexOf(c)!==-1;
 }
 
-/**
- * 
- * @param {string} path
- * @param {string} s 
- * @returns {ObjMtlFile}
- */
-function parseMtl(path,s){
-    /** @type {ObjMtlFile} */
-    const ret={path,materials:{}};
+type ObjMaterialTexture={
+    source:string;
+    blendu?:boolean;
+    blendv?:boolean;
+    boost:number;
+};
+
+type ObjMaterial={
+    ambient?:vec3;
+    diffuse?:vec3;
+    specular?:vec3;
+    specularExponent?:number;
+    transparency?:number;
+
+    illuminationMode?:number;
+
+    map_ambient?:string;
+    map_diffuse?:string;
+    map_specular?:string;
+    map_specularExponent?:string;
+};
+
+type ObjMtlFile={
+    path:string;
+    materials:{
+        [mtlName:string]:ObjMaterial|undefined;
+    };
+};
+
+function parseMtl(path:string,s:string):ObjMtlFile{
+    const ret:ObjMtlFile={path,materials:{}};
     const reader=new Reader(s);
 
-    /** @type {ObjMaterial} */
-    let lastMaterial={};
+    let lastMaterial:ObjMaterial={};
     while(!reader.empty){
         reader.skipWhile(isWhitespace);
 
@@ -158,8 +182,7 @@ function parseMtl(path,s){
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="Ka"){
-            /** @type {number[]} */
-            const color=[];
+            const color:number[]=[];
             for(let i=0;i<3;i++){
                 color.push(parseFloat(reader.parseFloat()));
                 reader.skipWhile(isWhitespace);
@@ -168,8 +191,7 @@ function parseMtl(path,s){
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="Kd"){
-            /** @type {number[]} */
-            const color=[];
+            const color:number[]=[];
             for(let i=0;i<3;i++){
                 color.push(parseFloat(reader.parseFloat()));
                 reader.skipWhile(isWhitespace);
@@ -178,8 +200,7 @@ function parseMtl(path,s){
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="Ks"){
-            /** @type {number[]} */
-            const color=[];
+            const color:number[]=[];
             for(let i=0;i<3;i++){
                 color.push(parseFloat(reader.parseFloat()));
                 reader.skipWhile(isWhitespace);
@@ -227,16 +248,20 @@ function parseMtl(path,s){
 }
 
 class ObjFile{
+    vertexData:Float32Array;
+    indices:Uint32Array;
+    material:ObjMaterial|null;
+
     /**
      * 
-     * @param {Float32Array} vertexData 
-     * @param {Uint32Array} indices 
-     * @param {ObjMaterial?} material
+     * @param vertexData 
+     * @param indices 
+     * @param material
      */
     constructor(
-        vertexData,
-        indices,
-        material,
+        vertexData:Float32Array,
+        indices:Uint32Array,
+        material:ObjMaterial|null,
     ){
         this.vertexData=vertexData;
         this.indices=indices;
@@ -248,7 +273,7 @@ class ObjFile{
  * @param {string} filepath 
  * @returns {Promise<ObjFile>}
  */
-export async function parseObj(filepath){
+export async function parseObj(filepath:string){
     const filedata=await fetch(filepath,{}).then(v=>v.text());
     /* could be used to preallocate all required memory...
     let numVs=0;
@@ -262,33 +287,26 @@ export async function parseObj(filepath){
 
     const bytes=new Reader(filedata);
 
-    /** @type {number[]} */
-    const vertexPositions=[];
-    /** @type {number[][]} */
-    const vertexUVs=[];
-    /** @type {number[]} */
-    const vertexNormals=[];
+    const vertexPositions:number[]=[];
+    const vertexUVs:number[][]=[];
+    const vertexNormals:number[]=[];
 
-    /** @type {ObjMtlFile?} */
-    let materialFile=null;
-    /** @type {ObjMaterial?} */
-    let material=null;
+    let materialFile:ObjMtlFile|null=null;
+    let material:ObjMaterial|null=null;
 
-    /** @type {number[]} */
-    const vertexData=[];
-    /** @type {number[]} */
-    const indices=[];
+    const vertexData:number[]=[];
+    const indices:number[]=[];
     while(!bytes.empty){
         bytes.skipWhile(isWhitespace);
 
         // skip empty line
-        if(bytes.c=="\n"){
+        if(bytes.c==="\n"){
             bytes.skipN(1);
             continue;
         }
 
         // skip comment
-        if(bytes.c=="#"){
+        if(bytes.c==="#"){
             // skip over rest of current line
             bytes.skipOverLineEnd();
             continue;
@@ -300,7 +318,7 @@ export async function parseObj(filepath){
         // vt: vertex texture coordinate
         const directive=bytes.takeUntil(isWhitespace);
         const directiveString=directive;
-        if(directiveString=="v"){
+        if(directiveString==="v"){
             // format: x y z [w=1.0]
             const data=[0,0,0,1];
 
@@ -329,7 +347,7 @@ export async function parseObj(filepath){
             vertexPositions.push(...data);
 
             continue;
-        }else if(directiveString=="vt"){
+        }else if(directiveString==="vt"){
             // format: u [ v=0 [w=0] ]
             const data=[0,0,0];
 
@@ -358,7 +376,7 @@ export async function parseObj(filepath){
             vertexUVs.push(data);
 
             continue;
-        }else if(directiveString=="f"){
+        }else if(directiveString==="f"){
             // format: v/vt/vn v/vt/vn v/vt/vn [v/vt/vn]
             // (data contains indices into vertexData, which entries are constructed on the fly)
             const data=[0,0,0,0];
@@ -418,7 +436,7 @@ export async function parseObj(filepath){
             }
 
             continue;
-        }else if(directiveString=="mtllib"){
+        }else if(directiveString==="mtllib"){
             // skip over directive
             bytes.skipN(directiveString.length);
 
@@ -437,7 +455,7 @@ export async function parseObj(filepath){
 
             bytes.skipOverLineEnd();
             continue;
-        }else if(directiveString=="usemtl"){
+        }else if(directiveString==="usemtl"){
             // skip over directive
             bytes.skipN(directiveString.length);
 
@@ -449,13 +467,13 @@ export async function parseObj(filepath){
 
             bytes.skipOverLineEnd();
             continue;
-        }else if(directiveString=="o"){
+        }else if(directiveString==="o"){
             bytes.skipOverLineEnd();
             continue;
-        }else if(directiveString=="g"){
+        }else if(directiveString==="g"){
             bytes.skipOverLineEnd();
             continue;
-        }else if(directiveString=="s"){
+        }else if(directiveString==="s"){
             bytes.skipOverLineEnd();
             continue;
         }else{

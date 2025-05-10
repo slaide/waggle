@@ -1,7 +1,7 @@
 //# allFunctionsCalledOnLoad
 "use strict";
 
-import { vec3 } from "glm";
+import { vec3 } from "gl-matrix";
 
 /// @ts-ignore
 console.log(`running in strict mode? ${(function(){return !this})()}`)
@@ -67,7 +67,9 @@ export async function main(){
         transform.position=vec3.fromValues(-1.5+i*3,0,-6);
 
         const starttime=performance.now();
+        console.log("parsing...")
         const {vertexData,indices,material}=await parseObj("./resources/cube.obj");
+        console.log("parsing done")
         console.log(`${performance.now()-starttime}`);
         const newobject=new GameObject(
             gl,
@@ -129,9 +131,9 @@ window.addEventListener("gamepadconnected",async (e)=>{
     await gp.vibrationActuator?.reset();
 
     // proposal: https://w3c.github.io/gamepad/extensions.html
-    console.log(`hand: ${gp.hand}`);
-    console.log(`hapticActuators: ${gp.hapticActuators}`);
-    console.log(`pose: ${gp.pose}`);
+    // 
+    // gp.hapticActuators}`);
+    // 
 
     setInterval(async ()=>{
         /** @type {(Gamepad&Gamepad2)|null} */
@@ -144,9 +146,9 @@ window.addEventListener("gamepadconnected",async (e)=>{
         gp.axes.forEach((v,i)=>{
             console.log(`axis ${i} value ${v.toFixed(3)}`)
         })
-        gp.touches?.forEach((v,i)=>{
+        /*gp.touches?.forEach((v,i)=>{
             console.log(`touch ${i} value ${v}`)
-        })
+        })*/
 
         // standard mapping: https://w3c.github.io/gamepad/#remapping
         const lefttriggervalue=Math.min(gp.buttons[6].value,1)

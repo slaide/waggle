@@ -2,11 +2,9 @@
 "use strict";
 
 import {
-    stringToUint8Array,
     uint8ArrayToString,
     arrayBeginsWith,
     arrToUint32,
-    arrToUint16,
     arrToUint8,
 } from "./bits.js";
 
@@ -19,7 +17,7 @@ import {zlibDecode} from "./zlib.js";
  * @param {number} c 
  * @returns {number}
  */
-function paethPredictor(a,b,c){
+function paethPredictor(a:number,b:number,c:number):number{
     // PaethPredictor(a,b,c)
     // p = a + b - c
     // pa = abs(p - a)
@@ -43,33 +41,31 @@ function paethPredictor(a,b,c){
     }
 }
 
-/** @typedef {"G"|"RGB"|"Indexed"|"GA"|"RGBA"} IHDRColortype */
+type IHDRColortype="G"|"RGB"|"Indexed"|"GA"|"RGBA";
 /** @type {{[i:number]:IHDRColortype}} */
-const IHDR_COLORTYPE_ENUMS={
+const IHDR_COLORTYPE_ENUMS:{[i:number]:IHDRColortype}={
     0:"G",
     2:"RGB",
     3:"Indexed",
     4:"GA",
     6:"RGBA",
 };
-/** @typedef {"nointerlace"|"Adam7"} IHDRInterlacemethod */
+type IHDRInterlacemethod="nointerlace"|"Adam7";
 /** @type {{[i:number]:IHDRInterlacemethod}} */
-const IHDR_INTERLACEMETHOD_ENUMS={
+const IHDR_INTERLACEMETHOD_ENUMS:{[i:number]:IHDRInterlacemethod}={
     0:"nointerlace",
     1:"Adam7",
 };
 
-/**
- * @typedef {{
-* width:number,
-* height:number,
-* bitdepth:number,
-* colortype:IHDRColortype,
-* compressionmethod:number,
-* filtermethod:number,
-* interlacemethod:IHDRInterlacemethod,
-* }} IHDR_chunk
-*/
+type IHDR_chunk={
+    width:number,
+    height:number,
+    bitdepth:number,
+    colortype:IHDRColortype,
+    compressionmethod:number,
+    filtermethod:number,
+    interlacemethod:IHDRInterlacemethod,
+};
 
 /** PNG header magic */
 const PNG_START=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
@@ -82,7 +78,7 @@ const PNG_START=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
  * @param {string} src 
  * @returns {Promise<{width:number,height:number,data:Uint8Array}>}
  */
-export async function parsePng(src){
+export async function parsePng(src:string){
     const responseData=await fetch(src,{method:"GET"}).then(async e=>{
         return await e.arrayBuffer();
     }).catch(e=>{
@@ -90,10 +86,8 @@ export async function parsePng(src){
         throw e;
     });
 
-    /** @type {IHDR_chunk?} */
-    let IHDR=null;
-    /** @type {Uint8Array?} */
-    let IDAT=null;
+    let IHDR:IHDR_chunk|null=null;
+    let IDAT:Uint8Array|null=null;
 
     const pngdata=new Uint8Array(responseData);
 
@@ -147,8 +141,7 @@ export async function parsePng(src){
             if(!IDAT){
                 IDAT=chunkdata;
             }else{
-                /** @type {Uint8Array} */
-                const newar=new Uint8Array(IDAT.length+chunkdata.length);
+                const newar:Uint8Array=new Uint8Array(IDAT.length+chunkdata.length);
                 newar.set(IDAT,0);
                 newar.set(chunkdata,IDAT.length);
                 IDAT=newar;

@@ -8,13 +8,17 @@ import {
 const rtl=true;
 
 export class HuffmanTree{
+    codes:Uint16Array;
+    lengths:Uint8Array;
+    tree:HuffmanBranch|HuffmanLeaf;
+
     /**
      * 
      * @param {Uint16Array} codes 
      * @param {Uint8Array} lengths 
      * @param {HuffmanBranch|HuffmanLeaf} tree 
      */
-    constructor( codes, lengths, tree ){
+    constructor( codes:Uint16Array, lengths:Uint8Array, tree:HuffmanBranch|HuffmanLeaf ){
         this.codes=codes;
         this.lengths=lengths;
         this.tree=tree;
@@ -25,7 +29,7 @@ export class HuffmanTree{
      * @param {Uint8Array} code_lengths 
      * @returns {HuffmanTree}
      */
-    static make(code_lengths){
+    static make(code_lengths:Uint8Array):HuffmanTree{
         const bl_count=new Uint8Array(16)
         // step 1) count number of codes for each length N
         for(const length of code_lengths){
@@ -45,8 +49,7 @@ export class HuffmanTree{
         // console.log("next code",next_code);
 
         let codes=new Uint16Array(code_lengths.length);
-        /** @type {HuffmanLeaf[]} */
-        let leafs=[];
+        let leafs:HuffmanLeaf[]=[];
         for(let i=0;i<code_lengths.length;i++){
             const code_length=code_lengths[i];
 
@@ -86,7 +89,7 @@ export class HuffmanTree{
      * @param {number} curbits current bits
      * @returns {HuffmanBranch|HuffmanLeaf|null}
      */
-    static sortLeafs(leafs,curlen,curbits){
+    static sortLeafs(leafs:HuffmanLeaf[],curlen:number,curbits:number):HuffmanBranch|HuffmanLeaf|null{
         if(leafs.length==0)return null;
         if(leafs.length==1)return leafs[0];
 
@@ -119,7 +122,7 @@ export class HuffmanTree{
      * @param {number} curlen
      * @returns {boolean}
      */
-    static #filterLeaf0(l,curlen){
+    static #filterLeaf0(l:HuffmanLeaf,curlen:number):boolean{
         // filter all leafs that have no next position
         if(l.len<curlen)return false;
 
@@ -138,7 +141,7 @@ export class HuffmanTree{
      * @param {number} curlen
      * @returns {boolean}
      */
-    static #filterLeaf1(l,curlen){
+    static #filterLeaf1(l:HuffmanLeaf,curlen:number):boolean{
         // filter all leafs that have no next position
         if(l.len<curlen)return false;
 
@@ -157,7 +160,7 @@ export class HuffmanTree{
      * @param {BitBuffer} ibuffer 
      * @returns {HuffmanLeaf}
      */
-    parse(ibuffer){
+    parse(ibuffer:BitBuffer):HuffmanLeaf{
         let branch=this.tree;
         let curnumbits=0;
 
@@ -183,26 +186,33 @@ export class HuffmanTree{
     }
 }
 class HuffmanLeaf{
+    len:number;
+    value:number;
+    code:number;
     /**
      * 
      * @param {number} len
      * @param {number} value
      * @param {number} code
      */
-    constructor(len,value,code){
+    constructor(len:number,value:number,code:number){
         this.len=len;
         this.value=value;
         this.code=code;
     }
 }
 class HuffmanBranch{
+    len:number;
+    leaf0:HuffmanBranch|HuffmanLeaf|null;
+    leaf1:HuffmanBranch|HuffmanLeaf|null;
+
     /**
      * 
      * @param {number} len 
      * @param {HuffmanBranch|HuffmanLeaf|null} leaf0 
      * @param {HuffmanBranch|HuffmanLeaf|null} leaf1 
      */
-    constructor(len,leaf0,leaf1){
+    constructor(len:number,leaf0:HuffmanBranch|HuffmanLeaf|null,leaf1:HuffmanBranch|HuffmanLeaf|null){
         this.len=len;
         this.leaf0=leaf0;
         this.leaf1=leaf1;

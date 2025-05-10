@@ -20,7 +20,7 @@ const rtl=true;
  * @param {number} n 
  * @returns {Uint8Array}
  */
-function parseNcodelengths(code_length_tree,ibuffer,n){
+function parseNcodelengths(code_length_tree:HuffmanTree,ibuffer:BitBuffer,n:number):Uint8Array{
     const ret=new Uint8Array(n);
     for(let i=0;i<n;i++){
         const leaf=code_length_tree.parse(ibuffer);
@@ -88,7 +88,7 @@ const code_length_parse_order=Object.freeze([
  * @param {number} maxlen 
  * @returns {Uint8Array}
  */
-function decode_deflate(i,maxlen){
+function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
     const ibuffer=new BitBuffer(
         i,
         0,
@@ -108,10 +108,8 @@ function decode_deflate(i,maxlen){
         bfinal=ibuffer.nbits(1);
         const btype=ibuffer.nbits(2);
 
-        /** @type {HuffmanTree?} */
-        let litlen_tree=null;
-        /** @type {HuffmanTree?} */
-        let dist_tree=null;
+        let litlen_tree:HuffmanTree|null=null;
+        let dist_tree:HuffmanTree|null=null;
 
         if(btype===0){
             // no compression
@@ -263,7 +261,7 @@ function decode_deflate(i,maxlen){
  * @param {number} maxlen 
  * @returns {Uint8Array}
  */
-export function zlibDecode(zlibCompressedData,maxlen){
+export function zlibDecode(zlibCompressedData:Uint8Array,maxlen:number){
     let d=zlibCompressedData;
 
     const cmf=arrToUint8(d.subarray(0,1));
