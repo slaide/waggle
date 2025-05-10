@@ -51,11 +51,27 @@ class Reader{
     }
     /**
      * 
+     * @param {(c:string)=>boolean} f returns true if `c`should be skipped
+     */
+    skipUntil(f){
+        while(!this.empty && !f(this.c))this.i++;
+    }
+    /**
+     * 
      * @param {(c:string)=>boolean} f returns true if `c`should be included
      */
     takeWhile(f){
         let i=this.i;
         while(!this.empty && f(this.bytes[i]))i++;
+        return this.bytes.substring(this.i,i);
+    }
+    /**
+     * 
+     * @param {(c:string)=>boolean} f returns true if `c`should be included
+     */
+    takeUntil(f){
+        let i=this.i;
+        while(!this.empty && !f(this.bytes[i]))i++;
         return this.bytes.substring(this.i,i);
     }
 
@@ -89,7 +105,7 @@ class Reader{
  * @returns 
  */
 function isWhitespace(c){
-    return " \t\r".indexOf(c)>=0;
+    return " \t\r".indexOf(c)!=-1;
 }
 /**
  * 
@@ -97,7 +113,7 @@ function isWhitespace(c){
  * @returns 
  */
 function isWhitespaceOrNewline(c){
-    return "\n".indexOf(c)>=0 || isWhitespace(c);
+    return " \t\r\n".indexOf(c)!=-1;
 }
 
 /**
@@ -128,12 +144,12 @@ function parseMtl(path,s){
             continue;
         }
 
-        const directive=reader.takeWhile(c=>!isWhitespace(c));
+        const directive=reader.takeUntil(isWhitespace);
         reader.skipN(directive.length);
         reader.skipWhile(isWhitespace);
 
         if(directive=="newmtl"){
-            const materialName=reader.takeWhile(c=>!isWhitespace(c));
+            const materialName=reader.takeUntil(isWhitespace);
             reader.skipN(materialName.length);
 
             lastMaterial={};
@@ -190,17 +206,17 @@ function parseMtl(path,s){
             continue;
         }else if(directive=="map_Ka"){
             // map relative to absolute path
-            lastMaterial.map_ambient=path.substring(0,path.lastIndexOf("/")+1)+reader.takeWhile(c=>!isWhitespace(c));
+            lastMaterial.map_ambient=path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespace);
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="map_Kd"){
             // map relative to absolute path
-            lastMaterial.map_diffuse=path.substring(0,path.lastIndexOf("/")+1)+reader.takeWhile(c=>!isWhitespace(c));
+            lastMaterial.map_diffuse=path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespace);
             reader.skipOverLineEnd();
             continue;
         }else if(directive=="map_Ks"){
             // map relative to absolute path
-            lastMaterial.map_specular=path.substring(0,path.lastIndexOf("/")+1)+reader.takeWhile(c=>!isWhitespace(c));
+            lastMaterial.map_specular=path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespace);
             reader.skipOverLineEnd();
             continue;
         }else{
@@ -234,11 +250,21 @@ class ObjFile{
  */
 export async function parseObj(filepath){
     const filedata=await fetch(filepath,{}).then(v=>v.text());
+    /* could be used to preallocate all required memory...
+    let numVs=0;
+    let numFs=0;
+    for(let i=0;i<filedata.length;i++){
+        if(filedata[i]=="v"){numVs++}
+        else if(filedata[i]=="f"){numFs++}
+    }
+    console.log(`num v ${numVs} f ${numFs}`)
+    */
+
     const bytes=new Reader(filedata);
 
-    /** @type {Float32Array[]} */
+    /** @type {number[]} */
     const vertexPositions=[];
-    /** @type {Float32Array[]} */
+    /** @type {number[][]} */
     const vertexUVs=[];
     /** @type {number[]} */
     const vertexNormals=[];
@@ -264,8 +290,7 @@ export async function parseObj(filepath){
         // skip comment
         if(bytes.c=="#"){
             // skip over rest of current line
-            bytes.skipWhile(c=>c!="\n");
-            bytes.skipN(1);
+            bytes.skipOverLineEnd();
             continue;
         }
 
@@ -273,11 +298,11 @@ export async function parseObj(filepath){
         // v: vertex position
         // vn: vertex normal
         // vt: vertex texture coordinate
-        const directive=bytes.takeWhile(c=>!isWhitespace(c));
+        const directive=bytes.takeUntil(isWhitespace);
         const directiveString=directive;
         if(directiveString=="v"){
             // format: x y z [w=1.0]
-            const data=new Float32Array([0,0,0,1]);
+            const data=[0,0,0,1];
 
             // skip over directive
             bytes.skipN(directiveString.length);
@@ -299,15 +324,14 @@ export async function parseObj(filepath){
                 data[i]=number;
             }
 
-            bytes.skipWhile(c=>c!="\n");
-            bytes.skipN(1);
+            bytes.skipOverLineEnd();
 
-            vertexPositions.push(data);
+            vertexPositions.push(...data);
 
             continue;
         }else if(directiveString=="vt"){
             // format: u [ v=0 [w=0] ]
-            const data=new Float32Array([0,0,0]);
+            const data=[0,0,0];
 
             // skip over directive
             bytes.skipN(directiveString.length);
@@ -329,8 +353,7 @@ export async function parseObj(filepath){
                 data[i]=number;
             }
 
-            bytes.skipWhile(c=>c!="\n");
-            bytes.skipN(1);
+            bytes.skipOverLineEnd();
 
             vertexUVs.push(data);
 
@@ -338,7 +361,7 @@ export async function parseObj(filepath){
         }else if(directiveString=="f"){
             // format: v/vt/vn v/vt/vn v/vt/vn [v/vt/vn]
             // (data contains indices into vertexData, which entries are constructed on the fly)
-            const data=new Uint32Array([0,0,0,0]);
+            const data=[0,0,0,0];
             let isQuad=false;
 
             // skip over directive
@@ -374,24 +397,24 @@ export async function parseObj(filepath){
 
                 // .at() does handle negative indices like obj spec
                 // (e.g. -1 returns last element in array)
-                const vertexPos=vertexPositions.at(faceVertexData[0]);
-                if(!vertexPos)throw`vertexPositions`;
-                let vertexUV=vertexUVs.at(faceVertexData[1])??new Float32Array([0,0]);
+                if((faceVertexData[0]*4)>=vertexPositions.length)throw`vertexPositions`;
+                let vertexUV=vertexUVs.at(faceVertexData[1])??[0,0,0];
                 vertexData.push(...[
-                    vertexPos[0],vertexPos[1],vertexPos[2],
+                    vertexPositions[faceVertexData[0]*4],
+                    vertexPositions[faceVertexData[0]*4+1],
+                    vertexPositions[faceVertexData[0]*4+2],
                     vertexUV[0],vertexUV[1],
                 ]);
 
                 data[i]=(vertexData.length/5)-1;
             }
 
-            bytes.skipWhile(c=>c!="\n");
-            bytes.skipN(1);
+            bytes.skipOverLineEnd();
 
             if(isQuad){
                 throw `isQuad unimplemented`;
             }else{
-                indices.push(...data.subarray(0,3));
+                indices.push(data[0],data[1],data[2]);
             }
 
             continue;
@@ -400,7 +423,7 @@ export async function parseObj(filepath){
             bytes.skipN(directiveString.length);
 
             bytes.skipWhile(isWhitespace);
-            const filename=bytes.takeWhile(c=>!isWhitespaceOrNewline(c));
+            const filename=bytes.takeUntil(isWhitespaceOrNewline);
             bytes.skipN(filename.length);
 
             const currentFileStem=filepath.substring(0,filepath.lastIndexOf("/")+1);
@@ -418,7 +441,7 @@ export async function parseObj(filepath){
             // skip over directive
             bytes.skipN(directiveString.length);
 
-            const materialName=bytes.takeWhile(c=>!isWhitespace(c));
+            const materialName=bytes.takeUntil(isWhitespace);
             if(!materialFile)throw`usemtl without mtllib`;
             const mat=materialFile.materials[materialName];
             if(!mat)throw`did not find material ${materialName} in materialfile ${materialFile.path}`;
@@ -436,14 +459,16 @@ export async function parseObj(filepath){
             bytes.skipOverLineEnd();
             continue;
         }else{
-            console.log(`unknown directive '${directiveString}'`);
-            break;
+            throw `unknown directive '${directiveString}'`;
         }
     }
 
+    const vertexDataFloat=new Float32Array(vertexData);
+    const indicesUInt=new Uint32Array(indices);
+
     return new ObjFile(
-        new Float32Array(vertexData),
-        new Uint32Array(indices),
+        vertexDataFloat,
+        indicesUInt,
         material,
     );
 }
