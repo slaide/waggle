@@ -96,7 +96,7 @@ export async function parsePng(src:string){
     if(!arrayBeginsWith(pngslice,PNG_START)){const error=`png start invalid`;alert(error);throw error;}
     pngslice=pngslice.subarray(PNG_START.length)
 
-    while(pngslice.length>0){
+    pngfiletotal: while(pngslice.length>0){
         let chunklength=arrToUint32(pngslice.subarray(0,4))
         let header=uint8ArrayToString(pngslice.subarray(4,8))
         let chunkdata=pngslice.subarray(8,8+chunklength)
@@ -104,59 +104,67 @@ export async function parsePng(src:string){
 
         pngslice=pngslice.subarray(8+chunklength+4)
 
-        if(header=="IHDR"){
-            /**
-             * Width	4 bytes
-                Height	4 bytes
-                Bit depth	1 byte
-                Color type	1 byte
-                Compression method	1 byte
-                Filter method	1 byte
-                Interlace method	1 byte
-                */
-            const width=arrToUint32(chunkdata.subarray(0,4))
-            const height=arrToUint32(chunkdata.subarray(4,8))
-            const bitdepth=arrToUint8(chunkdata.subarray(8,9))
-            const colortype_raw=arrToUint8(chunkdata.subarray(9,10))
-            const compressionmethod=arrToUint8(chunkdata.subarray(10,11))
-            const filtermethod=arrToUint8(chunkdata.subarray(11,12))
-            const interlacemethod_raw=arrToUint8(chunkdata.subarray(12,13))
+        switch(header){
+            case "IHDR":{
+                /**
+                 * Width	4 bytes
+                    Height	4 bytes
+                    Bit depth	1 byte
+                    Color type	1 byte
+                    Compression method	1 byte
+                    Filter method	1 byte
+                    Interlace method	1 byte
+                    */
+                const width=arrToUint32(chunkdata.subarray(0,4))
+                const height=arrToUint32(chunkdata.subarray(4,8))
+                const bitdepth=arrToUint8(chunkdata.subarray(8,9))
+                const colortype_raw=arrToUint8(chunkdata.subarray(9,10))
+                const compressionmethod=arrToUint8(chunkdata.subarray(10,11))
+                const filtermethod=arrToUint8(chunkdata.subarray(11,12))
+                const interlacemethod_raw=arrToUint8(chunkdata.subarray(12,13))
 
-            const colortype=IHDR_COLORTYPE_ENUMS[colortype_raw];
-            if(compressionmethod!=0){const error=`compressionmethod ${compressionmethod}!=0`;alert(error);throw error;}
-            if(filtermethod!=0){const error=`filtermethod ${filtermethod}!=0`;alert(error);throw error;}
-            const interlacemethod=IHDR_INTERLACEMETHOD_ENUMS[interlacemethod_raw];
+                const colortype=IHDR_COLORTYPE_ENUMS[colortype_raw];
+                if(compressionmethod!=0){const error=`compressionmethod ${compressionmethod}!=0`;alert(error);throw error;}
+                if(filtermethod!=0){const error=`filtermethod ${filtermethod}!=0`;alert(error);throw error;}
+                const interlacemethod=IHDR_INTERLACEMETHOD_ENUMS[interlacemethod_raw];
 
-            IHDR={
-                width,
-                height,
-                bitdepth,
-                colortype,
-                compressionmethod,
-                filtermethod,
-                interlacemethod,
-            };
-            console.log("IHDR:",JSON.stringify(IHDR));
-        }else if(header=="IDAT"){
-            if(!IDAT){
-                IDAT=chunkdata;
-            }else{
-                const newar:Uint8Array=new Uint8Array(IDAT.length+chunkdata.length);
-                newar.set(IDAT,0);
-                newar.set(chunkdata,IDAT.length);
-                IDAT=newar;
+                IHDR={
+                    width,
+                    height,
+                    bitdepth,
+                    colortype,
+                    compressionmethod,
+                    filtermethod,
+                    interlacemethod,
+                };
+                console.log("IHDR:",JSON.stringify(IHDR));
+
+                break;
             }
-        }else if(header=="IEND"){
-            break;
-        }else{
-            console.log(`png chunk: ${header} ( len ${chunklength} ) unimplemented.`)
+            case "IDAT":{
+                if(!IDAT){
+                    IDAT=chunkdata;
+                }else{
+                    const newar:Uint8Array=new Uint8Array(IDAT.length+chunkdata.length);
+                    newar.set(IDAT,0);
+                    newar.set(chunkdata,IDAT.length);
+                    IDAT=newar;
+                }
+                break;
+            }
+            case "IEND":{
+                break pngfiletotal;
+            }
+            default:{
+                console.log(`png chunk: ${header} ( len ${chunklength} ) unimplemented.`)
+            }
         }
     }
 
     if(IDAT==null){const error=`IDAT is missing`;console.error(error);throw error;}
     // idat is a zlib compressed stream. zlib only supports one compression method: deflate. (compression method 0 in the png ihdr)
 
-    if(!IHDR)throw``;
+    if(!IHDR)throw`no IHDR in png file`;
     const {width,height}=IHDR;
 
     const bpp={
