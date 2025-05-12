@@ -2,123 +2,6 @@
 
 import {vec3} from "gl-matrix";
 
-class Reader{
-    bytes:string;
-    i:number;
-
-    /**
-     * 
-     * @param bytes 
-     */
-    constructor(bytes:string){
-        this.bytes=bytes;
-        this.i=0;
-    }
-
-    get c():string{
-        return this.bytes[this.i];
-    }
-
-    /** get next byte */
-    next():string{
-        return this.bytes[this.i++];
-    }
-
-    /**
-     * get next `n` bytes
-     * @param n 
-     * @returns 
-     */
-    getN(n:number):string{
-        return this.bytes.substring(this.i,this.i+n);
-    }
-    /**
-     * 
-     * @param n 
-     */
-    skipN(n:number):void{
-        this.i+=n;
-    }
-
-    /** returns true if `i` points past the current contents */
-    get empty():boolean{
-        return this.bytes.length<=this.i;
-    }
-
-    /**
-     * 
-     * @param f returns true if `c`should be skipped
-     */
-    skipWhile(f:(c:string)=>boolean):void{
-        while(!this.empty && f(this.c))this.i++;
-    }
-    /**
-     * 
-     * @param f returns true if `c`should be skipped
-     */
-    skipUntil(f:(c:string)=>boolean):void{
-        while(!this.empty && !f(this.c))this.i++;
-    }
-    /**
-     * 
-     * @param f returns true if `c`should be included
-     */
-    takeWhile(f:(c:string)=>boolean):string{
-        let i=this.i;
-        while(!this.empty && f(this.bytes[i]))i++;
-        return this.bytes.substring(this.i,i);
-    }
-    /**
-     * 
-     * @param f returns true if `c`should be included
-     */
-    takeUntil(f:(c:string)=>boolean):string{
-        let i=this.i;
-        while(!this.empty && !f(this.bytes[i]))i++;
-        return this.bytes.substring(this.i,i);
-    }
-
-    /**
-     * returns number as string (length may be zero)
-     */
-    parseFloat():string{
-        const number=this.takeWhile(c=>"0123456789.e+-".indexOf(c)>=0);
-        this.skipN(number.length);
-        return number;
-    }
-    /**
-     * returns number as string (length may be zero)
-     */
-    parseInteger():string{
-        const number=this.takeWhile(c=>"0123456789+-".indexOf(c)>=0);
-        this.skipN(number.length);
-        return number;
-    }
-
-    /** skip to, and then over, newline */
-    skipOverLineEnd():void{
-        this.skipWhile(c=>c!=="\n");
-        this.skipN(1);
-    }
-}
-
-/**
- * 
- * @param c 
- * @returns 
- */
-function isWhitespace(c:string):boolean{
-    return " \t\r".indexOf(c)!==-1;
-}
-/**
- * 
- * @param c 
- * @returns 
- */
-function isWhitespaceOrNewline(c:string):boolean{
-    return " \t\r\n".indexOf(c)!==-1;
-}
-
 class ObjMaterialTexture{
     source:string;
     blendu?:boolean;
@@ -164,106 +47,94 @@ class ObjMtlFile{
 
 function parseMtl(path:string,s:string):ObjMtlFile{
     const ret:ObjMtlFile={path,materials:{}};
-    const reader=new Reader(s);
 
     let lastMaterial=new ObjMaterial();
-    while(!reader.empty){
-        reader.skipWhile(isWhitespace);
+    const lines=(s
+        // ensure whitespace is tabs only
+        .replace("\t"," ")
+        // remove carriage returns
+        .replace("\r","")
+        // splice line continuations
+        .replace("\\\n","")
+        // split into lines
+        .split("\n")
+    );
+    for(const line of lines){
+        if(line==null)break;
 
-        // skip comment
-        if(reader.c=="#"){
-            reader.skipOverLineEnd();
-            continue;
-        }
+        const line_segments=line.split(" ").filter(l=>l.length);
 
         // skip empty line
-        if(reader.c=="\n"){
-            reader.skipN(1);
-            continue;
-        }
+        if(line_segments.length===0)continue;
 
-        const directive=reader.takeUntil(isWhitespace);
-        reader.skipN(directive.length);
-        reader.skipWhile(isWhitespace);
+        const [directive,...args]=line_segments;
+
+        // skip comment
+        if(directive[0]==="#")continue;
 
         switch(directive){
             case "newmtl":{
-                const materialName=reader.takeUntil(isWhitespace);
-                reader.skipN(materialName.length);
+                const materialName=args[0];
 
                 lastMaterial=new ObjMaterial();
                 ret.materials[materialName]=lastMaterial;
 
-                reader.skipOverLineEnd();
                 continue;
             }
             case "Ka":{
                 const color:number[]=[];
                 for(let i=0;i<3;i++){
-                    color.push(parseFloat(reader.parseFloat()));
-                    reader.skipWhile(isWhitespace);
+                    color.push(parseFloat(args[i]));
                 }
                 lastMaterial.ambient=vec3.fromValues(color[0],color[1],color[2]);
-                reader.skipOverLineEnd();
                 continue;
             }
             case "Kd":{
                 const color:number[]=[];
                 for(let i=0;i<3;i++){
-                    color.push(parseFloat(reader.parseFloat()));
-                    reader.skipWhile(isWhitespace);
+                    color.push(parseFloat(args[i]));
                 }
                 lastMaterial.diffuse=vec3.fromValues(color[0],color[1],color[2]);
-                reader.skipOverLineEnd();
                 continue;
             }
             case "Ks":{
                 const color:number[]=[];
                 for(let i=0;i<3;i++){
-                    color.push(parseFloat(reader.parseFloat()));
-                    reader.skipWhile(isWhitespace);
+                    color.push(parseFloat(args[i]));
                 }
                 lastMaterial.specular=vec3.fromValues(color[0],color[1],color[2]);
-                reader.skipOverLineEnd();
                 continue;
             }
             case "Ns":
-                lastMaterial.specularExponent=parseFloat(reader.parseFloat());
-                reader.skipOverLineEnd();
+                lastMaterial.specularExponent=parseFloat(args[0]);
                 continue;
             case "d":
-                lastMaterial.transparency=1-parseFloat(reader.parseFloat());
-                reader.skipOverLineEnd();
+                lastMaterial.transparency=1-parseFloat(args[0]);
                 continue;
             case "Tr":
-                lastMaterial.transparency=parseFloat(reader.parseFloat());
-                reader.skipOverLineEnd();
+                lastMaterial.transparency=parseFloat(args[0]);
                 continue;
             case "illum":
                 // should be an integer, but may be floatThatIsNotQuiteAnInt (seen in real world data)
-                lastMaterial.illuminationMode=Math.round(parseFloat(reader.parseFloat()));
-                reader.skipOverLineEnd();
+                lastMaterial.illuminationMode=Math.round(parseFloat(args[0]));
                 continue;
             case "map_Ka":
                 // map relative to absolute path
                 lastMaterial.map_ambient=new ObjMaterialTexture(
-                    path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespaceOrNewline)
+                    path.substring(0,path.lastIndexOf("/")+1)+args[0]
                 );
-                reader.skipOverLineEnd();
                 continue;
             case "map_Kd":
                 // map relative to absolute path
                 lastMaterial.map_diffuse=new ObjMaterialTexture(
-                    path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespaceOrNewline)
+                    path.substring(0,path.lastIndexOf("/")+1)+args[0]
                 );
-                reader.skipOverLineEnd();
                 continue;
             case "map_Ks":
                 // map relative to absolute path
                 lastMaterial.map_specular=new ObjMaterialTexture(
-                    path.substring(0,path.lastIndexOf("/")+1)+reader.takeUntil(isWhitespaceOrNewline)
+                    path.substring(0,path.lastIndexOf("/")+1)+args[0]
                 );
-                reader.skipOverLineEnd();
                 continue;
             default:
                 throw `unknown mtl directive ${directive}`;
@@ -304,109 +175,85 @@ class ObjFile{
  */
 export async function parseObj(filepath:string){
     const filedata=await fetch(filepath,{}).then(v=>v.text());
-    /* could be used to preallocate all required memory...
-    let numVs=0;
-    let numFs=0;
-    for(let i=0;i<filedata.length;i++){
-        if(filedata[i]=="v"){numVs++}
-        else if(filedata[i]=="f"){numFs++}
-    }
-    console.log(`num v ${numVs} f ${numFs}`)
-    */
-
-    const bytes=new Reader(filedata);
 
     const vertexPositions:number[]=[];
     const vertexUVs:number[][]=[];
-    const vertexNormals:number[]=[];
+    const vertexNormals:number[][]=[];
 
     let materialFile:ObjMtlFile|null=null;
     let material:ObjMaterial|null=null;
 
     const vertexData:number[]=[];
     const indices:number[]=[];
-    while(!bytes.empty){
-        bytes.skipWhile(isWhitespace);
+
+    const lines=(filedata
+        // ensure whitespace is tabs only
+        .replace("\t"," ")
+        // remove carriage returns
+        .replace("\r","")
+        // splice line continuations
+        .replace("\\\n","")
+        // split into lines
+        .split("\n")
+    );
+    for(const line of lines){
+        if(line==null)break;
+
+        const line_segments=line.split(" ").filter(l=>l.length);
 
         // skip empty line
-        if(bytes.c==="\n"){
-            bytes.skipN(1);
-            continue;
-        }
+        if(line_segments.length===0)continue;
+
+        const [directive,...args]=line_segments;
 
         // skip comment
-        if(bytes.c==="#"){
-            // skip over rest of current line
-            bytes.skipOverLineEnd();
-            continue;
-        }
+        if(directive[0]==="#")continue;
 
-        // check for directives:
-        // v: vertex position
-        // vn: vertex normal
-        // vt: vertex texture coordinate
-        const directive=bytes.takeUntil(isWhitespace);
-        const directiveString=directive;
-        switch(directiveString){
+        switch(directive){
             case "v":{
                 // format: x y z [w=1.0]
                 const data=[0,0,0,1];
 
-                // skip over directive
-                bytes.skipN(directiveString.length);
+                for(let i=0;i<Math.min(data.length,args.length);i++){
+                    const arg=args[i];
 
-                for(let i=0;i<data.length;i++){
-                    // skip over whitespace
-                    bytes.skipWhile(isWhitespace);
-
-                    const number_string=bytes.parseFloat();
-                    if(number_string.length==0){
-                        if(i<3){
-                            throw `number_charBytes has length zero`;
-                        }
-                        // w is optional
-                        break;
-                    }
-                    const number=parseFloat(number_string);
-
+                    const number=parseFloat(arg);
                     data[i]=number;
                 }
 
-                bytes.skipOverLineEnd();
-
                 vertexPositions.push(...data);
 
-                continue;
+                break;
             }
             case "vt":{
                 // format: u [ v=0 [w=0] ]
                 const data=[0,0,0];
 
-                // skip over directive
-                bytes.skipN(directiveString.length);
+                for(let i=0;i<Math.min(data.length,args.length);i++){
+                    const arg=args[i];
 
-                for(let i=0;i<data.length;i++){
-                    // skip over whitespace
-                    bytes.skipWhile(isWhitespace);
-
-                    const number_string=bytes.parseFloat();
-                    if(number_string.length==0){
-                        if(i<1){
-                            throw `number_string has length zero`;
-                        }
-                        // v w are optional
-                        break;
-                    }
-                    const number=parseFloat(number_string);
-
+                    const number=parseFloat(arg);
                     data[i]=number;
                 }
 
-                bytes.skipOverLineEnd();
-
                 vertexUVs.push(data);
 
-                continue;
+                break;
+            }
+            case "vn":{
+                // format: x y z
+                const data=[0,0,0];
+
+                for(let i=0;i<Math.min(data.length,args.length);i++){
+                    const arg=args[i];
+
+                    const number=parseFloat(arg);
+                    data[i]=number;
+                }
+
+                vertexNormals.push(data);
+
+                break;
             }
             case "f":{
                 // format: v/vt/vn v/vt/vn v/vt/vn [v/vt/vn]
@@ -414,33 +261,13 @@ export async function parseObj(filepath:string){
                 const data=[0,0,0,0];
                 let isQuad=false;
 
-                // skip over directive
-                bytes.skipN(directiveString.length);
-
-                for(let i=0;i<data.length;i++){
-                    // skip over whitespace
-                    bytes.skipWhile(isWhitespace);
-
-                    if(bytes.c=="\n"){
-                        if(i==3)
-                            break;
-                        throw `laksjdfölkjasdf`;
-                    }
-
+                for(let i=0;i<Math.min(4,args.length);i++){
                     /** data for a single vertex in this face */
                     const faceVertexData=new Uint32Array([0,0,0]);
 
-                    for(let s=0;s<3;){
-                        const number_string=bytes.parseFloat();
-                        if(number_string.length==0){
-                            if(bytes.c=="/"){
-                                bytes.skipN(1);
-                                s++;
-                                continue;
-                            }
-                            break;
-                        }
-                        const number=parseInt(number_string);
+                    const face_segments=args[i].split("/");
+                    for(let s=0;s<face_segments.length;s++){
+                        const number=parseInt(face_segments[s]||"0");
 
                         faceVertexData[s]=number-1;
                     }
@@ -459,23 +286,16 @@ export async function parseObj(filepath:string){
                     data[i]=(vertexData.length/5)-1;
                 }
 
-                bytes.skipOverLineEnd();
-
                 if(isQuad){
                     throw `isQuad unimplemented`;
                 }else{
                     indices.push(data[0],data[1],data[2]);
                 }
 
-                continue;
+                break;
             }
             case "mtllib":{
-                // skip over directive
-                bytes.skipN(directiveString.length);
-
-                bytes.skipWhile(isWhitespace);
-                const filename=bytes.takeUntil(isWhitespaceOrNewline);
-                bytes.skipN(filename.length);
+                const filename=args[0];
 
                 const currentFileStem=filepath.substring(0,filepath.lastIndexOf("/")+1);
                 const mtllibpath=currentFileStem+filename;
@@ -486,36 +306,31 @@ export async function parseObj(filepath:string){
                 if(!defaultMaterial)throw`got mtl file (${mtllibpath}) without materials in it`;
                 material=defaultMaterial;
 
-                bytes.skipOverLineEnd();
-                continue;
+                break;
             }
             case "usemtl":{
-                // skip over directive
-                bytes.skipN(directiveString.length);
-
-                const materialName=bytes.takeUntil(isWhitespace);
+                const materialName=args[0];
                 if(!materialFile)throw`usemtl without mtllib`;
                 const mat=materialFile.materials[materialName];
                 if(!mat)throw`did not find material ${materialName} in materialfile ${materialFile.path}`;
                 material=mat;
 
-                bytes.skipOverLineEnd();
-                continue;
+                break;
             }
             case "o":{
-                bytes.skipOverLineEnd();
-                continue;
+                // todo
+                break;
             }
             case "g":{
-                bytes.skipOverLineEnd();
-                continue;
+                // todo
+                break;
             }
             case "s":{
-                bytes.skipOverLineEnd();
-                continue;
+                // todo
+                break;
             }
             default:{
-                throw `unknown directive '${directiveString}'`;
+                throw `unknown directive '${directive}'`;
             }
         }
     }
