@@ -6,10 +6,16 @@ import { vec3 } from "gl-matrix";
 /// @ts-ignore
 console.log(`running in strict mode? ${(function(){return !this})()}`)
 
-import {Transform,Scene,GameObject,makeBuffers,makeProgram} from "./scene.js";
-import {parseObj} from "./obj.js";
+import {GL} from "./gl.js";
+import { Scene } from "./scene/scene.js";
+import { Transform } from "./scene/transform.js";
+import { GameObject } from "./scene/gameobject.js";
+import {MtlMaterial, parseObj} from "./bits/obj.js";
 
 export async function main(){
+    // import wasm like this (instead of top level import!)
+    // const {...}=await import("./mod.js");
+
     const canvas_element_id="main-canvas";
 
     const el=document.getElementById(canvas_element_id);
@@ -25,11 +31,22 @@ export async function main(){
         failIfMajorPerformanceCaveat: true,
         powerPreference: 'default',
         preserveDrawingBuffer: false,
-    });
+    });    
     if(!gl){
         const error=`could not create webgl2 context`;
         alert(error);throw error;
     }
+
+    // enable depth testing
+    gl.enable(GL.DEPTH_TEST);
+    gl.depthFunc(GL.LEQUAL);
+    // enable face culling
+    gl.enable(GL.CULL_FACE);
+    gl.cullFace(GL.FRONT);
+    gl.frontFace(GL.CW);
+    // set clear color
+    gl.clearColor(0,0,0,1);
+    gl.clearDepth(1);
 
     const scene=new Scene(gl);
 
@@ -66,19 +83,15 @@ export async function main(){
         const transform=new Transform();
         transform.position=vec3.fromValues(-1.5+i*3,0,-6);
 
-        const starttime=performance.now();
         const objpath="./resources/cube.obj";
-        const {vertexData,indices,material}=await parseObj(objpath);
-        console.log(`parsed ${objpath} in ${(performance.now()-starttime).toFixed(2)}ms`);
-
-        const diffuse_map_source=material?.map_diffuse?.source??"";
-        const newobject=new GameObject(
+        const obj=await parseObj(objpath);
+        
+        const newobject=await GameObject.make(
             gl,
-            await makeBuffers(gl,diffuse_map_source,vertexData,indices),
-            indices.length/3,
-            await makeProgram(gl),
+            obj,
             transform,
         );
+        newobject.upload();
         scene.objects.push(newobject);
     }
 

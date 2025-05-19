@@ -1,4 +1,7 @@
 {
     "javascript.inlayHints.parameterNames.enabled": "all",
-    "python.defaultInterpreterPath": ".venv/bin/python3"
+    "python.defaultInterpreterPath": ".venv/bin/python3",
+    "files.associations": {
+        "*.as.ts": "assemblyscript"
+    }
 }

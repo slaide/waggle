@@ -2,18 +2,18 @@
 
 import {vec3} from "gl-matrix";
 
-class ObjMaterialTexture{
-    source:string;
-    blendu?:boolean;
-    blendv?:boolean;
-    boost?:number;
-    
-    constructor(source:string){
-        this.source=source;
-    }
+class MtlTexture{
+    constructor(
+        public source:string,
+
+        public blendu?:boolean,
+        public blendv?:boolean,
+        /** boost bump map values (mult by this factor) */
+        public boost?:number,
+    ){}
 };
 
-class ObjMaterial{
+export class MtlMaterial{
     ambient?:vec3;
     diffuse?:vec3;
     specular?:vec3;
@@ -22,33 +22,25 @@ class ObjMaterial{
     
     illuminationMode?:number;
 
-    map_ambient?:ObjMaterialTexture;
-    map_diffuse?:ObjMaterialTexture;
-    map_specular?:ObjMaterialTexture;
-    map_specularExponent?:ObjMaterialTexture;
+    map_ambient?:MtlTexture;
+    map_diffuse?:MtlTexture;
+    map_specular?:MtlTexture;
+    map_specularExponent?:MtlTexture;
 }
 
-class ObjMtlFile{
-    path:string;
-    materials:{
-        [mtlName:string]:ObjMaterial;
-    };
-    
+class MtlFile{
     constructor(
-        path:string,
-        materials:{
-            [mtlName:string]:ObjMaterial;
+        public path:string,
+        public materials:{
+            [mtlName:string]:MtlMaterial;
         },
-    ){
-        this.path=path;
-        this.materials=materials;
-    }
+    ){}
 };
 
-function parseMtl(path:string,s:string):ObjMtlFile{
-    const ret:ObjMtlFile={path,materials:{}};
+function parseMtl(path:string,s:string):MtlFile{
+    const ret:MtlFile={path,materials:{}};
 
-    let lastMaterial=new ObjMaterial();
+    let lastMaterial=new MtlMaterial();
     const lines=(s
         // ensure whitespace is tabs only
         .replace("\t"," ")
@@ -76,7 +68,7 @@ function parseMtl(path:string,s:string):ObjMtlFile{
             case "newmtl":{
                 const materialName=args[0];
 
-                lastMaterial=new ObjMaterial();
+                lastMaterial=new MtlMaterial();
                 ret.materials[materialName]=lastMaterial;
 
                 continue;
@@ -120,19 +112,19 @@ function parseMtl(path:string,s:string):ObjMtlFile{
                 continue;
             case "map_Ka":
                 // map relative to absolute path
-                lastMaterial.map_ambient=new ObjMaterialTexture(
+                lastMaterial.map_ambient=new MtlTexture(
                     path.substring(0,path.lastIndexOf("/")+1)+args[0]
                 );
                 continue;
             case "map_Kd":
                 // map relative to absolute path
-                lastMaterial.map_diffuse=new ObjMaterialTexture(
+                lastMaterial.map_diffuse=new MtlTexture(
                     path.substring(0,path.lastIndexOf("/")+1)+args[0]
                 );
                 continue;
             case "map_Ks":
                 // map relative to absolute path
-                lastMaterial.map_specular=new ObjMaterialTexture(
+                lastMaterial.map_specular=new MtlTexture(
                     path.substring(0,path.lastIndexOf("/")+1)+args[0]
                 );
                 continue;
@@ -147,26 +139,12 @@ function parseMtl(path:string,s:string):ObjMtlFile{
  * performance comparison: https://aras-p.info/blog/2022/05/14/comparing-obj-parse-libraries/
  * (this implementation is really slow..)
  */
-class ObjFile{
-    vertexData:Float32Array;
-    indices:Uint32Array;
-    material:ObjMaterial|null;
-
-    /**
-     * 
-     * @param vertexData 
-     * @param indices 
-     * @param material
-     */
+export class ObjFile{
     constructor(
-        vertexData:Float32Array,
-        indices:Uint32Array,
-        material:ObjMaterial|null,
-    ){
-        this.vertexData=vertexData;
-        this.indices=indices;
-        this.material=material;
-    }
+        public vertexData:Float32Array,
+        public indices:Uint32Array,
+        public material:MtlMaterial|null,
+    ){}
 }
 /**
  * 
@@ -180,8 +158,8 @@ export async function parseObj(filepath:string){
     const vertexUVs:number[][]=[];
     const vertexNormals:number[][]=[];
 
-    let materialFile:ObjMtlFile|null=null;
-    let material:ObjMaterial|null=null;
+    let materialFile:MtlFile|null=null;
+    let material:MtlMaterial|null=null;
 
     const vertexData:number[]=[];
     const indices:number[]=[];

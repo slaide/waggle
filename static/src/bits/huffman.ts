@@ -8,21 +8,11 @@ import {
 const rtl=true;
 
 export class HuffmanTree{
-    codes:Uint16Array;
-    lengths:Uint8Array;
-    tree:HuffmanBranch|HuffmanLeaf;
-
-    /**
-     * 
-     * @param {Uint16Array} codes 
-     * @param {Uint8Array} lengths 
-     * @param {HuffmanBranch|HuffmanLeaf} tree 
-     */
-    constructor( codes:Uint16Array, lengths:Uint8Array, tree:HuffmanBranch|HuffmanLeaf ){
-        this.codes=codes;
-        this.lengths=lengths;
-        this.tree=tree;
-    }
+    constructor(
+        public codes:Uint16Array,
+        public lengths:Uint8Array,
+        public tree:HuffmanBranch|HuffmanLeaf,
+    ){}
 
     /**
      * make huffman tree
@@ -186,35 +176,16 @@ export class HuffmanTree{
     }
 }
 class HuffmanLeaf{
-    len:number;
-    value:number;
-    code:number;
-    /**
-     * 
-     * @param {number} len
-     * @param {number} value
-     * @param {number} code
-     */
-    constructor(len:number,value:number,code:number){
-        this.len=len;
-        this.value=value;
-        this.code=code;
-    }
+    constructor(
+        public len:number,
+        public value:number,
+        public code:number,
+    ){}
 }
 class HuffmanBranch{
-    len:number;
-    leaf0:HuffmanBranch|HuffmanLeaf|null;
-    leaf1:HuffmanBranch|HuffmanLeaf|null;
-
-    /**
-     * 
-     * @param {number} len 
-     * @param {HuffmanBranch|HuffmanLeaf|null} leaf0 
-     * @param {HuffmanBranch|HuffmanLeaf|null} leaf1 
-     */
-    constructor(len:number,leaf0:HuffmanBranch|HuffmanLeaf|null,leaf1:HuffmanBranch|HuffmanLeaf|null){
-        this.len=len;
-        this.leaf0=leaf0;
-        this.leaf1=leaf1;
-    }
+    constructor(
+        public len:number,
+        public leaf0:HuffmanBranch|HuffmanLeaf|null,
+        public leaf1:HuffmanBranch|HuffmanLeaf|null,
+    ){}
 }

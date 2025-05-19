@@ -17,7 +17,8 @@
         "paths":{ }
     },
     "exclude": [
-        "static/src/**/*.as.ts"
+        "static/src/**/*.as.ts",
+        "static/dep/**/*"
     ],
     "include": [
         "static/src/**/*.ts"

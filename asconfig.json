@@ -1,9 +1,18 @@
 {
     "entries": [
+        "static/src/mod.as.ts"
     ],
+    "options": {
+        "importTable": false
+    },
     "targets": {
         "release": {
-            "optimize": true
+            "optimize": true,
+            "outFile":"static/src/mod.wasm"
+        },
+        "debug": {
+            "debug":true,
+            "outFile":"static/src/mod.wasm"
         }
     }
 }

@@ -118,24 +118,12 @@ export function bitmask(n:number):number{
 const rtl=true;
 
 export class BitBuffer{
-    data:Uint8Array;
-    dataindex:number;
-    buffer:number;
-    bufferlen:number;
-
-    /**
-     * 
-     * @param {Uint8Array} data 
-     * @param {number} dataindex 
-     * @param {number} buffer 
-     * @param {number} bufferlen 
-     */
-    constructor(data:Uint8Array,dataindex:number,buffer:number,bufferlen:number){
-        this.data=data;
-        this.dataindex=dataindex;
-        this.buffer=buffer;
-        this.bufferlen=bufferlen;
-    }
+    constructor(
+        public data:Uint8Array,
+        public dataindex:number,
+        public buffer:number,
+        public bufferlen:number,
+    ){}
 
     #fillBuffer(){
         const numbytes=4;

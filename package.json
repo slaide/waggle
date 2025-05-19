@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build:ts": "tsc --project tsconfig.json",
-    "build:wasm": "asc --config asconfig.json --target release -b esm",
+    "build:wasm": "asc --config asconfig.json --target release -b esm -O3 --converge",
+    "build:wasm-debug": "asc --config asconfig.json --target debug -b esm",
     "bundle": "rollup -c",
     "build": "npm run build:ts && npm run build:wasm",
     "start": "serve dist"
