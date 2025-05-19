@@ -10,13 +10,7 @@ import {
 
 import {zlibDecode} from "./zlib.js";
 
-/**
- * from png spec https://www.w3.org/TR/png-3/#9Filter-type-4-Paeth
- * @param {number} a 
- * @param {number} b 
- * @param {number} c 
- * @returns {number}
- */
+/** from png spec https://www.w3.org/TR/png-3/#9Filter-type-4-Paeth */
 function paethPredictor(a:number,b:number,c:number):number{
     // PaethPredictor(a,b,c)
     // p = a + b - c
@@ -42,7 +36,6 @@ function paethPredictor(a:number,b:number,c:number):number{
 }
 
 type IHDRColortype="G"|"RGB"|"Indexed"|"GA"|"RGBA";
-/** @type {{[i:number]:IHDRColortype}} */
 const IHDR_COLORTYPE_ENUMS:{[i:number]:IHDRColortype}={
     0:"G",
     2:"RGB",
@@ -51,7 +44,6 @@ const IHDR_COLORTYPE_ENUMS:{[i:number]:IHDRColortype}={
     6:"RGBA",
 };
 type IHDRInterlacemethod="nointerlace"|"Adam7";
-/** @type {{[i:number]:IHDRInterlacemethod}} */
 const IHDR_INTERLACEMETHOD_ENUMS:{[i:number]:IHDRInterlacemethod}={
     0:"nointerlace",
     1:"Adam7",
@@ -74,11 +66,8 @@ const PNG_START=new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
  * spec at https://www.w3.org/TR/png-3/#10Compression
  * 
  * zlib [rfc1950](https://www.rfc-editor.org/rfc/rfc1950)
- * 
- * @param {string} src 
- * @returns {Promise<{width:number,height:number,data:Uint8Array}>}
  */
-export async function parsePng(src:string){
+export async function parsePng(src:string):Promise<{width:number,height:number,data:Uint8Array}>{
     const responseData=await fetch(src,{method:"GET"}).then(async e=>{
         return await e.arrayBuffer();
     }).catch(e=>{
@@ -106,15 +95,15 @@ export async function parsePng(src:string){
 
         switch(header){
             case "IHDR":{
-                /**
-                 * Width	4 bytes
+                /*
+                    Width	4 bytes
                     Height	4 bytes
                     Bit depth	1 byte
                     Color type	1 byte
                     Compression method	1 byte
                     Filter method	1 byte
                     Interlace method	1 byte
-                    */
+                */
                 const width=arrToUint32(chunkdata.subarray(0,4))
                 const height=arrToUint32(chunkdata.subarray(4,8))
                 const bitdepth=arrToUint8(chunkdata.subarray(8,9))
@@ -137,7 +126,6 @@ export async function parsePng(src:string){
                     filtermethod,
                     interlacemethod,
                 };
-                console.log("IHDR:",JSON.stringify(IHDR));
 
                 break;
             }
@@ -245,8 +233,6 @@ export async function parsePng(src:string){
             throw `png scanline type ${scanline_compression_type} is invalid.`;
         }
     }
-
-    console.log(`png scanline decoding done`);
 
     const ret={width,height,data:outdata};
     return ret;

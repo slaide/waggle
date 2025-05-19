@@ -146,12 +146,7 @@ export class ObjFile{
         public material:MtlMaterial|null,
     ){}
 }
-/**
- * 
- * @param {string} filepath 
- * @returns {Promise<ObjFile>}
- */
-export async function parseObj(filepath:string){
+export async function parseObj(filepath:string):Promise<ObjFile>{
     const filedata=await fetch(filepath,{}).then(v=>v.text());
 
     const vertexPositions:number[]=[];

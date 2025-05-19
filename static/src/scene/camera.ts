@@ -3,22 +3,15 @@
 import {vec3,quat,mat4,glMatrix as glm} from "gl-matrix";
 
 export class Camera{
-    fov:number;
-    aspect:number;
-    znear:number;
-    zfar:number;
-    position:vec3;
-    rotation:quat;
+    constructor(
+        public fov:number=45,
+        public aspect:number=800/600,
+        public znear:number=0.1,
+        public zfar:number=100,
+        public position:vec3=vec3.fromValues(0,0,0),
+        public rotation:quat=quat.identity(quat.create()),
+    ){}
 
-    constructor(){
-        this.fov=45;
-        this.aspect=800/600;
-        this.znear=0.1;
-        this.zfar=100;
-
-        this.position=vec3.fromValues(0,0,0);
-        this.rotation=quat.identity(quat.create());
-    }
     get #target(){
         const worldForward=vec3.create();
         vec3.transformQuat(worldForward,vec3.fromValues(0,0,-1),this.rotation);

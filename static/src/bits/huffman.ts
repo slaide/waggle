@@ -14,11 +14,7 @@ export class HuffmanTree{
         public tree:HuffmanBranch|HuffmanLeaf,
     ){}
 
-    /**
-     * make huffman tree
-     * @param {Uint8Array} code_lengths 
-     * @returns {HuffmanTree}
-     */
+    /** make huffman tree */
     static make(code_lengths:Uint8Array):HuffmanTree{
         const bl_count=new Uint8Array(16)
         // step 1) count number of codes for each length N
@@ -26,17 +22,13 @@ export class HuffmanTree{
             if(length==0)continue;
             bl_count[length]++;
         }
-        // console.log("bl_count",bl_count);
         // step 2) calculate min code for each length
         let code=0;
         const next_code=new Uint16Array(16);
         for(let length=1;length<16;length++){
-            // console.log(`${code} ${bl_count[length-1]} ${(code + bl_count[length-1])<<1}`)
             code=(code + bl_count[length-1])<<1;
-            // console.log(`code of len ${length} is ${binstr(code,length)}`)
             next_code[length]=code;
         }
-        // console.log("next code",next_code);
 
         let codes=new Uint16Array(code_lengths.length);
         let leafs:HuffmanLeaf[]=[];
@@ -51,10 +43,6 @@ export class HuffmanTree{
                 codes[i]=next_code[code_length];
             }
             next_code[code_length]++;
-
-            // debug:
-            // const code_binary_asString=binstr(codes[i],code_length);
-            // console.log(`leaf ${i} has len ${code_length} code ${code_binary_asString}`);
 
             leafs.push(new HuffmanLeaf(
                 code_length,
@@ -72,14 +60,14 @@ export class HuffmanTree{
         );
     }
 
-    /**
-     * 
-     * @param {HuffmanLeaf[]} leafs leafs yet to be sorted
-     * @param {number} curlen current length
-     * @param {number} curbits current bits
-     * @returns {HuffmanBranch|HuffmanLeaf|null}
-     */
-    static sortLeafs(leafs:HuffmanLeaf[],curlen:number,curbits:number):HuffmanBranch|HuffmanLeaf|null{
+    static sortLeafs(
+        /** leafs yet to be sorted */
+        leafs:HuffmanLeaf[],
+        /** current length */
+        curlen:number,
+        /** current bits */
+        curbits:number,
+    ):HuffmanBranch|HuffmanLeaf|null{
         if(leafs.length==0)return null;
         if(leafs.length==1)return leafs[0];
 
@@ -106,12 +94,6 @@ export class HuffmanTree{
         );
     }
 
-    /**
-     * 
-     * @param {HuffmanLeaf} l
-     * @param {number} curlen
-     * @returns {boolean}
-     */
     static #filterLeaf0(l:HuffmanLeaf,curlen:number):boolean{
         // filter all leafs that have no next position
         if(l.len<curlen)return false;
@@ -125,12 +107,6 @@ export class HuffmanTree{
             return last_bit === 0;
         }
     }
-    /**
-     * 
-     * @param {HuffmanLeaf} l
-     * @param {number} curlen
-     * @returns {boolean}
-     */
     static #filterLeaf1(l:HuffmanLeaf,curlen:number):boolean{
         // filter all leafs that have no next position
         if(l.len<curlen)return false;
@@ -145,11 +121,6 @@ export class HuffmanTree{
         }
     }
 
-    /**
-     * 
-     * @param {BitBuffer} ibuffer 
-     * @returns {HuffmanLeaf}
-     */
     parse(ibuffer:BitBuffer):HuffmanLeaf{
         let branch=this.tree;
         let curnumbits=0;
@@ -161,7 +132,6 @@ export class HuffmanTree{
             }
 
             const nextbit=ibuffer.bit(true);
-            // console.log(`bit ${nextbit}`);
             curnumbits++;
             if(nextbit===0){
                 if(branch.leaf0==null)throw `branch leaf0 is required but invalid after ${curnumbits} bits`;

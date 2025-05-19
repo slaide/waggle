@@ -3,12 +3,12 @@
 import { GL, GLC } from "../gl.js";
 import { parsePng } from "../bits/png.js";
 import { MtlMaterial, ObjFile } from "../bits/obj.js";
-import { mat4, vec3, quat, glMatrix as glm } from "gl-matrix";
-import {Transform} from "./transform.js";
+import { vec3 } from "gl-matrix";
+import { Transform } from "./transform.js";
 
 type ProgramInfo={
     program: WebGLProgram,
-    attribLocations: {[name:string]:GLint},
+    attributeLocations: {[name:string]:GLint},
     uniformLocations: {[name:string]:WebGLUniformLocation},
 };
 
@@ -18,14 +18,11 @@ type Buffer={
     texture:WebGLTexture;
 };
 
-/**
- * 
- * @param {GLC} gl 
- * @param {("vert"|"frag")} stage 
- * @param {string} source 
- * @returns {WebGLShader}
- */
-function createShaderStage(gl:GLC,stage:"vert"|"frag", source:string):WebGLShader{
+function createShaderStage(
+    gl:GLC,
+    stage:"vert"|"frag",
+    source:string,
+):WebGLShader{
     const shader=gl.createShader({
         "vert":GL.VERTEX_SHADER,
         "frag":GL.FRAGMENT_SHADER,
@@ -43,21 +40,17 @@ function createShaderStage(gl:GLC,stage:"vert"|"frag", source:string):WebGLShade
     return shader;
 }
 
-/**
- * @param {GLC} gl
- * @param {{vs:string,fs:string}} stageSources
- * @returns {Promise<WebGLProgram>}
- **/
-export async function createShaderProgram(gl:GLC,stageSources:{
-    fs:string,vs:string
-}):Promise<WebGLProgram>{
+export async function createShaderProgram(
+    gl:GLC,
+    stageSources:{
+        fs:string,
+        vs:string
+    },
+):Promise<WebGLProgram>{
     const { vs, fs }=stageSources;
 
     const vsShader=createShaderStage(gl,"vert",vs);
     const fsShader=createShaderStage(gl,"frag",fs);
-
-    console.log(vs)
-    console.log(fs)
 
     const shaderProgram=gl.createProgram();
     gl.attachShader(shaderProgram,vsShader);
@@ -84,19 +77,13 @@ export async function createShaderProgram(gl:GLC,stageSources:{
 }
 
 export class GameObject{
-    gl:GLC;
-    buffers:Buffer;
-    numTris:number;
-    programInfo:ProgramInfo;
-    transform:Transform;
-
-    constructor( gl:GLC, buffers:Buffer, programInfo:ProgramInfo, numTris:number, transform:Transform ){
-        this.gl=gl;
-        this.buffers=buffers;
-        this.numTris=numTris;
-        this.programInfo=programInfo;
-        this.transform=transform;
-    }
+    constructor(
+        public gl:GLC,
+        public buffers:Buffer,
+        public programInfo:ProgramInfo,
+        public numTris:number,
+        public transform:Transform,
+    ){}
 
     static async make(
         gl:GLC,
@@ -123,7 +110,7 @@ export class GameObject{
         this.gl.bindBuffer(GL.ARRAY_BUFFER,this.buffers.vertexData);
         // bind vertex data: position (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
-            this.programInfo.attribLocations.aVertexPosition,
+            this.programInfo.attributeLocations.aVertexPosition,
             3,
             GL.FLOAT,
             false,
@@ -132,7 +119,7 @@ export class GameObject{
         );
         // bind vertex data: uv coords (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
-            this.programInfo.attribLocations.aVertexTexCoord,
+            this.programInfo.attributeLocations.aVertexTexCoord,
             2,
             GL.FLOAT,
             false,
@@ -156,7 +143,7 @@ export class GameObject{
     }
 
     draw(){
-        const {buffers,programInfo,numTris}=this;
+        const {buffers,programInfo}=this;
         const gl=this.gl;
 
         gl.bindBuffer(GL.ARRAY_BUFFER,buffers.vertexData)
@@ -166,24 +153,18 @@ export class GameObject{
         gl.useProgram(programInfo.program);
 
         // prepare draw: enable vertex data
-        gl.enableVertexAttribArray(programInfo.attribLocations.aVertexPosition);
-        gl.enableVertexAttribArray(programInfo.attribLocations.aVertexTexCoord);
+        gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexPosition);
+        gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexTexCoord);
 
         // draw mesh
         // in triangle mode: 3 elements per tri (hence count=numTris*3)
         // in line mode: 2 elements per line (hence count=numLines*2)
         // in point mode: 1 element per point (hence count=numPoints)
-        gl.drawElements(GL.TRIANGLES,numTris*3,GL.UNSIGNED_INT,0);
+        gl.drawElements(GL.TRIANGLES,this.numTris*3,GL.UNSIGNED_INT,0);
 
         gl.bindVertexArray
     }
 
-    /**
-     * 
-     * @param gl
-     * @param material
-     * @returns
-     */
     static async makeProgram(gl:GLC,material:MtlMaterial):Promise<ProgramInfo>{
         const hasDiffuseTexture=material.map_diffuse?1:0;
         if(!hasDiffuseTexture && !material.diffuse)throw ``;
@@ -256,27 +237,15 @@ export class GameObject{
             uniformLocations[name]=loc;
         }
 
-        /** @type {ProgramInfo} */
-        const programInfo = {
+        const programInfo:ProgramInfo = {
             program: shaderProgram,
-            attribLocations: {
-                aVertexPosition: gl.getAttribLocation(shaderProgram, "aVertexPosition"),
-                aVertexTexCoord: gl.getAttribLocation(shaderProgram, "aVertexTexCoord"),
-            },
+            attributeLocations,
             uniformLocations,
         };
 
         return programInfo;
     }
 
-    /**
-     * 
-     * @param {GLC} gl 
-     * @param {string} diffuseTexturePath
-     * @param {Float32Array} vertexData
-     * @param {Uint32Array} indices
-     * @returns {Promise<Buffer>}
-     */
     static async makeBuffers(
         gl:GLC,
         diffuseTexturePath:string,

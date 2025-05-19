@@ -14,24 +14,16 @@ export class Scene{
     camera:Camera;
     shouldDraw:boolean;
 
-    /**
-     * 
-     * @param {GLC} gl 
-     */
     constructor(
         gl:GLC,
     ){
         this.gl=gl;
-        /** @type {GameObject[]} */
         this.objects=[];
         this.camera=new Camera();
 
         this.shouldDraw=true;
     }
 
-    /**
-     * 
-     */
     draw(){
         const {gl}=this;
 
@@ -124,8 +116,7 @@ export class Scene{
             }
         })
 
-        /** @type {function(number):void} */
-        const onFrameLogic=(deltatime_ms:number)=>{
+        const onFrameLogic:(deltatime_ms:number)=>void=(deltatime_ms:number)=>{
             const xStep=-cameraSpeed.x*deltatime_ms;
             vec3.add(this.camera.position,this.camera.position,vec3.multiply(
                 vec3.create(),

@@ -13,13 +13,6 @@ import { BitBuffer } from "./bits.js";
 
 const rtl=true;
 
-/**
- * 
- * @param {HuffmanTree} code_length_tree 
- * @param {BitBuffer} ibuffer  
- * @param {number} n 
- * @returns {Uint8Array}
- */
 function parseNcodelengths(code_length_tree:HuffmanTree,ibuffer:BitBuffer,n:number):Uint8Array{
     const ret=new Uint8Array(n);
     for(let i=0;i<n;i++){
@@ -83,10 +76,6 @@ const code_length_parse_order=Object.freeze([
  * decode DEFLATE compressed data
  * 
  * deflate [rfc1951](https://www.rfc-editor.org/rfc/rfc1951)
- * 
- * @param {Uint8Array} i 
- * @param {number} maxlen 
- * @returns {Uint8Array}
  */
 function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
     const ibuffer=new BitBuffer(
@@ -129,8 +118,6 @@ function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
 
             if((LEN|NLEN)!=0xffff)throw `len+nlen invalid ${LEN}+${NLEN}=${LEN+NLEN} != ${0xffff}`
 
-            console.log(`${LEN} ${NLEN}`)
-
             // copy LEN bytes into output
             for(let i=0;i<LEN;i++){
                 ret[nret++]=ibuffer.data[ibuffer.dataindex++];
@@ -150,7 +137,6 @@ function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
             const hdist=ibuffer.nbits(5)+1;
             // number of code length codes
             const hclen=ibuffer.nbits(4)+4;
-            // console.log(`hlit ${hlit} hdist ${hdist} hclen ${hclen}`);
 
             // 2) parse code length table
             const code_lengths=new Uint8Array(/*see code_length_parse_order*/19);
@@ -158,20 +144,16 @@ function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
                 // get next code length (as 3 bit unsigned integer)
                 const code_length=ibuffer.nbits(3);
 
-                // console.log(`length ${code_length} for code ${code_length_parse_order[i]}`);
                 code_lengths[code_length_parse_order[i]]=code_length;
             }
             const code_length_tree=HuffmanTree.make(code_lengths);
-            // console.log("made codelen tree");
 
             const combined=parseNcodelengths(code_length_tree,ibuffer,hlit+hdist);
             const litlen_code_lengths=combined.subarray(0,hlit);
             const dist_code_lengths=combined.subarray(hlit);
 
             litlen_tree=HuffmanTree.make(litlen_code_lengths);
-            // console.log("made litlen tree")
             dist_tree=HuffmanTree.make(dist_code_lengths);
-            // console.log("made dist tree")
         }else if(btype===0b11){
             throw `invalid btype ${btype}`;
         }else{throw `super duper invalid btype ${btype}`}
@@ -182,7 +164,6 @@ function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
 
         while(1){
             const leaf=litlen_tree.parse(ibuffer);
-            //console.log(`leaf ${JSON.stringify(leaf)}`);
             
             const code=leaf.value;
             if(code<256){
@@ -255,13 +236,7 @@ function decode_deflate(i:Uint8Array,maxlen:number):Uint8Array{
     return ret;
 }
 
-/**
- * 
- * @param {Uint8Array} zlibCompressedData 
- * @param {number} maxlen 
- * @returns {Uint8Array}
- */
-export function zlibDecode(zlibCompressedData:Uint8Array,maxlen:number){
+export function zlibDecode(zlibCompressedData:Uint8Array,maxlen:number):Uint8Array{
     let d=zlibCompressedData;
 
     const cmf=arrToUint8(d.subarray(0,1));
