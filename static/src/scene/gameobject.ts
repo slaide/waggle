@@ -137,24 +137,29 @@ export class GameObject{
 
         const gl=this.gl;
         // prepare draw: bind texture
-        gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture)
-        gl.uniform1i(this.programInfo.uniformLocations.uDiffuseSampler,0)
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
+        gl.uniform1i(this.programInfo.uniformLocations.uDiffuseSampler,0);
     }
 
     draw(){
         const {buffers,programInfo}=this;
         const gl=this.gl;
 
-        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.vertexData)
-        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
-
         // prepare draw: activate shader
         gl.useProgram(programInfo.program);
+
+        // bind vertex and index buffers
+        gl.bindBuffer(GL.ARRAY_BUFFER,buffers.vertexData)
+        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
 
         // prepare draw: enable vertex data
         gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexPosition);
         gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexTexCoord);
+
+        // bind texture buffer
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
 
         // draw mesh
         // in triangle mode: 3 elements per tri (hence count=numTris*3)
@@ -181,8 +186,11 @@ export class GameObject{
                 uniform mat4 uProjectionMatrix;
 
                 out vec2 vTextureCoord;
+                // placeholder
+                out vec4 vpos;
 
                 void main() {
+                    vpos=uProjectionMatrix * uModelViewMatrix * aVertexPosition;
                     gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
                     vTextureCoord = aVertexTexCoord;
                 }
@@ -191,8 +199,12 @@ export class GameObject{
 
                 precision highp float;
 
+                layout (location = 0) out vec3 gPosition;
+                layout (location = 1) out vec3 gNormal;
+                layout (location = 2) out vec4 gAlbedoSpec;
+
                 in vec2 vTextureCoord;
-                out vec4 fragColor;
+                in vec4 vpos;
 
                 #if ${hasDiffuseTexture?'1':'0'}
                     uniform sampler2D uDiffuseSampler;
@@ -201,10 +213,13 @@ export class GameObject{
                 #endif
 
                 void main() {
+                    gPosition=vpos.xyz;
+                    gNormal=vec3(0,0,0);
+
                     #if ${hasDiffuseTexture?'1':'0'}
-                        fragColor=texture(uDiffuseSampler, vTextureCoord);
+                        gAlbedoSpec=texture(uDiffuseSampler, vTextureCoord);
                     #else
-                        fragColor=uDiffuseColor;
+                        gAlbedoSpec=vec4(uDiffuseColor.rgb,1.0);
                     #endif
                 }
             `

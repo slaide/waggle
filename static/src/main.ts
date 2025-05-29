@@ -48,7 +48,13 @@ export async function main(){
     gl.clearColor(0,0,0,1);
     gl.clearDepth(1);
 
-    const scene=new Scene(gl);
+    let dpr=1;//window.devicePixelRatio;
+    let canvas_size={
+        width:Math.floor(el.clientWidth*dpr),
+        height:Math.floor(el.clientHeight*dpr),
+    };
+
+    const scene=new Scene(gl,canvas_size);
 
     window.addEventListener("keydown",ev=>{
         if(ev.key=="f"){
@@ -58,11 +64,8 @@ export async function main(){
     })
 
     const onresize=()=>{
-        const dpr=1;//window.devicePixelRatio;
-        const {width,height}={
-            width:Math.floor(el.clientWidth*dpr),
-            height:Math.floor(el.clientHeight*dpr),
-        };
+        const width=Math.floor(el.clientWidth*dpr);
+        const height=Math.floor(el.clientHeight*dpr);
 
         // update canvas size (actual drawable surface)
         el.width=width;
@@ -70,7 +73,8 @@ export async function main(){
         // update viewport (active drawing area in canvas area)
         gl.viewport(0,0,width,height);
 
-        scene.camera.aspect=width/height;
+        // resize canvas/gbuffer
+        scene._resize({width,height});
     };
     onresize();
     window.addEventListener("resize",onresize);
@@ -95,7 +99,7 @@ export async function main(){
         scene.objects.push(newobject);
     }
 
-    scene.draw();
+    await scene.draw();
 }
 
 type GamepadTouch={
