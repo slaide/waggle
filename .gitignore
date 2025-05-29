@@ -3,6 +3,8 @@
 !/types/glm.d.ts
 /**/*.d.ts
 /**/*.js
+# do not ignore any depdency contents
+!/static/dep/**
 /**/*.wasm
 /node_modules
 /dist
