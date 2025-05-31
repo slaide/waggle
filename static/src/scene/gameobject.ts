@@ -107,6 +107,11 @@ export class GameObject{
     }
 
     upload(){
+        const F32SIZE=4;
+
+        // 3 floats for vert pos, 3 for normal, then 2 floats for uv
+        const VERTEX_DATA_SIZE=8*F32SIZE;
+
         this.gl.bindBuffer(GL.ARRAY_BUFFER,this.buffers.vertexData);
         // bind vertex data: position (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
@@ -114,8 +119,17 @@ export class GameObject{
             3,
             GL.FLOAT,
             false,
-            5*4, // 3 floats for vert pos, then 2 floats for uv
+            VERTEX_DATA_SIZE,
             0,
+        );
+        // bind vertex data: position (in common vertexdata buffer)
+        this.gl.vertexAttribPointer(
+            this.programInfo.attributeLocations.aVertexNormal,
+            3,
+            GL.FLOAT,
+            false,
+            VERTEX_DATA_SIZE,
+            3*F32SIZE,
         );
         // bind vertex data: uv coords (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
@@ -123,14 +137,14 @@ export class GameObject{
             2,
             GL.FLOAT,
             false,
-            5*4, // 3 floats for vert pos, then 2 floats for uv
-            3*4, // starts past vert pos
+            VERTEX_DATA_SIZE,
+            6*F32SIZE,
         );
 
         // upload shader binding data
         this.gl.useProgram(this.programInfo.program);
         this.gl.uniformMatrix4fv(
-            this.programInfo.uniformLocations.uModelViewMatrix,
+            this.programInfo.uniformLocations.uModelMatrix,
             false,
             this.transform.matrix,
         );
@@ -155,6 +169,7 @@ export class GameObject{
 
         // prepare draw: enable vertex data
         gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexPosition);
+        gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexNormal);
         gl.enableVertexAttribArray(programInfo.attributeLocations.aVertexTexCoord);
 
         // bind texture buffer
@@ -180,19 +195,30 @@ export class GameObject{
                 precision highp float;
 
                 in vec4 aVertexPosition;
+                in vec3 aVertexNormal;
                 in vec2 aVertexTexCoord;
 
-                uniform mat4 uModelViewMatrix;
+                uniform mat4 uModelMatrix;
+                uniform mat4 uViewMatrix;
                 uniform mat4 uProjectionMatrix;
 
                 out vec2 vTextureCoord;
-                // placeholder
-                out vec4 vpos;
+                out vec4 vGlobalPos;
+                out vec3 vNormal;
 
                 void main() {
-                    vpos=uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-                    gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+                    vec4 modelSpacePos=aVertexPosition;
+                    vec4 globalSpacePos=uModelMatrix * aVertexPosition;
+                    vec4 viewSpacePos=uViewMatrix * globalSpacePos;
+                    vec4 clipSpacePos=uProjectionMatrix * viewSpacePos;
+
+                    vGlobalPos=globalSpacePos;
+                    gl_Position = clipSpacePos;
                     vTextureCoord = aVertexTexCoord;
+
+                    // would be good to calculate this on the cpu instead
+                    mat3 normalTransformMatrix=transpose(inverse(mat3(uModelMatrix)));
+                    vNormal = normalTransformMatrix * normalize(aVertexNormal);
                 }
             `,
             fs:`#version 300 es // frag
@@ -204,7 +230,8 @@ export class GameObject{
                 layout (location = 2) out vec4 gAlbedoSpec;
 
                 in vec2 vTextureCoord;
-                in vec4 vpos;
+                in vec4 vGlobalPos;
+                in vec3 vNormal;
 
                 #if ${hasDiffuseTexture?'1':'0'}
                     uniform sampler2D uDiffuseSampler;
@@ -213,8 +240,8 @@ export class GameObject{
                 #endif
 
                 void main() {
-                    gPosition=vpos.xyz;
-                    gNormal=vec3(0,0,0);
+                    gPosition=vGlobalPos.xyz;
+                    gNormal=vNormal;
 
                     #if ${hasDiffuseTexture?'1':'0'}
                         gAlbedoSpec=texture(uDiffuseSampler, vTextureCoord);

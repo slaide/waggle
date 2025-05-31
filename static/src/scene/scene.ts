@@ -308,18 +308,18 @@ export class Scene{
                 rotation+=40*deltatime_ms;
                 object.transform.rotation=quat.fromEuler(quat.create(),rotation*0.3,rotation*0.7,rotation);
 
-                const modelViewMatrix=mat4.multiply(
-                    mat4.create(),
-                    this.camera.viewMatrix,
-                    object.transform.matrix
-                );
-
                 gl.useProgram(programInfo.program);
                 // ensure transform is up to date
                 gl.uniformMatrix4fv(
-                    programInfo.uniformLocations.uModelViewMatrix,
+                    programInfo.uniformLocations.uModelMatrix,
                     false,
-                    modelViewMatrix,
+                    object.transform.matrix,
+                );
+                // ensure transform is up to date
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.uViewMatrix,
+                    false,
+                    this.camera.viewMatrix,
                 );
                 // also update camera projection matrix (TODO optimize to share this between draws)
                 gl.uniformMatrix4fv(
@@ -357,7 +357,7 @@ export class Scene{
 
                 out vec4 color;
                 void main() {
-                    color = vec4(texture(gAlbedoSpec,vUV).rgb,1.0);
+                    color = vec4(texture(gNormal,vUV).rgb,1.0);
                 }`
         });
 

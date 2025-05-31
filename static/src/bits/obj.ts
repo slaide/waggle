@@ -13,6 +13,21 @@ class MtlTexture{
     ){}
 };
 
+export type BB={
+    x:{
+        min:number;
+        max:number;
+    };
+    y:{
+        min:number;
+        max:number;
+    };
+    z:{
+        min:number;
+        max:number;
+    };
+};
+
 export class MtlMaterial{
     ambient?:vec3;
     diffuse?:vec3;
@@ -143,9 +158,18 @@ export class ObjFile{
     constructor(
         public vertexData:Float32Array,
         public indices:Uint32Array,
+        public boundingBox:BB,
         public material:MtlMaterial|null,
     ){}
 }
+/**
+ * parse obj file. normalizes object size to max axis extent of 1.0.
+ * 
+ * this.boundingBox is the original bounding box.
+ * 
+ * @param filepath 
+ * @returns 
+ */
 export async function parseObj(filepath:string):Promise<ObjFile>{
     const filedata=await fetch(filepath,{}).then(v=>v.text());
 
@@ -156,8 +180,16 @@ export async function parseObj(filepath:string):Promise<ObjFile>{
     let materialFile:MtlFile|null=null;
     let material:MtlMaterial|null=null;
 
+    /** number of components per vertex (number of floats, e.g. 3 for pos + 3 for normal + 2 for uv) */
+    const NUM_VERT_COMPONENTS=8;
     const vertexData:number[]=[];
     const indices:number[]=[];
+
+    const size:BB={
+        x:{min:0,max:0,},
+        y:{min:0,max:0,},
+        z:{min:0,max:0,},
+    };
 
     const lines=(filedata
         // ensure whitespace is tabs only
@@ -232,11 +264,11 @@ export async function parseObj(filepath:string):Promise<ObjFile>{
                 // format: v/vt/vn v/vt/vn v/vt/vn [v/vt/vn]
                 // (data contains indices into vertexData, which entries are constructed on the fly)
                 const data=[0,0,0,0];
-                let isQuad=false;
+                const isQuad=args.length==4;
 
-                for(let i=0;i<Math.min(4,args.length);i++){
+                for(let i=0;i<args.length;i++){
                     /** data for a single vertex in this face */
-                    const faceVertexData=new Uint32Array([0,0,0]);
+                    const faceVertexData=new Int32Array([-1,-1,-1]);
 
                     const face_segments=args[i].split("/");
                     for(let s=0;s<face_segments.length;s++){
@@ -247,17 +279,76 @@ export async function parseObj(filepath:string):Promise<ObjFile>{
 
                     // .at() does handle negative indices like obj spec
                     // (e.g. -1 returns last element in array)
-                    if((faceVertexData[0]*4)>=vertexPositions.length)throw`vertexPositions`;
-                    let vertexUV=vertexUVs.at(faceVertexData[1])??[0,0,0];
-                    vertexData.push(...[
+                    if((faceVertexData[0]*4+2)>=vertexPositions.length)throw`vertexPositions`;
+                    const vertexUV=vertexUVs.at(faceVertexData[1])??[0,0,0];
+
+                    const vertexNormal=vertexNormals.at(faceVertexData[2])??[0,0,1];
+
+                    // update object bounding box
+                    size.x.min=Math.min(size.x.min,vertexPositions[faceVertexData[0]*4+0]);
+                    size.x.max=Math.max(size.x.max,vertexPositions[faceVertexData[0]*4+0]);
+                    size.y.min=Math.min(size.y.min,vertexPositions[faceVertexData[0]*4+1]);
+                    size.y.max=Math.max(size.y.max,vertexPositions[faceVertexData[0]*4+1]);
+                    size.z.min=Math.min(size.z.min,vertexPositions[faceVertexData[0]*4+2]);
+                    size.z.max=Math.max(size.z.max,vertexPositions[faceVertexData[0]*4+2]);
+
+                    const new_vertex_data=[
+                        // 3d position
                         vertexPositions[faceVertexData[0]*4],
                         vertexPositions[faceVertexData[0]*4+1],
                         vertexPositions[faceVertexData[0]*4+2],
-                        vertexUV[0],vertexUV[1],
-                    ]);
 
-                    data[i]=(vertexData.length/5)-1;
+                        // 3d normal
+                        vertexNormal[0],
+                        vertexNormal[1],
+                        vertexNormal[2],
+
+                        // 2d uv
+                        vertexUV[0],
+                        vertexUV[1],
+                    ];
+                    if(new_vertex_data.length!=NUM_VERT_COMPONENTS)throw`new_vertex_data.length!=NUM_VERT_COMPONENTS`;
+                    vertexData.push(...new_vertex_data);
+
+                    data[i]=(vertexData.length/NUM_VERT_COMPONENTS)-1;
                 }
+
+                const v1=vec3.fromValues(
+                    //@ts-ignore
+                    vertexData.at(-3*8+0),
+                    vertexData.at(-3*8+1),
+                    vertexData.at(-3*8+2),
+                );
+                const v2=vec3.fromValues(
+                    //@ts-ignore
+                    vertexData.at(-2*8+0),
+                    vertexData.at(-2*8+1),
+                    vertexData.at(-2*8+2),
+                );
+                const v3=vec3.fromValues(
+                    //@ts-ignore
+                    vertexData.at(-1*8+0),
+                    vertexData.at(-1*8+1),
+                    vertexData.at(-1*8+2),
+                );
+
+                const normal=vec3.cross(
+                    vec3.create(),
+                    vec3.sub(vec3.create(),v1,v2),
+                    vec3.sub(vec3.create(),v1,v3),
+                );
+
+                vertexData[vertexData.length+(-3*8+3)]=normal[0];
+                vertexData[vertexData.length+(-3*8+4)]=normal[1];
+                vertexData[vertexData.length+(-3*8+5)]=normal[2];
+
+                vertexData[vertexData.length+(-2*8+3)]=normal[0];
+                vertexData[vertexData.length+(-2*8+4)]=normal[1];
+                vertexData[vertexData.length+(-2*8+5)]=normal[2];
+
+                vertexData[vertexData.length+(-1*8+3)]=normal[0];
+                vertexData[vertexData.length+(-1*8+4)]=normal[1];
+                vertexData[vertexData.length+(-1*8+5)]=normal[2];
 
                 if(isQuad){
                     throw `isQuad unimplemented`;
@@ -311,9 +402,28 @@ export async function parseObj(filepath:string):Promise<ObjFile>{
     const vertexDataFloat=new Float32Array(vertexData);
     const indicesUInt=new Uint32Array(indices);
 
+    const extent={
+        x:size.x.max-size.x.min,
+        y:size.y.max-size.y.min,
+        z:size.z.max-size.z.min,
+    };
+    const center={
+        x:size.x.min+extent.x/2,
+        y:size.y.min+extent.y/2,
+        z:size.z.min+extent.z/2,
+    };
+    // normalize object size to max axis extent of 1.0 and center at (0,0,0)
+    const max_extent=Math.max(extent.x,extent.y,extent.z);
+    for(let i=0;i<vertexDataFloat.length;i+=8){
+        vertexDataFloat[i+0]=(vertexDataFloat[i+0]-center.x)/max_extent;
+        vertexDataFloat[i+1]=(vertexDataFloat[i+1]-center.y)/max_extent;
+        vertexDataFloat[i+2]=(vertexDataFloat[i+2]-center.z)/max_extent;
+    }
+
     return new ObjFile(
         vertexDataFloat,
         indicesUInt,
+        size,
         material,
     );
 }
