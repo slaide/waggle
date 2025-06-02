@@ -5,333 +5,60 @@ import { parsePng } from "../bits/png.js";
 import { MtlMaterial, ObjFile } from "../bits/obj.js";
 import { mat4, vec3, quat, glMatrix as glm } from "gl-matrix";
 
-import {Camera} from "./camera.js";
-import {GameObject,createShaderProgram} from "./gameobject.js";
+import { Camera } from "./camera.js";
+import { GameObject, createShaderProgram } from "./gameobject.js";
 
-export class Scene{
-    size:{width:number,height:number};
+function glCheckError(gl: GLC, msg: string = "") {
+    const err = gl.getError();
+    if (err !== gl.NO_ERROR) {
+        console.error("WebGL error: 0x" + err.toString(16), "at", msg);
+    }
+}
 
-    gl:GLC;
-    objects:GameObject[];
-    camera:Camera;
-    shouldDraw:boolean;
+type float = number;
+type PointLight = {
+    position: vec3;
+    radius: float;
+    color: vec3;
+    intensity: float;
+};
 
-    gbuffer:WebGLFramebuffer;
-    gbufferTextures:{[name:string]:WebGLTexture}={};
-    
-    readFbo:WebGLFramebuffer;
-    readTextures:{[name:string]:WebGLTexture}={};
-    readAttachments:any[]=[];
+const POINTLIGHTBLOCKBINDING = 1;
 
+const MAX_NUM_POINTLIGHTS = 1;
+const MAX_NUM_SPOTLIGHTS = 1;
+const MAX_NUM_DIRECTIONALLIGHTS = 1;
+
+export class GBuffer {
     constructor(
-        gl:GLC,
-        size:{width:number,height:number},
-    ){
-        this.gl=gl;
-        this.objects=[];
-        this.camera=new Camera();
+        public gl: GLC,
+        public size: { width: number; height: number },
 
-        this.shouldDraw=true;
+        public fsq: WebGLProgram,
 
-        this.size={width:0,height:0};
+        public camera: Camera = new Camera(),
 
-        this.readFbo=gl.createFramebuffer();
-        // make initial framebuffer (just to complete field construction)
-        this.gbuffer=gl.createFramebuffer();
+        public gbuffer: WebGLFramebuffer = gl.createFramebuffer(),
+        public layer_textures: { [name: string]: WebGLTexture } = {},
+        public layer_depth: WebGLRenderbuffer = gl.createRenderbuffer(),
 
-        // make gbuffer
-        this._resize(size);
+        public readFbo: WebGLFramebuffer = gl.createFramebuffer(),
+        public readTextures: { [name: string]: WebGLTexture } = {},
 
-        console.log(`${gl.checkFramebufferStatus(GL.FRAMEBUFFER)} == ${GL.FRAMEBUFFER_COMPLETE} ? ${gl.checkFramebufferStatus(GL.FRAMEBUFFER)==GL.FRAMEBUFFER_COMPLETE}`)
-    }
+        public pointLightUBO: WebGLBuffer = gl.createBuffer(),
 
-    _resize(newsize:{width:number,height:number}){
-        const gl=this.gl;
-        const {width:w,height:h}=newsize;
+        public layers: {
+            name: string;
+            format: GLint;
+            attachmentid: GLint;
+        }[] = [],
+        /** used with gl.drawBuffers */
+        public layerAttachments: GLint[] = [],
+    ) {}
 
-        // return if the size has not actually changed
-        if(this.size.width==w && this.size.height==h){
-            return;
-        }
-
-        // update stored size
-        this.size.width=w;
-        this.size.height=h;
-
-        // update camera aspect ratio
-        this.camera.aspect=w/h;
-
-        // create new gbuffer texture
-        this.gbufferTextures={
-            position:gl.createTexture(),
-            normal:gl.createTexture(),
-            diffuse:gl.createTexture(),
-
-            depth:gl.createRenderbuffer(),
-        };
-
-        const extHF = gl.getExtension("EXT_color_buffer_half_float");
-        if(!extHF)throw`EXT_color_buffer_half_float unimplemented`;
-
-        const formats:{[name:string]:GLenum} = {
-            position: extHF.RGBA16F_EXT,
-            normal:   extHF.RGBA16F_EXT,
-            diffuse:  GL.RGBA8,
-        };
-
-        for(let name of Object.keys(this.gbufferTextures)){
-            const target_texture=this.gbufferTextures[name];
-            if(!(target_texture instanceof WebGLTexture))continue;
-
-            const format=formats[name];
-
-            gl.bindTexture(GL.TEXTURE_2D, target_texture);
-            gl.texStorage2D(GL.TEXTURE_2D,1,format,w,h);
-            gl.texParameteri(GL.TEXTURE_2D,GL.TEXTURE_MIN_FILTER,GL.NEAREST);
-            gl.texParameteri(GL.TEXTURE_2D,GL.TEXTURE_MAG_FILTER,GL.NEAREST);
-        }
-
-        gl.bindRenderbuffer(GL.RENDERBUFFER,this.gbufferTextures.depth);
-        gl.renderbufferStorage(GL.RENDERBUFFER,GL.DEPTH24_STENCIL8,w,h);
-
-        // create framebuffer
-        const gbuffer=gl.createFramebuffer();
-        this.gbuffer=gbuffer;
-
-        // bind resources to framebuffer
-        gl.bindFramebuffer(GL.FRAMEBUFFER,this.gbuffer);
-        gl.framebufferTexture2D(GL.FRAMEBUFFER,GL.COLOR_ATTACHMENT0,GL.TEXTURE_2D,this.gbufferTextures.position,0);
-        gl.framebufferTexture2D(GL.FRAMEBUFFER,GL.COLOR_ATTACHMENT1,GL.TEXTURE_2D,this.gbufferTextures.normal,0);
-        gl.framebufferTexture2D(GL.FRAMEBUFFER,GL.COLOR_ATTACHMENT2,GL.TEXTURE_2D,this.gbufferTextures.diffuse,0);
-        gl.framebufferRenderbuffer(GL.FRAMEBUFFER,GL.DEPTH_STENCIL_ATTACHMENT,GL.RENDERBUFFER,this.gbufferTextures.depth);
-
-        gl.drawBuffers([GL.COLOR_ATTACHMENT0,GL.COLOR_ATTACHMENT1,GL.COLOR_ATTACHMENT2]);
-
-        console.assert(
-            gl.checkFramebufferStatus(GL.FRAMEBUFFER) === GL.FRAMEBUFFER_COMPLETE,
-            "G-buffer incomplete:", gl.checkFramebufferStatus(GL.FRAMEBUFFER)
-        );
-
-        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
-
-        // set up read-only framebuffer..
-        // (because webgl2 does not let you read from a texture that is used as write target
-        // in a framebuffer, and webgl2 has no sync primitives to explicitely transition from
-        // write to read, so instead we copy into an explicit read buffer, which wastes gpu
-        // gpu bandwidth, but there is no other way)
-
-        // create read only textures
-        this.readTextures = {
-            position: gl.createTexture(),
-            normal:   gl.createTexture(),
-            diffuse:  gl.createTexture(),
-        };
-        for (let key of Object.keys(this.readTextures)) {
-            const tex = this.readTextures[key];
-
-            gl.bindTexture(GL.TEXTURE_2D, tex);
-            //@ts-ignore
-            gl.texStorage2D(GL.TEXTURE_2D, 1, formats[key], w, h);
-            gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
-            gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
-        }
-
-        this.readFbo = gl.createFramebuffer();
-
-        // allocate storage and attach to readFbo
-        gl.bindFramebuffer(GL.FRAMEBUFFER, this.readFbo);
-        this.readAttachments = [
-            GL.COLOR_ATTACHMENT0,
-            GL.COLOR_ATTACHMENT1,
-            GL.COLOR_ATTACHMENT2,
-        ];
-
-        for (let [i,key] of Object.keys(this.readTextures).entries()) {
-            const tex = this.readTextures[key];
-
-            gl.framebufferTexture2D(
-                GL.FRAMEBUFFER,
-                this.readAttachments[i],
-                GL.TEXTURE_2D,
-                tex,
-                0
-            );
-        }
-
-        // tell readFbo which attachments we’ll be writing into during blit
-        gl.drawBuffers(this.readAttachments);
-
-        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
-    }
-
-    async draw(){
-        const {gl}=this;
-
-        gl.bindFramebuffer(GL.FRAMEBUFFER, this.gbuffer);
-
-        // this is used as part of game logic
-        let rotation=0;
-
-        const cameraSpeedFactor={
-            move:2,
-            rotate:0.8
-        };
-        const cameraSpeed={
-            x:0,
-            y:0,
-            z:0,
-            rotx:0,
-            roty:0,
-        };
-        window.addEventListener("keydown",ev=>{
-            ev.preventDefault();
-
-            if(ev.key.toLowerCase()=="w"){
-                cameraSpeed.z=-cameraSpeedFactor.move;
-            }
-            if(ev.key.toLowerCase()=="s"){
-                cameraSpeed.z=cameraSpeedFactor.move;
-            }
-            if(ev.key.toLowerCase()=="a"){
-                cameraSpeed.x=-cameraSpeedFactor.move;
-            }
-            if(ev.key.toLowerCase()=="d"){
-                cameraSpeed.x=cameraSpeedFactor.move;
-            }
-            if(ev.key.toLowerCase()=="e"){
-                cameraSpeed.y=cameraSpeedFactor.move;
-            }
-            if(ev.key.toLowerCase()=="q"){
-                cameraSpeed.y=-cameraSpeedFactor.move;
-            }
-            if(ev.key==" "){
-                cameraSpeed.y=cameraSpeedFactor.move;
-            }
-            if(ev.key=="ArrowRight"){
-                cameraSpeed.roty=-cameraSpeedFactor.rotate;
-            }
-            if(ev.key=="ArrowLeft"){
-                cameraSpeed.roty=cameraSpeedFactor.rotate;
-            }
-            if(ev.key=="ArrowUp"){
-                cameraSpeed.rotx=cameraSpeedFactor.rotate;
-            }
-            if(ev.key=="ArrowDown"){
-                cameraSpeed.rotx=-cameraSpeedFactor.rotate;
-            }
-        })
-        window.addEventListener("keyup",ev=>{
-            ev.preventDefault();
-
-            if(ev.key.toLowerCase()=="w"){
-                cameraSpeed.z=0;
-            }
-            if(ev.key.toLowerCase()=="s"){
-                cameraSpeed.z=0;
-            }
-            if(ev.key.toLowerCase()=="a"){
-                cameraSpeed.x=0;
-            }
-            if(ev.key.toLowerCase()=="d"){
-                cameraSpeed.x=0;
-            }
-            if(ev.key.toLowerCase()=="e"){
-                cameraSpeed.y=0;
-            }
-            if(ev.key.toLowerCase()=="q"){
-                cameraSpeed.y=0;
-            }
-            if(ev.key==" "){
-                cameraSpeed.y=0;
-            }
-            if(ev.key=="ArrowRight"){
-                cameraSpeed.roty=0;
-            }
-            if(ev.key=="ArrowLeft"){
-                cameraSpeed.roty=0;
-            }
-            if(ev.key=="ArrowUp"){
-                cameraSpeed.rotx=0;
-            }
-            if(ev.key=="ArrowDown"){
-                cameraSpeed.rotx=0;
-            }
-        })
-
-        const onFrameLogic:(deltatime_ms:number)=>void=(deltatime_ms:number)=>{
-            const xStep=-cameraSpeed.x*deltatime_ms;
-            vec3.add(this.camera.position,this.camera.position,vec3.multiply(
-                vec3.create(),
-                this.camera.right,
-                vec3.fromValues(xStep,xStep,xStep)
-            ));
-            const yStep=cameraSpeed.y*deltatime_ms;
-            vec3.add(this.camera.position,this.camera.position,vec3.multiply(
-                vec3.create(),
-                vec3.fromValues(0,1,0),
-                vec3.fromValues(yStep,yStep,yStep)
-            ));
-            const zStep=cameraSpeed.z*deltatime_ms;
-            vec3.add(this.camera.position,this.camera.position,vec3.multiply(
-                vec3.create(),
-                this.camera.forward,
-                vec3.fromValues(zStep,zStep,zStep)
-            ));
-
-            quat.multiply( 
-                this.camera.rotation,
-                quat.setAxisAngle(
-                    quat.create(),
-                    /// @ts-ignore
-                    this.camera.right,
-                    -cameraSpeed.rotx*deltatime_ms
-                ),
-                this.camera.rotation,
-            );
-            quat.multiply( 
-                this.camera.rotation,
-                quat.setAxisAngle(
-                    quat.create(),
-                    [0,1,0],
-                    cameraSpeed.roty*deltatime_ms
-                ),
-                this.camera.rotation,
-            );
-
-            // set up camera
-            const projectionMatrix=this.camera.projectionMatrix;
-
-            for(const object of this.objects){
-                const {programInfo}=object;
-
-                // animate quad rotation
-                rotation+=40*deltatime_ms;
-                object.transform.rotation=quat.fromEuler(quat.create(),rotation*0.3,rotation*0.7,rotation);
-
-                gl.useProgram(programInfo.program);
-                // ensure transform is up to date
-                gl.uniformMatrix4fv(
-                    programInfo.uniformLocations.uModelMatrix,
-                    false,
-                    object.transform.matrix,
-                );
-                // ensure transform is up to date
-                gl.uniformMatrix4fv(
-                    programInfo.uniformLocations.uViewMatrix,
-                    false,
-                    this.camera.viewMatrix,
-                );
-                // also update camera projection matrix (TODO optimize to share this between draws)
-                gl.uniformMatrix4fv(
-                    programInfo.uniformLocations.uProjectionMatrix,
-                    false,
-                    projectionMatrix,
-                );
-            }
-        };
-
-        const fsq=await createShaderProgram(gl,{
-            vs:`#version 300 es
+    static async make(gl: GLC, size: { width: number; height: number }) {
+        const fsq = await createShaderProgram(gl, {
+            vs: `#version 300 es
 
                 out vec2 vUV;
 
@@ -346,142 +73,622 @@ export class Scene{
                     gl_Position = vec4(pos[gl_VertexID], 0.0, 1.0);
                     vUV=pos[gl_VertexID]*0.5+0.5;
                 }`,
-            fs:`#version 300 es
+            fs: `#version 300 es
                 precision highp float;
+
+                // --- Helper: linear attenuation (0..1) based on distance/radius ---
+                float ComputeAttenuation( float distance, float radius )
+                {
+                    return clamp(1.0 - (distance / radius), 0.0, 1.0);
+                }
+
+                #define MAX_POINT_LIGHTS ${MAX_NUM_POINTLIGHTS}
+                struct PointLight{
+                    vec3 position;
+                    float radius;
+                    vec3 color;
+                    float intensity;
+                };
+                // --- Point Light Contribution ---
+                vec3 CalcPointLight(
+                    PointLight p,
+                    vec3 fragPos,
+                    vec3 norm,
+                    vec3 viewDir,
+                    vec3 albedo,
+                    float specGloss
+                ){
+                    vec3 Lvec = p.position - fragPos;
+                    float dist = length(Lvec);
+                    if(dist >= p.radius) return vec3(0.0);
+                    vec3 L = normalize(Lvec);
+                    float diff = max(dot(norm, L), 0.0);
+                    vec3 halfway = normalize(L + viewDir);
+                    float spec = 0.0;
+                    if(diff > 0.0) {
+                        spec = pow(max(dot(norm, halfway), 0.0), specGloss);
+                    }
+                    float att = ComputeAttenuation(dist, p.radius);
+                    vec3 diffuse  = p.color * diff;
+                    vec3 specular = p.color * spec;
+                    return att * p.intensity * ( diffuse * albedo + specular * specGloss );
+                }
+
+                layout(std140) uniform PointLightBlock {
+                    int numPointLights;
+                    // 12 bytes of padding
+                    PointLight pointLights[MAX_POINT_LIGHTS];
+                };
 
                 uniform sampler2D gPosition;
                 uniform sampler2D gNormal;
                 uniform sampler2D gAlbedoSpec;
 
+                uniform vec3 uCamPos;
+
                 in vec2 vUV;
 
                 out vec4 color;
                 void main() {
+                    // just forward some gbuffer layer (for debugging)
                     color = vec4(texture(gNormal,vUV).rgb,1.0);
-                }`
+                    // return;
+
+                    vec3 fragPos=texture(gPosition,vUV).rgb;
+                    vec3 fragNormal=texture(gNormal,vUV).rgb;
+                    vec4 albSpec=texture(gAlbedoSpec,vUV);
+                    vec3 albedo=albSpec.rgb;
+                    float specGloss=2.0;//albSpec.a;
+                    vec3 viewDir=normalize(uCamPos - fragPos);
+
+                    vec3 result=vec3(0.0);
+                    // Point
+                    for(int i = 0; i < 1; i++) {
+                        result += CalcPointLight(pointLights[i], fragPos, fragNormal, viewDir, albedo, specGloss);
+                    }
+                    color=vec4(result,1.0);
+                }
+            `,
         });
+
+        // create with default size
+        const gbuffer = new GBuffer(gl, { width: 1, height: 1 }, fsq);
+
+        const extHF = gl.getExtension("EXT_color_buffer_half_float");
+        if (!extHF) throw `EXT_color_buffer_half_float unimplemented`;
+        gbuffer.layers = [
+            {
+                name: "position",
+                format: extHF.RGBA16F_EXT,
+                attachmentid: 0,
+            },
+            {
+                name: "normal",
+                format: extHF.RGBA16F_EXT,
+                attachmentid: 1,
+            },
+            {
+                name: "diffuse",
+                format: GL.RGBA8,
+                attachmentid: 2,
+            },
+        ];
+
+        // then resize to current size
+        gbuffer._resize(size);
+
+        return gbuffer;
+    }
+
+    _resize(newsize: { width: number; height: number }) {
+        const gl = this.gl;
+        const { width: w, height: h } = newsize;
+
+        // return if the size has not actually changed
+        if (this.size.width == w && this.size.height == h) {
+            return;
+        }
+
+        // update stored size
+        this.size.width = w;
+        this.size.height = h;
+
+        // update camera aspect ratio
+        this.camera.aspect = w / h;
+
+        // create new gbuffer texture
+        this.layer_textures = {};
+        this.layer_depth = gl.createRenderbuffer();
+
+        for (const layerinfo of this.layers) {
+            const target_texture = gl.createTexture();
+            this.layer_textures[layerinfo.name] = target_texture;
+
+            const format = layerinfo.format;
+
+            gl.bindTexture(GL.TEXTURE_2D, target_texture);
+            gl.texStorage2D(GL.TEXTURE_2D, 1, format, w, h);
+            gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+            gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+        }
+
+        gl.bindRenderbuffer(GL.RENDERBUFFER, this.layer_depth);
+        gl.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH24_STENCIL8, w, h);
+
+        // create framebuffer
+        const gbuffer = gl.createFramebuffer();
+        this.gbuffer = gbuffer;
+
+        // bind resources to framebuffer
+        gl.bindFramebuffer(GL.FRAMEBUFFER, this.gbuffer);
+        for (const layerinfo of this.layers) {
+            gl.framebufferTexture2D(
+                GL.FRAMEBUFFER,
+                GL.COLOR_ATTACHMENT0 + layerinfo.attachmentid,
+                GL.TEXTURE_2D,
+                this.layer_textures[layerinfo.name],
+                0,
+            );
+        }
+        gl.framebufferRenderbuffer(
+            GL.FRAMEBUFFER,
+            GL.DEPTH_STENCIL_ATTACHMENT,
+            GL.RENDERBUFFER,
+            this.layer_depth,
+        );
+
+        this.layerAttachments = this.layers.map(
+            (l) => GL.COLOR_ATTACHMENT0 + l.attachmentid,
+        );
+
+        console.assert(
+            gl.checkFramebufferStatus(GL.FRAMEBUFFER) ===
+                GL.FRAMEBUFFER_COMPLETE,
+            "G-buffer incomplete:",
+            gl.checkFramebufferStatus(GL.FRAMEBUFFER),
+        );
+
+        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+
+        // set up read-only framebuffer..
+        // (because webgl2 does not let you read from a texture that is used as write target
+        // in a framebuffer, and webgl2 has no sync primitives to explicitely transition from
+        // write to read, so instead we copy into an explicit read buffer, which wastes gpu
+        // gpu bandwidth, but there is no other way)
+
+        // create read only textures
+        this.readTextures = {};
+        for (const layerinfo of this.layers) {
+            const tex = gl.createTexture();
+            this.readTextures[layerinfo.name] = tex;
+
+            gl.bindTexture(GL.TEXTURE_2D, tex);
+            gl.texStorage2D(GL.TEXTURE_2D, 1, layerinfo.format, w, h);
+            gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+            gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+        }
+
+        this.readFbo = gl.createFramebuffer();
+
+        // allocate storage and attach to readFbo
+        gl.bindFramebuffer(GL.FRAMEBUFFER, this.readFbo);
+
+        for (const [i, layerinfo] of this.layers.entries()) {
+            const tex = this.readTextures[layerinfo.name];
+
+            gl.framebufferTexture2D(
+                GL.FRAMEBUFFER,
+                this.layerAttachments[i],
+                GL.TEXTURE_2D,
+                tex,
+                0,
+            );
+        }
+
+        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+    }
+
+    updatePointlights(pointLightsArray: PointLight[]) {
+        const { gl, fsq } = this;
+
+        gl.useProgram(fsq);
+        const pointBlockIndex = gl.getUniformBlockIndex(fsq, "PointLightBlock");
+        const blockSizeBytes = gl.getActiveUniformBlockParameter(
+            fsq,
+            pointBlockIndex,
+            gl.UNIFORM_BLOCK_DATA_SIZE,
+        );
+        gl.uniformBlockBinding(fsq, pointBlockIndex, POINTLIGHTBLOCKBINDING);
+
+        // dirLightsArray is JS array of {direction:[x,y,z], color:[r,g,b], intensity:f}
+        // You also need to store numDirLights and pad three floats.
+        const data = new ArrayBuffer(blockSizeBytes);
+        const dataView = new DataView(data);
+
+        let offset = 0;
+
+        // Write numDirLights at offset 0
+        dataView.setInt32(offset, pointLightsArray.length, true);
+        offset += 4;
+
+        // data[1..3] = 0 (padding)
+        offset += 3 * 4;
+
+        // Starting at offset 4 floats (index=4), we write each DirLight as:
+        //    [dir.x, dir.y, dir.z, pad0=0]
+        //    [col.r, col.g, col.b, intensity]
+        for (
+            let i = 0;
+            i < Math.min(pointLightsArray.length, MAX_NUM_POINTLIGHTS);
+            ++i
+        ) {
+            const d = pointLightsArray[i];
+
+            dataView.setFloat32(offset + 0 * 4, d.position[0], true);
+            dataView.setFloat32(offset + 1 * 4, d.position[1], true);
+            dataView.setFloat32(offset + 2 * 4, d.position[2], true);
+
+            dataView.setFloat32(offset + 3 * 4, d.radius, true);
+
+            dataView.setFloat32(offset + 4 * 4, d.color[0], true);
+            dataView.setFloat32(offset + 5 * 4, d.color[1], true);
+            dataView.setFloat32(offset + 6 * 4, d.color[2], true);
+
+            dataView.setFloat32(offset + 7 * 4, d.intensity, true);
+
+            offset += 8 * 4; // next DirLight (8 floats = 32 bytes)
+        }
+
+        // 4) Create UBO and upload
+        const ubo = gl.createBuffer();
+        gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+        gl.bufferData(gl.UNIFORM_BUFFER, dataView.buffer, gl.STATIC_DRAW);
+        // 5) Bind it to binding point 0:
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, POINTLIGHTBLOCKBINDING, ubo);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+        this.pointLightUBO = ubo;
+    }
+
+    draw() {
+        const { gl, fsq } = this;
+
+        // read from gbuffer
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.gbuffer);
+        // draw into default framebuffer (to screen)
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        gl.drawBuffers([gl.BACK]);
+
+        // Reset viewport to canvas size:
+        gl.viewport(0, 0, this.size.width, this.size.height);
+
+        // Optional: clear out the backbuffer if you want
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        //1) Copy G-buffer into readFbo
+        gl.bindFramebuffer(GL.READ_FRAMEBUFFER, this.gbuffer);
+        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, this.readFbo);
+
+        const { width: w, height: h } = this.size;
+        for (const [i, attachment] of this.layerAttachments.entries()) {
+            // because of reasons i dont fully understand, the draw buffers
+            // are not reset at each invocation, so to e.g. write into COLOR_ATTACHMENT1,
+            // the arguments to gl.drawBuffers must be an array where unused
+            // attachment slots (by position!) are gl.NONE.
+            const drawBuffers = [];
+            for (let j = 0; j < i; j++) {
+                drawBuffers.push(gl.NONE);
+            }
+            drawBuffers.push(attachment);
+
+            gl.readBuffer(attachment);
+            gl.drawBuffers(drawBuffers);
+            gl.blitFramebuffer(
+                0,
+                0,
+                w,
+                h,
+                0,
+                0,
+                w,
+                h,
+                gl.COLOR_BUFFER_BIT,
+                gl.NEAREST,
+            );
+        }
+
+        // 2) Now go back to default framebuffer
+        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.size.width, this.size.height);
+
+        // 3) Sample from readTextures in your FSQ shader
+        gl.useProgram(fsq);
+        gl.activeTexture(GL.TEXTURE0);
+        gl.bindTexture(GL.TEXTURE_2D, this.readTextures.position);
+        gl.uniform1i(gl.getUniformLocation(fsq, "gPosition"), 0);
+
+        gl.activeTexture(GL.TEXTURE1);
+        gl.bindTexture(GL.TEXTURE_2D, this.readTextures.normal);
+        gl.uniform1i(gl.getUniformLocation(fsq, "gNormal"), 1);
+
+        gl.activeTexture(GL.TEXTURE2);
+        gl.bindTexture(GL.TEXTURE_2D, this.readTextures.diffuse);
+        gl.uniform1i(gl.getUniformLocation(fsq, "gAlbedoSpec"), 2);
+
+        const camPosLoc = gl.getUniformLocation(fsq, "uCamPos");
+        gl.uniform3fv(camPosLoc, new Float32Array(this.camera.position));
+
+        gl.bindBufferBase(
+            gl.UNIFORM_BUFFER,
+            POINTLIGHTBLOCKBINDING,
+            this.pointLightUBO,
+        );
+
+        // Draw 3 vertices (covering the whole screen)
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+}
+
+export class Scene {
+    constructor(
+        public gl: GLC,
+        public gbuffer: GBuffer,
+        public children: GameObject[] = [],
+        public shouldDraw: boolean = true,
+    ) {}
+
+    static async make(gl: GLC, size: { width: number; height: number }) {
+        return new Scene(gl, await GBuffer.make(gl, size));
+    }
+
+    async draw() {
+        const { gl } = this;
+
+        // this is used as part of game logic
+        let rotation = 0;
+
+        const camera = this.gbuffer.camera;
+        const cameraSpeedFactor = {
+            move: 2,
+            rotate: 0.8,
+        };
+        const cameraSpeed = {
+            x: 0,
+            y: 0,
+            z: 0,
+            rotx: 0,
+            roty: 0,
+        };
+        window.addEventListener("keydown", (ev) => {
+            ev.preventDefault();
+
+            if (ev.key.toLowerCase() == "w") {
+                cameraSpeed.z = -cameraSpeedFactor.move;
+            }
+            if (ev.key.toLowerCase() == "s") {
+                cameraSpeed.z = cameraSpeedFactor.move;
+            }
+            if (ev.key.toLowerCase() == "a") {
+                cameraSpeed.x = -cameraSpeedFactor.move;
+            }
+            if (ev.key.toLowerCase() == "d") {
+                cameraSpeed.x = cameraSpeedFactor.move;
+            }
+            if (ev.key.toLowerCase() == "e") {
+                cameraSpeed.y = cameraSpeedFactor.move;
+            }
+            if (ev.key.toLowerCase() == "q") {
+                cameraSpeed.y = -cameraSpeedFactor.move;
+            }
+            if (ev.key == " ") {
+                cameraSpeed.y = cameraSpeedFactor.move;
+            }
+            if (ev.key == "ArrowRight") {
+                cameraSpeed.roty = -cameraSpeedFactor.rotate;
+            }
+            if (ev.key == "ArrowLeft") {
+                cameraSpeed.roty = cameraSpeedFactor.rotate;
+            }
+            if (ev.key == "ArrowUp") {
+                cameraSpeed.rotx = cameraSpeedFactor.rotate;
+            }
+            if (ev.key == "ArrowDown") {
+                cameraSpeed.rotx = -cameraSpeedFactor.rotate;
+            }
+        });
+        window.addEventListener("keyup", (ev) => {
+            ev.preventDefault();
+
+            if (ev.key.toLowerCase() == "w") {
+                cameraSpeed.z = 0;
+            }
+            if (ev.key.toLowerCase() == "s") {
+                cameraSpeed.z = 0;
+            }
+            if (ev.key.toLowerCase() == "a") {
+                cameraSpeed.x = 0;
+            }
+            if (ev.key.toLowerCase() == "d") {
+                cameraSpeed.x = 0;
+            }
+            if (ev.key.toLowerCase() == "e") {
+                cameraSpeed.y = 0;
+            }
+            if (ev.key.toLowerCase() == "q") {
+                cameraSpeed.y = 0;
+            }
+            if (ev.key == " ") {
+                cameraSpeed.y = 0;
+            }
+            if (ev.key == "ArrowRight") {
+                cameraSpeed.roty = 0;
+            }
+            if (ev.key == "ArrowLeft") {
+                cameraSpeed.roty = 0;
+            }
+            if (ev.key == "ArrowUp") {
+                cameraSpeed.rotx = 0;
+            }
+            if (ev.key == "ArrowDown") {
+                cameraSpeed.rotx = 0;
+            }
+        });
+
+        const onFrameLogic: (deltatime_ms: number) => void = (
+            deltatime_ms: number,
+        ) => {
+            const xStep = -cameraSpeed.x * deltatime_ms;
+            vec3.add(
+                camera.position,
+                camera.position,
+                vec3.multiply(
+                    vec3.create(),
+                    camera.right,
+                    vec3.fromValues(xStep, xStep, xStep),
+                ),
+            );
+            const yStep = cameraSpeed.y * deltatime_ms;
+            vec3.add(
+                camera.position,
+                camera.position,
+                vec3.multiply(
+                    vec3.create(),
+                    vec3.fromValues(0, 1, 0),
+                    vec3.fromValues(yStep, yStep, yStep),
+                ),
+            );
+            const zStep = cameraSpeed.z * deltatime_ms;
+            vec3.add(
+                camera.position,
+                camera.position,
+                vec3.multiply(
+                    vec3.create(),
+                    camera.forward,
+                    vec3.fromValues(zStep, zStep, zStep),
+                ),
+            );
+
+            quat.multiply(
+                camera.rotation,
+                quat.setAxisAngle(
+                    quat.create(),
+                    /// @ts-ignore
+                    camera.right,
+                    -cameraSpeed.rotx * deltatime_ms,
+                ),
+                camera.rotation,
+            );
+            quat.multiply(
+                camera.rotation,
+                quat.setAxisAngle(
+                    quat.create(),
+                    [0, 1, 0],
+                    cameraSpeed.roty * deltatime_ms,
+                ),
+                camera.rotation,
+            );
+
+            // set up camera
+            const projectionMatrix = camera.projectionMatrix;
+
+            for (const object of this.children) {
+                const { programInfo } = object;
+
+                // animate quad rotation
+                rotation += 40 * deltatime_ms;
+                object.transform.rotation = quat.fromEuler(
+                    quat.create(),
+                    rotation * 0.3,
+                    rotation * 0.7,
+                    rotation,
+                );
+
+                gl.useProgram(programInfo.program);
+                // ensure transform is up to date
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.uModelMatrix,
+                    false,
+                    object.transform.matrix,
+                );
+                // ensure transform is up to date
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.uViewMatrix,
+                    false,
+                    camera.viewMatrix,
+                );
+                // also update camera projection matrix (TODO optimize to share this between draws)
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.uProjectionMatrix,
+                    false,
+                    projectionMatrix,
+                );
+            }
+        };
+
+        this.gbuffer.updatePointlights([
+            {
+                position: vec3.fromValues(0, 1, -6),
+                radius: 50,
+                color: vec3.fromValues(1.0, 1.0, 1.0),
+                intensity: 0.3,
+            },
+        ]);
 
         // cleanup
         gl.bindTexture(GL.TEXTURE_2D, null);
         gl.bindFramebuffer(GL.FRAMEBUFFER, null);
 
-        const frametimes=new Float32Array(30);
-        let framenum=0;
-        const original_title=document.title;
+        const frametimes = new Float32Array(30);
+        let framenum = 0;
+        const original_title = document.title;
 
-        let last_frametime=performance.now();
-        const draw=()=>{
-            const deltatime_ms=(performance.now()-last_frametime)*1e-3;
-            last_frametime=performance.now();
+        let last_frametime = performance.now();
+        const draw = () => {
+            const deltatime_ms = (performance.now() - last_frametime) * 1e-3;
+            last_frametime = performance.now();
 
             // run logic step
             onFrameLogic(deltatime_ms);
 
-            if(!this.shouldDraw){
-                requestAnimationFrame(draw);
+            if (!this.shouldDraw) {
                 return;
             }
 
-            frametimes[(framenum++)%frametimes.length]=deltatime_ms;
+            frametimes[framenum++ % frametimes.length] = deltatime_ms;
 
-            const average_fps=frametimes.length/frametimes.reduce((o,n)=>o+n,0);
-            const min_fps=1/frametimes.reduce((o,n)=>Math.max(o,n));
-            const max_fps=1/frametimes.reduce((o,n)=>Math.min(o,n));
-            document.title=`${original_title} | fps ${average_fps.toFixed(1)} (${min_fps.toFixed(1)}, ${max_fps.toFixed(1)})`
+            const average_fps =
+                frametimes.length / frametimes.reduce((o, n) => o + n, 0);
+            const min_fps = 1 / frametimes.reduce((o, n) => Math.max(o, n));
+            const max_fps = 1 / frametimes.reduce((o, n) => Math.min(o, n));
+            document.title = `${original_title} | fps ${average_fps.toFixed(1)} (${min_fps.toFixed(1)}, ${max_fps.toFixed(1)})`;
 
             // bind gbuffer
-            gl.bindFramebuffer(GL.FRAMEBUFFER,this.gbuffer);
-            gl.drawBuffers([
-                gl.COLOR_ATTACHMENT0,
-                gl.COLOR_ATTACHMENT1,
-                gl.COLOR_ATTACHMENT2,
-            ]);
+            gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, this.gbuffer.gbuffer);
+            gl.drawBuffers(this.gbuffer.layerAttachments);
             console.assert(
-                gl.checkFramebufferStatus(GL.FRAMEBUFFER) === GL.FRAMEBUFFER_COMPLETE,
-                "G-buffer incomplete:", gl.checkFramebufferStatus(GL.FRAMEBUFFER)
+                gl.checkFramebufferStatus(GL.FRAMEBUFFER) ===
+                    GL.FRAMEBUFFER_COMPLETE,
+                "G-buffer incomplete:",
+                gl.checkFramebufferStatus(GL.FRAMEBUFFER),
             );
 
             // clear gbuffer to draw over
             gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
 
             // draw (into gbuffer)
-            for(const object of this.objects){
+            for (const object of this.children) {
                 object.draw();
             }
 
             // render full screen quad
 
-            // === 2) Bind the default (screen) framebuffer ===
-            gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.gbuffer);
-            gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-            gl.drawBuffers([ gl.BACK ]);
-            // (Or in pure WebGL2: gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null); 
-            //  but binding FRAMEBUFFER resets both READ and DRAW targets.)
+            this.gbuffer.draw();
+        };
 
-            // Reset viewport to canvas size:
-            gl.viewport(0, 0, this.size.width, this.size.height);
-
-            // Optional: clear out the backbuffer if you want
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-            // bind the default VAO (no buffers needed)
-            gl.bindVertexArray(null);
-            gl.useProgram(fsq);
-
-            //1) Copy G-buffer into readFbo
-            gl.bindFramebuffer(GL.READ_FRAMEBUFFER, this.gbuffer);
-            gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, this.readFbo);
-
-            const{width:w,height:h}=this.size;
-            // 1) blit both FLOAT attachments in one go
-            gl.readBuffer(   gl.COLOR_ATTACHMENT0);
-            gl.drawBuffers([ gl.COLOR_ATTACHMENT0 ]);
-            gl.blitFramebuffer(
-                0,0,w,h, 0,0,w,h,
-                gl.COLOR_BUFFER_BIT,
-                gl.NEAREST
-            );
-
-            gl.readBuffer(   gl.COLOR_ATTACHMENT1);
-            gl.drawBuffers([ gl.NONE,gl.COLOR_ATTACHMENT1 ]);
-            gl.blitFramebuffer(
-                0,0,w,h, 0,0,w,h,
-                gl.COLOR_BUFFER_BIT,
-                gl.NEAREST
-            );
-
-            // 2) blit the FIXED-POINT diffuse
-            gl.readBuffer(   gl.COLOR_ATTACHMENT2);
-            gl.drawBuffers([ gl.NONE,gl.NONE,gl.COLOR_ATTACHMENT2 ]);
-            gl.blitFramebuffer(
-                0,0,w,h, 0,0,w,h,
-                gl.COLOR_BUFFER_BIT,
-                gl.NEAREST
-            );
-
-            // 2) Now go back to default framebuffer
-            gl.bindFramebuffer(GL.FRAMEBUFFER, null);
-            gl.viewport(0, 0, this.size.width, this.size.height);
-
-            // 3) Sample from readTextures in your FSQ shader
-            gl.useProgram(fsq);
-            gl.activeTexture(GL.TEXTURE0);
-            gl.bindTexture(GL.TEXTURE_2D, this.readTextures.position);
-            gl.uniform1i(gl.getUniformLocation(fsq, "gPosition"), 0);
-
-            gl.activeTexture(GL.TEXTURE1);
-            gl.bindTexture(GL.TEXTURE_2D, this.readTextures.normal);
-            gl.uniform1i(gl.getUniformLocation(fsq, "gNormal"), 1);
-
-            gl.activeTexture(GL.TEXTURE2);
-            gl.bindTexture(GL.TEXTURE_2D, this.readTextures.diffuse);
-            gl.uniform1i(gl.getUniformLocation(fsq, "gAlbedoSpec"), 2);
-
-            // Draw 3 vertices (covering the whole screen)
-            gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-            requestAnimationFrame(draw);
-        }
-        await draw();
+        const drawLoop = () => {
+            draw();
+            requestAnimationFrame(drawLoop);
+        };
+        drawLoop();
     }
 }
