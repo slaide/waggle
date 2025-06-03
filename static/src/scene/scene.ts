@@ -31,19 +31,6 @@ export class Scene {
             return;
         }
 
-        // bind gbuffer
-        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, this.gbuffer.gbuffer);
-        gl.drawBuffers(this.gbuffer.layerAttachments);
-        console.assert(
-            gl.checkFramebufferStatus(GL.FRAMEBUFFER) ===
-                GL.FRAMEBUFFER_COMPLETE,
-            "G-buffer incomplete:",
-            gl.checkFramebufferStatus(GL.FRAMEBUFFER),
-        );
-
-        // clear gbuffer to draw over
-        gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
-
         // draw (into gbuffer)
         for (const object of this.children) {
             object.draw();

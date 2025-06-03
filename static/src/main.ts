@@ -315,6 +315,13 @@ export async function main() {
         // run logic step
         onFrameLogic(deltatime_ms);
 
+        // bind gbuffer
+        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, scene.gbuffer.gbuffer);
+        gl.drawBuffers(scene.gbuffer.layerAttachments);
+
+        // clear gbuffer to draw over
+        gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+
         // draw scene into gbuffer
         scene.draw();
 
