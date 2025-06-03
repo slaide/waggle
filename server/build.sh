@@ -5,5 +5,5 @@
 
 # ensure deps are installed
 npm ci
-# run typescript compiler
-npm run build:ts
+# run typescript compiler and bundler
+npm run bundle

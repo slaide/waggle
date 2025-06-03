@@ -1,31 +1,19 @@
 {
     "compilerOptions": {
         "module": "ESNext",
-        "moduleResolution": "node10",
-        "target": "ES2023",
-        "checkJs": true,
-        "strict": true,
-        "allowJs": true,
-
-        "lib": ["ES2023", "DOM"],
-
-        "noImplicitAny": true,
-        "alwaysStrict": true,
-
-        "strictNullChecks": true,
-        "strictFunctionTypes": true,
-        "strictBindCallApply": true,
-        "strictPropertyInitialization": true,
-        "noImplicitThis": true,
-        "noFallthroughCasesInSwitch": true,
-        "exactOptionalPropertyTypes": true,
-        "useUnknownInCatchVariables": true,
-
+        "target": "ES2024",
+        "moduleResolution": "node",
+        "lib": ["DOM", "ES2024"],
+        "outDir": "dist",
         "rootDir": ".",
-        "outDir": ".",
-        "typeRoots": ["types"],
-        "paths": {}
+        "declaration": true,
+        "emitDeclarationOnly": false,
+        "declarationMap": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "allowJs": false,
+        "checkJs": false
     },
-    "exclude": ["static/src/**/*.as.ts", "static/dep/**/*"],
-    "include": ["static/src/**/*.ts"]
+    "include": ["static/src/**/*.ts"],
+    "exclude": ["static/dep/**/*", "static/src/bundle.js"]
 }

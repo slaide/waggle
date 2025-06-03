@@ -1,10 +1,9 @@
 /**/.DS_Store
-/types/**
-!/types/glm.d.ts
-/**/*.d.ts
-/**/*.js
-# do not ignore any depdency contents
+*.d.ts
+*.js
+# do not ignore any dependency contents
 !/static/dep/**
-/**/*.wasm
+*.wasm
 /node_modules
 /dist
+*.js.map

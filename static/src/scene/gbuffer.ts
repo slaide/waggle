@@ -1,7 +1,7 @@
-import { GL, GLC } from "../gl.js";
-import { Camera } from "./camera.js";
-import { createShaderProgram } from "./gameobject.js";
-import { PointLight } from "./lights.js";
+import { GL, GLC } from "../gl";
+import { Camera } from "./camera";
+import { createShaderProgram } from "./gameobject";
+import { PointLight } from "./lights";
 
 const POINTLIGHTBLOCKBINDING = 1;
 
