@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "build:ts": "tsc --project tsconfig.json",
-        "bundle": "esbuild static/src/main.ts --bundle --outfile=static/src/bundle.js --platform=browser --target=es2024 --sourcemap --format=esm",
+        "bundle": "esbuild static/src/main.ts --bundle --outfile=static/src/bundle.js --platform=browser --target=es2024 --sourcemap --format=esm --minify",
         "build": "npm run build:ts && npm run bundle"
     },
     "repository": {
