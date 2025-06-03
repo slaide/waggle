@@ -10,23 +10,18 @@ function glCheckError(gl: GLC, msg: string = "") {
     }
 }
 
-import { GBuffer } from "./gbuffer.js";
-
 export class Scene {
     constructor(
         public gl: GLC,
-        public gbuffer: GBuffer,
         public children: GameObject[] = [],
         public shouldDraw: boolean = true,
     ) {}
 
-    static async make(gl: GLC, size: { width: number; height: number }) {
-        return new Scene(gl, await GBuffer.make(gl, size));
+    static async make(gl: GLC) {
+        return new Scene(gl);
     }
 
     draw() {
-        const { gl } = this;
-
         if (!this.shouldDraw) {
             return;
         }

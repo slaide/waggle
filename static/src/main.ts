@@ -1,7 +1,5 @@
-//# allFunctionsCalledOnLoad
-"use strict";
-
 import { vec3, quat } from "gl-matrix";
+import { GBuffer } from "./gbuffer";
 
 console.log(
     `running in strict mode? ${(function () {
@@ -10,11 +8,11 @@ console.log(
     })()}`,
 );
 
-import { GL } from "./gl.js";
-import { Scene } from "./scene/scene.js";
-import { Transform } from "./scene/transform.js";
-import { GameObject } from "./scene/gameobject.js";
-import { MtlMaterial, parseObj } from "./bits/obj.js";
+import { GL } from "./gl";
+import { Scene } from "./scene/scene";
+import { Transform } from "./scene/transform";
+import { GameObject } from "./scene/gameobject";
+import { parseObj } from "./bits/obj";
 
 export async function main() {
     // import wasm like this (instead of top level import!)
@@ -55,13 +53,14 @@ export async function main() {
     gl.clearDepth(1);
 
     /** device pixel ration (window.devicePixelRatio) */
-    let dpr = 1;
-    let canvas_size = {
+    const dpr = 1;
+    const canvas_size = {
         width: Math.floor(el.clientWidth * dpr),
         height: Math.floor(el.clientHeight * dpr),
     };
 
-    const scene = await Scene.make(gl, canvas_size);
+    const gbuffer = await GBuffer.make(gl, canvas_size);
+    const scene = await Scene.make(gl);
 
     window.addEventListener("keydown", (ev) => {
         if (ev.key == "f") {
@@ -81,7 +80,7 @@ export async function main() {
         gl.viewport(0, 0, width, height);
 
         // resize canvas/gbuffer
-        scene.gbuffer._resize({ width, height });
+        gbuffer._resize({ width, height });
     };
     onresize();
     window.addEventListener("resize", onresize);
@@ -108,7 +107,7 @@ export async function main() {
     // this is used as part of game logic
     let rotation = 0;
 
-    const camera = scene.gbuffer.camera;
+    const camera = gbuffer.camera;
     const cameraSpeedFactor = {
         move: 2,
         rotate: 0.8,
@@ -286,7 +285,7 @@ export async function main() {
         }
     };
 
-    scene.gbuffer.updatePointlights([
+    gbuffer.updatePointlights([
         {
             position: vec3.fromValues(0, 1, -6),
             radius: 50,
@@ -316,8 +315,8 @@ export async function main() {
         onFrameLogic(deltatime_ms);
 
         // bind gbuffer
-        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, scene.gbuffer.gbuffer);
-        gl.drawBuffers(scene.gbuffer.layerAttachments);
+        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, gbuffer.gbuffer);
+        gl.drawBuffers(gbuffer.layerAttachments);
 
         // clear gbuffer to draw over
         gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
@@ -326,7 +325,7 @@ export async function main() {
         scene.draw();
 
         // process gbuffer + lights into screen output
-        scene.gbuffer.draw();
+        gbuffer.draw();
     };
 
     const drawLoop = () => {

@@ -1,7 +1,7 @@
-import { GL, GLC } from "../gl";
-import { Camera } from "./camera";
-import { createShaderProgram } from "./gameobject";
-import { PointLight } from "./lights";
+import { GL, GLC } from "./gl";
+import { Camera } from "./scene/camera";
+import { createShaderProgram } from "./scene/gameobject";
+import { PointLight } from "./scene/lights";
 
 const POINTLIGHTBLOCKBINDING = 1;
 
