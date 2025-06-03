@@ -7,3 +7,5 @@
 npm ci
 # run typescript compiler and bundler
 npm run bundle
+# occasionally useful to run
+# $ npm cache clean --force
