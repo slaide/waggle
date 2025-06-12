@@ -43,10 +43,10 @@ def get_repo_url():
 def update_server(request:Request):
     repo=git.Repo(PROJROOTDIR)
 
-    # pull (and keep depth low to minimize footprint)
+    # pull
     repo.git.pull('origin', 'main')
 
-    # manually execute post-merge commands because --depth 1 does not trigger the hook
+    # manually execute post-merge commands to keep them tracked in the repo
     subprocess.run(['bash', '/home/padraig/waggle/server/build.sh'], check=True)
     subprocess.run(['touch', '/var/www/padraig_eu_pythonanywhere_com_wsgi.py'], check=True)
     subprocess.run(['bash', '/home/padraig/waggle/server/reload.sh'], check=True)
