@@ -302,12 +302,25 @@ export async function main() {
         }
     };
 
+    // init buffers to no lights
+    gbuffer.updatePointlights([]);
+    gbuffer.updateDirectionalLights([]);
+
     gbuffer.updatePointlights([
         {
-            position: vec3.fromValues(0, 1, -6),
-            radius: 50,
+            position: vec3.fromValues(0, 2, -6),
+            radius: 1,
             color: vec3.fromValues(1.0, 1.0, 1.0),
             intensity: 0.3,
+        },
+    ]);
+
+    // Add a directional light (sun-like light from above)
+    gbuffer.updateDirectionalLights([
+        {
+            direction: vec3.fromValues(0, -1, 0), // pointing down
+            color: vec3.fromValues(1.0, 0.95, 0.8), // slightly warm sunlight color
+            intensity: 0.5,
         },
     ]);
 

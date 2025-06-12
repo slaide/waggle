@@ -6,3 +6,9 @@ export type PointLight = {
     color: vec3;
     intensity: number;
 };
+
+export type DirectionalLight = {
+    direction: vec3;
+    color: vec3;
+    intensity: number;
+};

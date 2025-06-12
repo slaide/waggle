@@ -8,12 +8,22 @@ float ComputeAttenuation( float distance, float radius )
 }
 
 #define MAX_POINT_LIGHTS 32
+#define MAX_DIRECTIONAL_LIGHTS 1
+
 struct PointLight{
     vec3 position;
     float radius;
     vec3 color;
     float intensity;
 };
+
+struct DirectionalLight {
+    vec3 direction;
+    float pad0;
+    vec3 color;
+    float intensity;
+};
+
 // --- Point Light Contribution ---
 vec3 CalcPointLight(
     PointLight p,
@@ -58,10 +68,54 @@ vec3 CalcPointLight(
     return clamp(colorGammaCorrected, 0.0, 1.0);
 }
 
+// --- Directional Light Contribution ---
+vec3 CalcDirectionalLight(
+    DirectionalLight d,
+    vec3 fragPos,
+    vec3 norm,
+    vec3 viewDir,
+    vec3 albedo,
+    float specGloss
+){
+    // Directional lights have no position, just direction
+    vec3 lightDir = normalize(-d.direction);
+    
+    // Normalize vectors
+    vec3 N = normalize(norm);
+    vec3 V = normalize(viewDir);
+    
+    // Calculate diffuse term
+    float diffuse = max(dot(N, lightDir), 0.0);
+    
+    // Calculate specular term (Phong)
+    float specular = 0.0;
+    if(diffuse > 0.0) {
+        vec3 R = reflect(-lightDir, N);
+        specular = pow(max(dot(R, V), 0.0), specGloss);
+    }
+    
+    // Combine terms (no attenuation for directional lights)
+    vec3 diffuseTerm = albedo * diffuse * d.color * d.intensity;
+    vec3 specularTerm = d.color * specular * d.intensity;
+    vec3 colorLinear = diffuseTerm + specularTerm;
+    
+    // Apply gamma correction (assuming input colors are in linear space)
+    const float screenGamma = 2.2;
+    vec3 colorGammaCorrected = pow(colorLinear, vec3(1.0 / screenGamma));
+    
+    return clamp(colorGammaCorrected, 0.0, 1.0);
+}
+
 layout(std140) uniform PointLightBlock {
     int numPointLights;
     // 12 bytes of padding
     PointLight pointLights[MAX_POINT_LIGHTS];
+};
+
+layout(std140) uniform DirectionalLightBlock {
+    int numDirectionalLights;
+    // 12 bytes of padding
+    DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
 };
 
 uniform sampler2D gPosition;
@@ -82,9 +136,13 @@ void main() {
     vec3 viewDir = normalize(uCamPos - fragPos);
 
     vec3 result = vec3(0.0);
-    // Point
+    // Point lights
     for(int i = 0; i < numPointLights; i++) {
         result += CalcPointLight(pointLights[i], fragPos, fragNormal, viewDir, albedo, specGloss);
+    }
+    // Directional lights
+    for(int i = 0; i < numDirectionalLights; i++) {
+        result += CalcDirectionalLight(directionalLights[i], fragPos, fragNormal, viewDir, albedo, specGloss);
     }
     // Ensure final result stays in [0,1]
     color = vec4(clamp(result, 0.0, 1.0), 1.0);

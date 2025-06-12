@@ -1,9 +1,10 @@
 import { GL, GLC } from "./gl";
 import { Camera } from "./scene/camera";
 import { createShaderProgram } from "./scene/gameobject";
-import { PointLight } from "./scene/lights";
+import { PointLight, DirectionalLight } from "./scene/lights";
 
 const POINTLIGHTBLOCKBINDING = 1;
+const DIRECTIONALLIGHTBLOCKBINDING = 2;
 
 const MAX_NUM_POINTLIGHTS = 32;
 const MAX_NUM_SPOTLIGHTS = 1;
@@ -27,6 +28,7 @@ export class GBuffer {
         public readTextures: { [name: string]: WebGLTexture } = {},
 
         public pointLightUBO: WebGLBuffer = gl.createBuffer(),
+        public directionalLightUBO: WebGLBuffer = gl.createBuffer(),
 
         public layers: {
             name: string;
@@ -242,6 +244,64 @@ export class GBuffer {
         this.pointLightUBO = ubo;
     }
 
+    updateDirectionalLights(directionalLightsArray: DirectionalLight[]) {
+        const { gl, fsq } = this;
+
+        gl.useProgram(fsq);
+        const dirBlockIndex = gl.getUniformBlockIndex(fsq, "DirectionalLightBlock");
+        const blockSizeBytes = gl.getActiveUniformBlockParameter(
+            fsq,
+            dirBlockIndex,
+            gl.UNIFORM_BLOCK_DATA_SIZE,
+        );
+        gl.uniformBlockBinding(fsq, dirBlockIndex, DIRECTIONALLIGHTBLOCKBINDING);
+
+        const data = new ArrayBuffer(blockSizeBytes);
+        const dataView = new DataView(data);
+
+        let offset = 0;
+
+        // Write numDirLights at offset 0
+        dataView.setInt32(offset, directionalLightsArray.length, true);
+        offset += 4;
+
+        // data[1..3] = 0 (padding)
+        offset += 3 * 4;
+
+        // Starting at offset 4 floats (index=4), we write each DirLight as:
+        //    [dir.x, dir.y, dir.z, pad0=0]
+        //    [col.r, col.g, col.b, intensity]
+        for (
+            let i = 0;
+            i < Math.min(directionalLightsArray.length, MAX_NUM_DIRECTIONALLIGHTS);
+            ++i
+        ) {
+            const d = directionalLightsArray[i];
+
+            dataView.setFloat32(offset + 0 * 4, d.direction[0], true);
+            dataView.setFloat32(offset + 1 * 4, d.direction[1], true);
+            dataView.setFloat32(offset + 2 * 4, d.direction[2], true);
+            dataView.setFloat32(offset + 3 * 4, 0.0, true); // pad0
+
+            dataView.setFloat32(offset + 4 * 4, d.color[0], true);
+            dataView.setFloat32(offset + 5 * 4, d.color[1], true);
+            dataView.setFloat32(offset + 6 * 4, d.color[2], true);
+            dataView.setFloat32(offset + 7 * 4, d.intensity, true);
+
+            offset += 8 * 4; // next DirLight (8 floats = 32 bytes)
+        }
+
+        // Create UBO and upload
+        const ubo = gl.createBuffer();
+        gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+        gl.bufferData(gl.UNIFORM_BUFFER, dataView.buffer, gl.STATIC_DRAW);
+        // Bind it to binding point
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, DIRECTIONALLIGHTBLOCKBINDING, ubo);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+        this.directionalLightUBO = ubo;
+    }
+
     draw() {
         const { gl, fsq } = this;
 
@@ -314,6 +374,12 @@ export class GBuffer {
             gl.UNIFORM_BUFFER,
             POINTLIGHTBLOCKBINDING,
             this.pointLightUBO,
+        );
+
+        gl.bindBufferBase(
+            gl.UNIFORM_BUFFER,
+            DIRECTIONALLIGHTBLOCKBINDING,
+            this.directionalLightUBO,
         );
 
         // Draw 3 vertices (covering the whole screen)
