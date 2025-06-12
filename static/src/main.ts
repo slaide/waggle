@@ -94,12 +94,20 @@ export async function main() {
         transform.position = vec3.fromValues(-1.5 + i * 3, 0, -6);
 
         const objpath = "./resources/cube.obj";
-        const obj = await parseObj(objpath);
+        console.time(`OBJ parse and process ${i}`);
+        const obj = await parseObj(objpath, { normalizeSize: true });
+        console.timeEnd(`OBJ parse and process ${i}`);
 
-        const newobject = await GameObject.make(gl, obj, transform);
-        newobject.upload();
-
-        scene.children.push(newobject);
+        // Iterate over all objects and groups in the parsed OBJ
+        console.time(`OBJ upload to GPU ${i}`);
+        for (const objObject of Object.values(obj.objects)) {
+            for (const group of Object.values(objObject.groups)) {
+                const newobject = await GameObject.make(gl, { objects: { temp: { groups: { temp: group } } }, boundingBox: obj.boundingBox }, transform);
+                newobject.upload();
+                scene.children.push(newobject);
+            }
+        }
+        console.timeEnd(`OBJ upload to GPU ${i}`);
     }
 
     // setup drawing loop

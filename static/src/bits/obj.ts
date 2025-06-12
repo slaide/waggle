@@ -1,429 +1,785 @@
 "use strict";
 
-import {vec3} from "gl-matrix";
+import { vec3 } from "gl-matrix";
 
-class MtlTexture{
+class MtlTexture {
     constructor(
-        public source:string,
+        public source: string,
 
-        public blendu?:boolean,
-        public blendv?:boolean,
+        public blendu?: boolean,
+        public blendv?: boolean,
         /** boost bump map values (mult by this factor) */
-        public boost?:number,
-    ){}
+        public boost?: number,
+    ) { }
 };
 
-export type BB={
-    x:{
-        min:number;
-        max:number;
+export type BB = {
+    x: {
+        min: number;
+        max: number;
     };
-    y:{
-        min:number;
-        max:number;
+    y: {
+        min: number;
+        max: number;
     };
-    z:{
-        min:number;
-        max:number;
+    z: {
+        min: number;
+        max: number;
     };
 };
 
-export class MtlMaterial{
-    ambient?:vec3;
-    diffuse?:vec3;
-    specular?:vec3;
-    specularExponent?:number;
-    transparency?:number;
-    
-    illuminationMode?:number;
+export class MtlMaterial {
+    ambient?: vec3;
+    diffuse?: vec3;
+    specular?: vec3;
+    specularExponent?: number;
+    transparency?: number;
 
-    map_ambient?:MtlTexture;
-    map_diffuse?:MtlTexture;
-    map_specular?:MtlTexture;
-    map_specularExponent?:MtlTexture;
+    illuminationMode?: number;
+
+    map_ambient?: MtlTexture;
+    map_diffuse?: MtlTexture;
+    map_specular?: MtlTexture;
+    map_specularExponent?: MtlTexture;
 }
 
-class MtlFile{
+class MtlFile {
     constructor(
-        public path:string,
-        public materials:{
-            [mtlName:string]:MtlMaterial;
+        public path: string,
+        public materials: {
+            [mtlName: string]: MtlMaterial;
         },
-    ){}
+    ) { }
 };
 
-function parseMtl(path:string,s:string):MtlFile{
-    const ret:MtlFile={path,materials:{}};
+// Helper function to parse texture map options
+function parseTextureOptions(texture: MtlTexture, args: string[], startIndex: number = 1) {
+    for (let i = startIndex; i < args.length; i++) {
+        if (args[i] === '-blendu') {
+            texture.blendu = args[i + 1] === 'on';
+            i++;
+        } else if (args[i] === '-blendv') {
+            texture.blendv = args[i + 1] === 'on';
+            i++;
+        } else if (args[i] === '-boost') {
+            texture.boost = parseFloat(args[i + 1]);
+            i++;
+        }
+    }
+}
 
-    let lastMaterial=new MtlMaterial();
-    const lines=(s
-        // ensure whitespace is tabs only
-        .replace("\t"," ")
-        // remove carriage returns
-        .replace("\r","")
-        // splice line continuations
-        .replace("\\\n","")
-        // split into lines
-        .split("\n")
+// Helper function to create a texture with path and options
+function createTexture(path: string, args: string[]): MtlTexture {
+    const texture = new MtlTexture(
+        path.substring(0, path.lastIndexOf("/") + 1) + args[args.length - 1]
     );
-    for(const line of lines){
-        if(line==null)break;
+    parseTextureOptions(texture, args, 0);
+    return texture;
+}
 
-        const line_segments=line.split(" ").filter(l=>l.length);
+// Helper function to parse vertex data
+function parseVertexData(args: string[], numComponents: number): number[] {
+    const data = new Array(numComponents).fill(0);
+    for (let i = 0; i < Math.min(data.length, args.length); i++) {
+        const value = parseFloat(args[i]);
+        if (!isNaN(value)) {
+            data[i] = value;
+        }
+    }
+    return data;
+}
 
-        // skip empty line
-        if(line_segments.length===0)continue;
+// Helper function to handle vertex data directives (v, vt, vn)
+function handleVertexDirective(
+    directive: string,
+    args: string[],
+    vertexPositions: number[],
+    vertexUVs: number[][],
+    vertexNormals: number[][]
+) {
+    switch (directive) {
+        case 'v': {
+            const data = parseVertexData(args, 4);
+            vertexPositions.push(...data);
+            break;
+        }
+        case 'vn': {
+            const data = parseVertexData(args, 3);
+            vertexNormals.push(data);
+            break;
+        }
+        case 'vt': {
+            const data = parseVertexData(args, 3);
+            vertexUVs.push(data);
+            break;
+        }
+    }
+}
 
-        const [directive,...args]=line_segments;
+// Helper function to calculate normal for a triangle
+function calculateTriangleNormal(vertexData: number[], offset: number): vec3 {
+    const v1 = vec3.fromValues(
+        vertexData[offset + 0],
+        vertexData[offset + 1],
+        vertexData[offset + 2]
+    );
+    const v2 = vec3.fromValues(
+        vertexData[offset + 8 + 0],
+        vertexData[offset + 8 + 1],
+        vertexData[offset + 8 + 2]
+    );
+    const v3 = vec3.fromValues(
+        vertexData[offset + 16 + 0],
+        vertexData[offset + 16 + 1],
+        vertexData[offset + 16 + 2]
+    );
+    const normal = vec3.cross(
+        vec3.create(),
+        vec3.sub(vec3.create(), v2, v1),
+        vec3.sub(vec3.create(), v3, v1)
+    );
+    vec3.normalize(normal, normal);
+    return normal;
+}
 
-        // skip comment
-        if(directive[0]==="#")continue;
+// Helper function to apply normal to vertex data
+function applyNormal(vertexData: number[], offset: number, normal: vec3) {
+    for (let i = 0; i < 3; i++) {
+        vertexData[offset + i * 8 + 3] = normal[0];
+        vertexData[offset + i * 8 + 4] = normal[1];
+        vertexData[offset + i * 8 + 5] = normal[2];
+    }
+}
 
-        switch(directive){
-            case "newmtl":{
-                const materialName=args[0];
+// Helper for default material values
+const DEFAULT_AMBIENT = [0.2, 0.2, 0.2];
+const DEFAULT_DIFFUSE = [0.8, 0.8, 0.8];
+const DEFAULT_SPECULAR = [0.8, 0.8, 0.8];
+function parseVec(parts: string[], def: number[]): number[] {
+    if (parts.length === 0) return def.slice();
+    if (parts.length === 1) return [Number(parts[0]), Number(parts[0]), Number(parts[0])];
+    if (parts.length === 2) return [Number(parts[0]), Number(parts[1]), def[2]];
+    return [Number(parts[0]), Number(parts[1]), Number(parts[2])];
+}
 
-                lastMaterial=new MtlMaterial();
-                ret.materials[materialName]=lastMaterial;
-
+function parseMtl(path: string, s: string): MtlFile {
+    s = s.replace(/\\\n/g, ' ');
+    const ret: MtlFile = { path, materials: {} };
+    let lastMaterial = new MtlMaterial();
+    const lines = s
+        .replace(/\t/g, " ")
+        .replace(/\r/g, "")
+        .split("\n");
+    for (const line of lines) {
+        if (line == null) break;
+        const line_segments = line.split(" ").filter(l => l.length);
+        if (line_segments.length === 0) continue;
+        const [directive, ...args] = line_segments;
+        if (directive[0] === "#") continue;
+        switch (directive) {
+            case "newmtl": {
+                const materialName = args[0];
+                lastMaterial = new MtlMaterial();
+                ret.materials[materialName] = lastMaterial;
                 continue;
             }
-            case "Ka":{
-                const color:number[]=[];
-                for(let i=0;i<3;i++){
-                    color.push(parseFloat(args[i]));
+            case "Ka": {
+                const color = parseVec(args, DEFAULT_AMBIENT);
+                lastMaterial.ambient = [color[0], color[1], color[2]];
+                continue;
+            }
+            case "Kd": {
+                const color = parseVec(args, DEFAULT_DIFFUSE);
+                lastMaterial.diffuse = [color[0], color[1], color[2]];
+                continue;
+            }
+            case "Ks": {
+                const color = parseVec(args, DEFAULT_SPECULAR);
+                lastMaterial.specular = [color[0], color[1], color[2]];
+                continue;
+            }
+            case "Ns": {
+                const exponent = parseFloat(args[0]);
+                if (isNaN(exponent)) {
+                    console.warn(`Invalid specular exponent value in MTL file: ${args[0]}`);
+                    lastMaterial.specularExponent = 64.0; // Default value
+                } else if (exponent < 0) {
+                    console.warn(`Negative specular exponent value in MTL file: ${exponent}`);
+                    lastMaterial.specularExponent = 64.0; // Default value
+                } else {
+                    lastMaterial.specularExponent = exponent;
                 }
-                lastMaterial.ambient=vec3.fromValues(color[0],color[1],color[2]);
                 continue;
             }
-            case "Kd":{
-                const color:number[]=[];
-                for(let i=0;i<3;i++){
-                    color.push(parseFloat(args[i]));
-                }
-                lastMaterial.diffuse=vec3.fromValues(color[0],color[1],color[2]);
-                continue;
-            }
-            case "Ks":{
-                const color:number[]=[];
-                for(let i=0;i<3;i++){
-                    color.push(parseFloat(args[i]));
-                }
-                lastMaterial.specular=vec3.fromValues(color[0],color[1],color[2]);
-                continue;
-            }
-            case "Ns":
-                lastMaterial.specularExponent=parseFloat(args[0]);
-                continue;
             case "d":
-                lastMaterial.transparency=1-parseFloat(args[0]);
+                lastMaterial.transparency = parseFloat(args[0]);
                 continue;
             case "Tr":
-                lastMaterial.transparency=parseFloat(args[0]);
+                lastMaterial.transparency = parseFloat(args[0]);
                 continue;
             case "illum":
-                // should be an integer, but may be floatThatIsNotQuiteAnInt (seen in real world data)
-                lastMaterial.illuminationMode=Math.round(parseFloat(args[0]));
+                lastMaterial.illuminationMode = Math.round(parseFloat(args[0]));
                 continue;
             case "map_Ka":
-                // map relative to absolute path
-                lastMaterial.map_ambient=new MtlTexture(
-                    path.substring(0,path.lastIndexOf("/")+1)+args[0]
-                );
+                lastMaterial.map_ambient = createTexture(path, args);
                 continue;
             case "map_Kd":
-                // map relative to absolute path
-                lastMaterial.map_diffuse=new MtlTexture(
-                    path.substring(0,path.lastIndexOf("/")+1)+args[0]
-                );
+                lastMaterial.map_diffuse = createTexture(path, args);
                 continue;
             case "map_Ks":
-                // map relative to absolute path
-                lastMaterial.map_specular=new MtlTexture(
-                    path.substring(0,path.lastIndexOf("/")+1)+args[0]
-                );
+                lastMaterial.map_specular = createTexture(path, args);
+                continue;
+            case "map_Ns":
+                lastMaterial.map_specularExponent = createTexture(path, args);
                 continue;
             default:
-                throw `unknown mtl directive ${directive}`;
+                // Skip unknown directives instead of throwing
+                continue;
         }
     }
     return ret;
 }
 
-/**
- * performance comparison: https://aras-p.info/blog/2022/05/14/comparing-obj-parse-libraries/
- * (this implementation is really slow..)
- */
-export class ObjFile{
+export class ObjGroup {
     constructor(
-        public vertexData:Float32Array,
-        public indices:Uint32Array,
-        public boundingBox:BB,
-        public material:MtlMaterial|null,
-    ){}
+        public vertexData: Float32Array,
+        public indices: Uint32Array,
+        public material: MtlMaterial | null,
+    ) { }
 }
-/**
- * parse obj file. normalizes object size to max axis extent of 1.0.
- * 
- * this.boundingBox is the original bounding box.
- * 
- * @param filepath 
- * @returns 
- */
-export async function parseObj(filepath:string):Promise<ObjFile>{
-    const filedata=await fetch(filepath,{}).then(v=>v.text());
 
-    const vertexPositions:number[]=[];
-    const vertexUVs:number[][]=[];
-    const vertexNormals:number[][]=[];
+export class ObjObject {
+    constructor(
+        public groups: {
+            [groupName: string]: ObjGroup;
+        } = {},
+    ) { }
+}
 
-    let materialFile:MtlFile|null=null;
-    let material:MtlMaterial|null=null;
+export class ObjFile {
+    constructor(
+        public objects: {
+            [objectName: string]: ObjObject;
+        },
+        public boundingBox: BB,
+    ) { }
+}
 
-    /** number of components per vertex (number of floats, e.g. 3 for pos + 3 for normal + 2 for uv) */
-    const NUM_VERT_COMPONENTS=8;
-    const vertexData:number[]=[];
-    const indices:number[]=[];
+function vec3Equals(a: vec3, b: vec3, epsilon: number = 0.001): boolean {
+    return Math.abs(a[0] - b[0]) < epsilon &&
+        Math.abs(a[1] - b[1]) < epsilon &&
+        Math.abs(a[2] - b[2]) < epsilon;
+}
 
-    const size:BB={
-        x:{min:0,max:0,},
-        y:{min:0,max:0,},
-        z:{min:0,max:0,},
+function vec3ToString(v: vec3): string {
+    return `${v[0].toFixed(3)},${v[1].toFixed(3)},${v[2].toFixed(3)}`;
+}
+
+type VertexInfo = {
+    position: vec3;
+    normal: vec3;
+    uv: number[];
+    smoothingGroup: string | null;
+};
+
+function deepCloneMaterial(mat: MtlMaterial | null): MtlMaterial | null {
+    if (!mat) return null;
+    const clone = new MtlMaterial();
+    clone.ambient = mat.ambient ? [...mat.ambient] as vec3 : undefined;
+    clone.diffuse = mat.diffuse ? [...mat.diffuse] as vec3 : undefined;
+    clone.specular = mat.specular ? [...mat.specular] as vec3 : undefined;
+    clone.specularExponent = mat.specularExponent;
+    clone.transparency = mat.transparency;
+    clone.illuminationMode = mat.illuminationMode;
+    clone.map_ambient = mat.map_ambient ? Object.assign(new MtlTexture(mat.map_ambient.source), mat.map_ambient) : undefined;
+    clone.map_diffuse = mat.map_diffuse ? Object.assign(new MtlTexture(mat.map_diffuse.source), mat.map_diffuse) : undefined;
+    clone.map_specular = mat.map_specular ? Object.assign(new MtlTexture(mat.map_specular.source), mat.map_specular) : undefined;
+    clone.map_specularExponent = mat.map_specularExponent ? Object.assign(new MtlTexture(mat.map_specularExponent.source), mat.map_specularExponent) : undefined;
+    return clone;
+}
+
+function flushVertexData(
+    objects: { [key: string]: ObjObject },
+    lastObject: string,
+    lastGroupKey: string,
+    vertexData: number[],
+    indices: number[],
+    lastMaterial: MtlMaterial | null
+): void {
+    if (vertexData.length > 0) {
+        if (!objects[lastObject]) objects[lastObject] = new ObjObject();
+        // Deep clone the material to avoid shared references between groups
+        let materialCopy = deepCloneMaterial(lastMaterial);
+        const groupObj = new ObjGroup(
+            new Float32Array(vertexData),
+            new Uint32Array(indices),
+            materialCopy
+        );
+        objects[lastObject].groups[lastGroupKey] = groupObj;
+    }
+}
+
+// Helper function to parse vertex indices from face data
+function parseVertexIndices(faceVertex: string, vertexCount: number, uvCount: number, normalCount: number): {
+    vertexIndex: number;
+    uvIndex: number;
+    normalIndex: number;
+} {
+    const face_segments = faceVertex.split("/");
+    let vertexIndex = parseInt(face_segments[0] || "0");
+    let uvIndex = parseInt(face_segments[1] || "0");
+    let normalIndex = parseInt(face_segments[2] || "0");
+
+    // Handle negative indices (relative to end of array)
+    if (vertexIndex < 0) vertexIndex = (vertexCount / 4) + vertexIndex;
+    else vertexIndex = vertexIndex - 1;
+
+    if (uvIndex < 0) uvIndex = (uvCount / 3) + uvIndex;
+    else uvIndex = uvIndex - 1;
+
+    if (normalIndex < 0) normalIndex = (normalCount / 3) + normalIndex;
+    else normalIndex = normalIndex - 1;
+
+    return { vertexIndex, uvIndex, normalIndex };
+}
+
+// Helper function to calculate face normal using winding order
+function calculateFaceNormal(
+    facePositions: [number, number, number][],
+    i: number,
+    tempVec1: vec3,
+    tempVec2: vec3
+): vec3 {
+    const finalNormal = vec3.create();
+    if (facePositions.length === 4) {
+        // For quads, use different winding order based on which triangle we're calculating for
+        if (i < 3) {
+            vec3.sub(tempVec1, facePositions[1], facePositions[0]);
+            vec3.sub(tempVec2, facePositions[2], facePositions[0]);
+        } else {
+            vec3.sub(tempVec1, facePositions[2], facePositions[0]);
+            vec3.sub(tempVec2, facePositions[3], facePositions[0]);
+        }
+    } else {
+        // For triangles, use consistent winding order
+        vec3.sub(tempVec1, facePositions[1], facePositions[0]);
+        vec3.sub(tempVec2, facePositions[2], facePositions[0]);
+    }
+    vec3.cross(finalNormal, tempVec1, tempVec2);
+    vec3.normalize(finalNormal, finalNormal);
+    return finalNormal;
+}
+
+export async function parseObj(filepath: string, options?: {
+    normalizeSize?: boolean,
+    mockContent?: string,
+    mockMtlContent?: string,
+}): Promise<ObjFile> {
+    let filedata = options?.mockContent ?? await fetch(filepath, {}).then(v => v.text()) ?? "";
+    filedata = filedata.replace(/\\\n/g, ' ');
+
+    // Initialize material file
+    let materialFile: MtlFile | null = null;
+    if (options?.mockMtlContent) {
+        materialFile = parseMtl(filepath, options.mockMtlContent);
+    } else {
+        // Try to load material file if it exists
+        const mtlPath = filepath.replace(/\.obj$/i, '.mtl');
+        try {
+            const mtlContent = await fetch(mtlPath).then(v => v.text());
+            materialFile = parseMtl(mtlPath, mtlContent);
+        } catch (e) {
+            // Material file not found or invalid, continue without materials
+            materialFile = null;
+        }
+    }
+
+    // Pre-count vertices to allocate arrays efficiently
+    let vertexCount = 0;
+    let uvCount = 0;
+    let normalCount = 0;
+    const lines = filedata
+        .replace(/\t/g, " ")
+        .replace(/\r/g, "")
+        .split("\n");
+
+    // First pass: count vertices and track positions for bounding box
+    const size: BB = {
+        x: { min: Infinity, max: -Infinity },
+        y: { min: Infinity, max: -Infinity },
+        z: { min: Infinity, max: -Infinity }
     };
 
-    const lines=(filedata
-        // ensure whitespace is tabs only
-        .replace("\t"," ")
-        // remove carriage returns
-        .replace("\r","")
-        // splice line continuations
-        .replace("\\\n","")
-        // split into lines
-        .split("\n")
-    );
-    for(const line of lines){
-        if(line==null)break;
+    for (const line of lines) {
+        if (!line || line[0] === "#") continue;
+        const [directive, ...args] = line.split(" ").filter(l => l.length);
+        if (directive === "v") {
+            vertexCount++;
+            const x = parseFloat(args[0]);
+            const y = parseFloat(args[1]);
+            const z = parseFloat(args[2]);
+            size.x.min = Math.min(size.x.min, x);
+            size.x.max = Math.max(size.x.max, x);
+            size.y.min = Math.min(size.y.min, y);
+            size.y.max = Math.max(size.y.max, y);
+            size.z.min = Math.min(size.z.min, z);
+            size.z.max = Math.max(size.z.max, z);
+        } else if (directive === "vt") uvCount++;
+        else if (directive === "vn") normalCount++;
+    }
 
-        const line_segments=line.split(" ").filter(l=>l.length);
+    // Pre-allocate arrays with exact sizes
+    const vertexPositions = new Float32Array(vertexCount * 4);
+    const vertexUVs = new Float32Array(uvCount * 3);
+    const vertexNormals = new Float32Array(normalCount * 3);
+    let vertexIndex = 0;
+    let uvIndex = 0;
+    let normalIndex = 0;
 
-        // skip empty line
-        if(line_segments.length===0)continue;
+    // Second pass: fill arrays
+    for (const line of lines) {
+        if (!line || line[0] === "#") continue;
+        const [directive, ...args] = line.split(" ").filter(l => l.length);
+        if (directive === "v") {
+            vertexPositions[vertexIndex * 4] = parseFloat(args[0]);
+            vertexPositions[vertexIndex * 4 + 1] = parseFloat(args[1]);
+            vertexPositions[vertexIndex * 4 + 2] = parseFloat(args[2]);
+            vertexPositions[vertexIndex * 4 + 3] = parseFloat(args[3] || "1.0");
+            vertexIndex++;
+        } else if (directive === "vt") {
+            vertexUVs[uvIndex * 3] = parseFloat(args[0]);
+            vertexUVs[uvIndex * 3 + 1] = parseFloat(args[1]);
+            vertexUVs[uvIndex * 3 + 2] = parseFloat(args[2] || "0.0");
+            uvIndex++;
+        } else if (directive === "vn") {
+            vertexNormals[normalIndex * 3] = parseFloat(args[0]);
+            vertexNormals[normalIndex * 3 + 1] = parseFloat(args[1]);
+            vertexNormals[normalIndex * 3 + 2] = parseFloat(args[2]);
+            normalIndex++;
+        }
+    }
 
-        const [directive,...args]=line_segments;
+    let material: MtlMaterial | null = null;
+    const NUM_VERT_COMPONENTS = 8;
+    const objects: { [key: string]: ObjObject } = {};
+    let currentObject = "default";
+    let currentGroup = "default";
+    let vertexData: number[] = [];
+    let indices: number[] = [];
+    let currentSmoothingGroup: string | null = null;
 
-        // skip comment
-        if(directive[0]==="#")continue;
+    // Track vertices by position and smoothing group for normal calculation
+    const smoothingAccum = new Map<string, { sum: vec3, count: number }>();
 
-        switch(directive){
-            case "v":{
-                // format: x y z [w=1.0]
-                const data=[0,0,0,1];
+    // Initialize default object
+    objects["default"] = new ObjObject();
 
-                for(let i=0;i<Math.min(data.length,args.length);i++){
-                    const arg=args[i];
+    // --- First pass for smoothing group normals: accumulate normals ---
+    const tempVec1 = vec3.create();
+    const tempVec2 = vec3.create();
+    const tempNormal = vec3.create();
+    currentSmoothingGroup = "off";
 
-                    const number=parseFloat(arg);
-                    data[i]=number;
+    for (let line of lines) {
+        if (!line || line[0] === "#") continue;
+        const [directive, ...args] = line.split(" ").filter(l => l.length);
+        if (directive === "s") {
+            currentSmoothingGroup = args[0] || "off";
+        } else if (directive === "f") {
+            const faceVertices: vec3[] = [];
+            const faceIndices: number[] = [];
+            for (const faceVertex of args) {
+                const face_segments = faceVertex.split("/");
+                let vertexIndex = parseInt(face_segments[0] || "0");
+                if (vertexIndex < 0) {
+                    vertexIndex = (vertexPositions.length / 4) + vertexIndex;
+                } else {
+                    vertexIndex = vertexIndex - 1;
                 }
-
-                vertexPositions.push(...data);
-
-                break;
+                vec3.set(
+                    tempVec1,
+                    vertexPositions[vertexIndex * 4],
+                    vertexPositions[vertexIndex * 4 + 1],
+                    vertexPositions[vertexIndex * 4 + 2]
+                );
+                faceVertices.push(vec3.clone(tempVec1));
+                faceIndices.push(vertexIndex);
             }
-            case "vt":{
-                // format: u [ v=0 [w=0] ]
-                const data=[0,0,0];
-
-                for(let i=0;i<Math.min(data.length,args.length);i++){
-                    const arg=args[i];
-
-                    const number=parseFloat(arg);
-                    data[i]=number;
+            // Calculate face normal using the first three vertices
+            if (faceVertices.length >= 3) {
+                vec3.sub(tempVec1, faceVertices[1], faceVertices[0]);
+                vec3.sub(tempVec2, faceVertices[2], faceVertices[0]);
+                vec3.cross(tempNormal, tempVec1, tempVec2);
+                vec3.normalize(tempNormal, tempNormal);
+                // Validate normal
+                if (isNaN(tempNormal[0]) || isNaN(tempNormal[1]) || isNaN(tempNormal[2]) ||
+                    (tempNormal[0] === 0 && tempNormal[1] === 0 && tempNormal[2] === 0)) {
+                    console.warn(`Invalid face normal detected at vertex ${faceIndices[0]}`);
+                    // If normal is invalid, use a default up vector
+                    vec3.set(tempNormal, 0, 1, 0);
                 }
-
-                vertexUVs.push(data);
-
-                break;
-            }
-            case "vn":{
-                // format: x y z
-                const data=[0,0,0];
-
-                for(let i=0;i<Math.min(data.length,args.length);i++){
-                    const arg=args[i];
-
-                    const number=parseFloat(arg);
-                    data[i]=number;
-                }
-
-                vertexNormals.push(data);
-
-                break;
-            }
-            case "f":{
-                // format: v/vt/vn v/vt/vn v/vt/vn [v/vt/vn]
-                // (data contains indices into vertexData, which entries are constructed on the fly)
-                const data=[0,0,0,0];
-                const isQuad=args.length==4;
-
-                for(let i=0;i<args.length;i++){
-                    /** data for a single vertex in this face */
-                    const faceVertexData=new Int32Array([-1,-1,-1]);
-
-                    const face_segments=args[i].split("/");
-                    for(let s=0;s<face_segments.length;s++){
-                        const number=parseInt(face_segments[s]||"0");
-
-                        faceVertexData[s]=number-1;
+                // For each vertex in the face, accumulate its normal if in a smoothing group
+                if (currentSmoothingGroup !== "off") {
+                    for (const idx of faceIndices) {
+                        const accumKey = `${idx}|s:${currentSmoothingGroup}`;
+                        if (!smoothingAccum.has(accumKey)) {
+                            smoothingAccum.set(accumKey, { sum: vec3.clone(tempNormal), count: 1 });
+                        } else {
+                            const entry = smoothingAccum.get(accumKey)!;
+                            if (false) {
+                                // Check if the new normal is significantly different from existing ones
+                                const dotProduct = vec3.dot(entry.sum, tempNormal);
+                                if (Math.abs(dotProduct) < Math.cos(60 / 180 * Math.PI)) { // If angle > 60 degrees
+                                    console.warn(`Large normal angle difference detected at vertex ${idx} in smoothing group ${currentSmoothingGroup}`);
+                                }
+                            }
+                            vec3.add(entry.sum, entry.sum, tempNormal);
+                            entry.count++;
+                        }
                     }
-
-                    // .at() does handle negative indices like obj spec
-                    // (e.g. -1 returns last element in array)
-                    if((faceVertexData[0]*4+2)>=vertexPositions.length)throw`vertexPositions`;
-                    const vertexUV=vertexUVs.at(faceVertexData[1])??[0,0,0];
-
-                    const vertexNormal=vertexNormals.at(faceVertexData[2])??[0,0,1];
-
-                    // update object bounding box
-                    size.x.min=Math.min(size.x.min,vertexPositions[faceVertexData[0]*4+0]);
-                    size.x.max=Math.max(size.x.max,vertexPositions[faceVertexData[0]*4+0]);
-                    size.y.min=Math.min(size.y.min,vertexPositions[faceVertexData[0]*4+1]);
-                    size.y.max=Math.max(size.y.max,vertexPositions[faceVertexData[0]*4+1]);
-                    size.z.min=Math.min(size.z.min,vertexPositions[faceVertexData[0]*4+2]);
-                    size.z.max=Math.max(size.z.max,vertexPositions[faceVertexData[0]*4+2]);
-
-                    const new_vertex_data=[
-                        // 3d position
-                        vertexPositions[faceVertexData[0]*4],
-                        vertexPositions[faceVertexData[0]*4+1],
-                        vertexPositions[faceVertexData[0]*4+2],
-
-                        // 3d normal
-                        vertexNormal[0],
-                        vertexNormal[1],
-                        vertexNormal[2],
-
-                        // 2d uv
-                        vertexUV[0],
-                        vertexUV[1],
-                    ];
-                    if(new_vertex_data.length!=NUM_VERT_COMPONENTS)throw`new_vertex_data.length!=NUM_VERT_COMPONENTS`;
-                    vertexData.push(...new_vertex_data);
-
-                    data[i]=(vertexData.length/NUM_VERT_COMPONENTS)-1;
                 }
-
-                const v1=vec3.fromValues(
-                    //@ts-ignore
-                    vertexData.at(-3*8+0),
-                    vertexData.at(-3*8+1),
-                    vertexData.at(-3*8+2),
-                );
-                const v2=vec3.fromValues(
-                    //@ts-ignore
-                    vertexData.at(-2*8+0),
-                    vertexData.at(-2*8+1),
-                    vertexData.at(-2*8+2),
-                );
-                const v3=vec3.fromValues(
-                    //@ts-ignore
-                    vertexData.at(-1*8+0),
-                    vertexData.at(-1*8+1),
-                    vertexData.at(-1*8+2),
-                );
-
-                const normal=vec3.cross(
-                    vec3.create(),
-                    vec3.sub(vec3.create(),v1,v2),
-                    vec3.sub(vec3.create(),v1,v3),
-                );
-
-                vertexData[vertexData.length+(-3*8+3)]=normal[0];
-                vertexData[vertexData.length+(-3*8+4)]=normal[1];
-                vertexData[vertexData.length+(-3*8+5)]=normal[2];
-
-                vertexData[vertexData.length+(-2*8+3)]=normal[0];
-                vertexData[vertexData.length+(-2*8+4)]=normal[1];
-                vertexData[vertexData.length+(-2*8+5)]=normal[2];
-
-                vertexData[vertexData.length+(-1*8+3)]=normal[0];
-                vertexData[vertexData.length+(-1*8+4)]=normal[1];
-                vertexData[vertexData.length+(-1*8+5)]=normal[2];
-
-                if(isQuad){
-                    throw `isQuad unimplemented`;
-                }else{
-                    indices.push(data[0],data[1],data[2]);
-                }
-
-                break;
-            }
-            case "mtllib":{
-                const filename=args[0];
-
-                const currentFileStem=filepath.substring(0,filepath.lastIndexOf("/")+1);
-                const mtllibpath=currentFileStem+filename;
-
-                const mtlFileContents=await fetch(mtllibpath,{}).then(r=>r.text());
-                materialFile=parseMtl(mtllibpath,mtlFileContents);
-                const defaultMaterial=materialFile.materials[Object.keys(materialFile.materials)[0]];
-                if(!defaultMaterial)throw`got mtl file (${mtllibpath}) without materials in it`;
-                material=defaultMaterial;
-
-                break;
-            }
-            case "usemtl":{
-                const materialName=args[0];
-                if(!materialFile)throw`usemtl without mtllib`;
-                const mat=materialFile.materials[materialName];
-                if(!mat)throw`did not find material ${materialName} in materialfile ${materialFile.path}`;
-                material=mat;
-
-                break;
-            }
-            case "o":{
-                // todo
-                break;
-            }
-            case "g":{
-                // todo
-                break;
-            }
-            case "s":{
-                // todo
-                break;
-            }
-            default:{
-                throw `unknown directive '${directive}'`;
             }
         }
     }
 
-    const vertexDataFloat=new Float32Array(vertexData);
-    const indicesUInt=new Uint32Array(indices);
-
-    const extent={
-        x:size.x.max-size.x.min,
-        y:size.y.max-size.y.min,
-        z:size.z.max-size.z.min,
-    };
-    const center={
-        x:size.x.min+extent.x/2,
-        y:size.y.min+extent.y/2,
-        z:size.z.min+extent.z/2,
-    };
-    // normalize object size to max axis extent of 1.0 and center at (0,0,0)
-    const max_extent=Math.max(extent.x,extent.y,extent.z);
-    for(let i=0;i<vertexDataFloat.length;i+=8){
-        vertexDataFloat[i+0]=(vertexDataFloat[i+0]-center.x)/max_extent;
-        vertexDataFloat[i+1]=(vertexDataFloat[i+1]-center.y)/max_extent;
-        vertexDataFloat[i+2]=(vertexDataFloat[i+2]-center.z)/max_extent;
+    // Normalize all accumulated normals for smoothing groups
+    for (const [accumKey, entry] of smoothingAccum.entries()) {
+        if (entry.count > 0) {
+            vec3.scale(entry.sum, entry.sum, 1 / entry.count);
+            vec3.normalize(entry.sum, entry.sum);
+            // Validate smoothed normal
+            if (isNaN(entry.sum[0]) || isNaN(entry.sum[1]) || isNaN(entry.sum[2]) ||
+                (entry.sum[0] === 0 && entry.sum[1] === 0 && entry.sum[2] === 0)) {
+                const [vertexIndex] = accumKey.split('|');
+                console.warn(`Invalid smoothed normal detected at vertex ${vertexIndex}`);
+                // If normal is invalid, use a default up vector
+                vec3.set(entry.sum, 0, 1, 0);
+            }
+        }
     }
 
-    return new ObjFile(
-        vertexDataFloat,
-        indicesUInt,
-        size,
-        material,
-    );
+    // --- Face parsing and group creation ---
+    currentSmoothingGroup = "off";
+    currentObject = "default";
+    currentGroup = "default";
+    // Set default material if only one material is defined in the MTL file
+    if (materialFile && Object.keys(materialFile.materials).length === 1) {
+        material = materialFile.materials[Object.keys(materialFile.materials)[0]];
+    }
+    vertexData = [];
+    indices = [];
+    let lastMaterial: MtlMaterial | null = material;
+    let lastGroup = currentGroup;
+    let lastObject = currentObject;
+    let lastSmoothingGroup = currentSmoothingGroup;
+    let getMaterialName = (mat: MtlMaterial | null): string => {
+        if (!mat || !materialFile) return '';
+        return Object.keys(materialFile.materials).find(k => materialFile!.materials[k] === mat) || '';
+    };
+    let lastGroupKey = `${lastGroup}|${getMaterialName(lastMaterial)}|${lastSmoothingGroup}`;
+    let groupKey = () => `${currentGroup}|${getMaterialName(material)}|${currentSmoothingGroup}`;
+
+    for (let line of lines) {
+        if (!line || line[0] === "#") continue;
+        const [directive, ...args] = line.split(" ").filter(l => l.length);
+        if (directive === "o" || directive === "g" || directive === "usemtl" || directive === "s") {
+            flushVertexData(objects, lastObject, lastGroupKey, vertexData, indices, lastMaterial);
+            vertexData = [];
+            indices = [];
+            
+            // Update state based on directive
+            if (directive === "o") {
+                currentObject = args[0] || "default";
+                if (!objects[currentObject]) objects[currentObject] = new ObjObject();
+                currentGroup = "default";
+                currentSmoothingGroup = "off";
+            } else if (directive === "g") {
+                currentGroup = args[0] || "default";
+            } else if (directive === "usemtl") {
+                const mtlName = args[0];
+                material = materialFile?.materials?.[mtlName] ?? null;
+            } else if (directive === "s") {
+                currentSmoothingGroup = args[0] || "off";
+            }
+            
+            // Update tracking variables
+            lastMaterial = material;
+            lastGroup = currentGroup;
+            lastObject = currentObject;
+            lastSmoothingGroup = currentSmoothingGroup;
+            lastGroupKey = groupKey();
+        } else if (directive === "f") {
+            const faceVertices: vec3[] = [];
+            const faceIndices: number[] = [];
+            for (const faceVertex of args) {
+                const { vertexIndex, uvIndex, normalIndex } = parseVertexIndices(
+                    faceVertex,
+                    vertexPositions.length,
+                    vertexUVs.length,
+                    vertexNormals.length
+                );
+                vec3.set(
+                    tempVec1,
+                    vertexPositions[vertexIndex * 4],
+                    vertexPositions[vertexIndex * 4 + 1],
+                    vertexPositions[vertexIndex * 4 + 2]
+                );
+                faceVertices.push(vec3.clone(tempVec1));
+                faceIndices.push(vertexIndex);
+            }
+            // Store all positions for this face
+            const facePositions: [number, number, number][] = args.map(faceVertex => {
+                const face_segments = faceVertex.split("/");
+                let vertexIndex = parseInt(face_segments[0] || "0");
+                if (vertexIndex < 0) {
+                    vertexIndex = (vertexPositions.length / 4) + vertexIndex;
+                } else {
+                    vertexIndex = vertexIndex - 1;
+                }
+                return [
+                    vertexPositions[vertexIndex * 4],
+                    vertexPositions[vertexIndex * 4 + 1],
+                    vertexPositions[vertexIndex * 4 + 2]
+                ];
+            });
+            // Calculate centroid for this face
+            const centroid = [0, 0, 0];
+            for (const pos of facePositions) {
+                centroid[0] += pos[0];
+                centroid[1] += pos[1];
+                centroid[2] += pos[2];
+            }
+            centroid[0] /= facePositions.length;
+            centroid[1] /= facePositions.length;
+            centroid[2] /= facePositions.length;
+            // Calculate bounding box center
+            const bboxCenter = [
+                (size.x.min + size.x.max) / 2,
+                (size.y.min + size.y.max) / 2,
+                (size.z.min + size.z.max) / 2
+            ];
+            const outIndices: number[] = [];
+            for (let i = 0; i < args.length; i++) {
+                const faceVertex = args[i];
+                const { vertexIndex, uvIndex, normalIndex } = parseVertexIndices(
+                    faceVertex,
+                    vertexPositions.length,
+                    vertexUVs.length,
+                    vertexNormals.length
+                );
+                let finalNormal: vec3;
+                if (currentSmoothingGroup !== "off") {
+                    // Use smoothed normal from accumulated normals if available
+                    const accumKey = `${vertexIndex}|s:${currentSmoothingGroup}`;
+                    const smoothedNormal = smoothingAccum.get(accumKey);
+                    if (smoothedNormal) {
+                        finalNormal = vec3.clone(smoothedNormal.sum);
+                    } else {
+                        // Fallback to face normal if no smoothed normal available
+                        finalNormal = calculateFaceNormal(facePositions, i, tempVec1, tempVec2);
+                    }
+                } else if (normalIndex >= 0 && normalIndex * 3 + 2 < vertexNormals.length) {
+                    // Use explicit normal from file if available
+                    finalNormal = vec3.fromValues(
+                        vertexNormals[normalIndex * 3],
+                        vertexNormals[normalIndex * 3 + 1],
+                        vertexNormals[normalIndex * 3 + 2]
+                    );
+                } else {
+                    // Calculate face normal using winding order
+                    finalNormal = calculateFaceNormal(facePositions, i, tempVec1, tempVec2);
+                }
+                // Ensure normal is normalized
+                vec3.normalize(finalNormal, finalNormal);
+                vertexData.push(
+                    vertexPositions[vertexIndex * 4],
+                    vertexPositions[vertexIndex * 4 + 1],
+                    vertexPositions[vertexIndex * 4 + 2],
+                    finalNormal[0], finalNormal[1], finalNormal[2],
+                    vertexUVs[uvIndex * 3] || 0,
+                    vertexUVs[uvIndex * 3 + 1] || 0
+                );
+                outIndices.push(vertexData.length / NUM_VERT_COMPONENTS - 1);
+            }
+            // Add triangle indices
+            if (args.length === 4) {
+                indices.push(outIndices[0], outIndices[1], outIndices[2]);
+                indices.push(outIndices[0], outIndices[2], outIndices[3]);
+            } else {
+                for (let i = 1; i < outIndices.length - 1; i++) {
+                    indices.push(outIndices[0], outIndices[i], outIndices[i + 1]);
+                }
+            }
+        }
+    }
+
+    // Finalize last group
+    flushVertexData(objects, lastObject, lastGroupKey, vertexData, indices, lastMaterial);
+
+    // Remap group names to match OBJ file group names, ensuring uniqueness within each object
+    for (const obj of Object.values(objects)) {
+        const groupKeys = Object.keys(obj.groups);
+        const nameCount: { [name: string]: number } = {};
+        for (const key of groupKeys) {
+            const originalGroupName = key.split('|')[0];
+            let groupName = originalGroupName;
+            if (obj.groups[groupName]) {
+                nameCount[groupName] = (nameCount[groupName] || 0) + 1;
+                groupName = `${originalGroupName}_${nameCount[groupName]}`;
+                // Keep incrementing until we find a unique name
+                while (obj.groups[groupName]) {
+                    nameCount[originalGroupName]++;
+                    groupName = `${originalGroupName}_${nameCount[originalGroupName]}`;
+                }
+            } else {
+                nameCount[groupName] = 0;
+            }
+            obj.groups[groupName] = obj.groups[key];
+        }
+        // Remove all composite keys
+        for (const key of groupKeys) {
+            if (key.includes('|')) {
+                delete obj.groups[key];
+            }
+        }
+    }
+
+    // Remove empty objects and groups
+    for (const [objName, obj] of Object.entries(objects)) {
+        for (const [groupName, group] of Object.entries(obj.groups)) {
+            if (group.indices.length === 0) {
+                delete obj.groups[groupName];
+            }
+        }
+        if (Object.keys(obj.groups).length === 0) {
+            delete objects[objName];
+        }
+    }
+
+    // Normalize size if requested
+    if (options?.normalizeSize ?? false) {
+        const extent = {
+            x: size.x.max - size.x.min,
+            y: size.y.max - size.y.min,
+            z: size.z.max - size.z.min,
+        };
+        const center = {
+            x: size.x.min + extent.x / 2,
+            y: size.y.min + extent.y / 2,
+            z: size.z.min + extent.z / 2,
+        };
+        const max_extent = Math.max(extent.x, extent.y, extent.z);
+        const scale = max_extent === 0 ? 1 : 0.5 / max_extent;
+        for (const obj of Object.values(objects)) {
+            for (const group of Object.values(obj.groups)) {
+                for (let i = 0; i < group.vertexData.length; i += 8) {
+                    group.vertexData[i + 0] = ((group.vertexData[i + 0] - center.x) * scale);
+                    group.vertexData[i + 1] = ((group.vertexData[i + 1] - center.y) * scale);
+                    group.vertexData[i + 2] = ((group.vertexData[i + 2] - center.z) * scale);
+                }
+            }
+        }
+    }
+
+    return new ObjFile(objects, size);
 }

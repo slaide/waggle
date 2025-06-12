@@ -5,7 +5,7 @@ import { PointLight } from "./scene/lights";
 
 const POINTLIGHTBLOCKBINDING = 1;
 
-const MAX_NUM_POINTLIGHTS = 1;
+const MAX_NUM_POINTLIGHTS = 32;
 const MAX_NUM_SPOTLIGHTS = 1;
 const MAX_NUM_DIRECTIONALLIGHTS = 1;
 
@@ -14,6 +14,7 @@ export class GBuffer {
         public gl: GLC,
         public size: { width: number; height: number },
 
+        /** full screen quad to draw lights with (gbuffer + lights -> screen) */
         public fsq: WebGLProgram,
 
         public camera: Camera = new Camera(),
@@ -38,97 +39,8 @@ export class GBuffer {
 
     static async make(gl: GLC, size: { width: number; height: number }) {
         const fsq = await createShaderProgram(gl, {
-            vs: `#version 300 es
-
-                out vec2 vUV;
-
-                // These three points form a triangle that covers the entire clipspace:
-                const vec2 pos[3] = vec2[](
-                    vec2(-1.0, -1.0),
-                    vec2( 3.0, -1.0),
-                    vec2(-1.0,  3.0)
-                );
-
-                void main() {
-                    gl_Position = vec4(pos[gl_VertexID], 0.0, 1.0);
-                    vUV=pos[gl_VertexID]*0.5+0.5;
-                }`,
-            fs: `#version 300 es
-                precision highp float;
-
-                // --- Helper: linear attenuation (0..1) based on distance/radius ---
-                float ComputeAttenuation( float distance, float radius )
-                {
-                    return clamp(1.0 - (distance / radius), 0.0, 1.0);
-                }
-
-                #define MAX_POINT_LIGHTS ${MAX_NUM_POINTLIGHTS}
-                struct PointLight{
-                    vec3 position;
-                    float radius;
-                    vec3 color;
-                    float intensity;
-                };
-                // --- Point Light Contribution ---
-                vec3 CalcPointLight(
-                    PointLight p,
-                    vec3 fragPos,
-                    vec3 norm,
-                    vec3 viewDir,
-                    vec3 albedo,
-                    float specGloss
-                ){
-                    vec3 Lvec = p.position - fragPos;
-                    float dist = length(Lvec);
-                    if(dist >= p.radius) return vec3(0.0);
-                    vec3 L = normalize(Lvec);
-                    float diff = max(dot(norm, L), 0.0);
-                    vec3 halfway = normalize(L + viewDir);
-                    float spec = 0.0;
-                    if(diff > 0.0) {
-                        spec = pow(max(dot(norm, halfway), 0.0), specGloss);
-                    }
-                    float att = ComputeAttenuation(dist, p.radius);
-                    vec3 diffuse  = p.color * diff;
-                    vec3 specular = p.color * spec;
-                    return att * p.intensity * ( diffuse * albedo + specular * specGloss );
-                }
-
-                layout(std140) uniform PointLightBlock {
-                    int numPointLights;
-                    // 12 bytes of padding
-                    PointLight pointLights[MAX_POINT_LIGHTS];
-                };
-
-                uniform sampler2D gPosition;
-                uniform sampler2D gNormal;
-                uniform sampler2D gAlbedoSpec;
-
-                uniform vec3 uCamPos;
-
-                in vec2 vUV;
-
-                out vec4 color;
-                void main() {
-                    // just forward some gbuffer layer (for debugging)
-                    color = vec4(texture(gNormal,vUV).rgb,1.0);
-                    // return;
-
-                    vec3 fragPos=texture(gPosition,vUV).rgb;
-                    vec3 fragNormal=texture(gNormal,vUV).rgb;
-                    vec4 albSpec=texture(gAlbedoSpec,vUV);
-                    vec3 albedo=albSpec.rgb;
-                    float specGloss=2.0;//albSpec.a;
-                    vec3 viewDir=normalize(uCamPos - fragPos);
-
-                    vec3 result=vec3(0.0);
-                    // Point
-                    for(int i = 0; i < 1; i++) {
-                        result += CalcPointLight(pointLights[i], fragPos, fragNormal, viewDir, albedo, specGloss);
-                    }
-                    color=vec4(result,1.0);
-                }
-            `,
+            vs: await fetch('/src/shaders/gbuffer.vs').then(r => r.text()),
+            fs: await fetch('/src/shaders/gbuffer.fs').then(r => r.text()),
         });
 
         // create with default size

@@ -1,9 +1,12 @@
 /**/.DS_Store
 *.d.ts
 *.js
-# do not ignore any dependency contents
-!/static/dep/**
 *.wasm
 /node_modules
 /dist
 *.js.map
+
+!/eslint.config.js
+!/jest.config.js
+# do not ignore any dependency contents
+!/static/dep/**

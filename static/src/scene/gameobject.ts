@@ -93,13 +93,33 @@ export class GameObject {
         public programInfo: ProgramInfo,
         public numTris: number,
         public transform: Transform,
+        public material?: MtlMaterial,
     ) {}
 
-    static async make(gl: GLC, obj: ObjFile, transform: Transform) {
-        const defaultMaterial = new MtlMaterial();
-        defaultMaterial.diffuse = vec3.fromValues(1, 1, 1);
-
-        const shaderMaterial = obj.material ?? defaultMaterial;
+    static async make(
+        gl: GLC,
+        obj: {
+            objects: {
+                [key: string]: {
+                    groups: {
+                        [key: string]: {
+                            vertexData: Float32Array;
+                            indices: Uint32Array;
+                            material: MtlMaterial | null;
+                        };
+                    };
+                };
+            };
+            boundingBox: any;
+        },
+        transform: Transform
+    ) {
+        // Get the first (and only) group from the temporary structure
+        const group = Object.values(Object.values(obj.objects)[0].groups)[0];
+        const shaderMaterial = group.material ?? new MtlMaterial();
+        if (!shaderMaterial.diffuse) {
+            shaderMaterial.diffuse = vec3.fromValues(1, 1, 1);
+        }
 
         const diffuse_map_source = shaderMaterial?.map_diffuse?.source ?? "";
 
@@ -108,12 +128,13 @@ export class GameObject {
             await GameObject.makeBuffers(
                 gl,
                 diffuse_map_source,
-                obj.vertexData,
-                obj.indices,
+                group.vertexData,
+                group.indices,
             ),
             await GameObject.makeProgram(gl, shaderMaterial),
-            obj.indices.length / 3,
+            group.indices.length / 3,
             transform,
+            shaderMaterial,
         );
     }
 
@@ -160,11 +181,34 @@ export class GameObject {
             this.transform.matrix,
         );
 
+        // Set specular exponent uniform
+        const specularExponent = this.material?.specularExponent ?? 64.0;
+        this.gl.uniform1f(
+            this.programInfo.uniformLocations.uSpecularExponent,
+            specularExponent
+        );
+
+        // Set diffuse color uniform
+        if (this.material?.diffuse) {
+            this.gl.uniform4f(
+                this.programInfo.uniformLocations.uDiffuseColor,
+                this.material.diffuse[0],
+                this.material.diffuse[1],
+                this.material.diffuse[2],
+                1.0
+            );
+        }
+
         const gl = this.gl;
-        // prepare draw: bind texture
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
-        gl.uniform1i(this.programInfo.uniformLocations.uDiffuseSampler, 0);
+        // Set texture usage flag and bind texture if needed
+        const useTexture = this.material?.map_diffuse !== undefined;
+        gl.uniform1i(this.programInfo.uniformLocations.uUseDiffuseTexture, useTexture ? 1 : 0);
+        
+        if (useTexture) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
+            gl.uniform1i(this.programInfo.uniformLocations.uDiffuseSampler, 0);
+        }
     }
 
     draw() {
@@ -206,70 +250,23 @@ export class GameObject {
         gl: GLC,
         material: MtlMaterial,
     ): Promise<ProgramInfo> {
-        const hasDiffuseTexture = material.map_diffuse ? 1 : 0;
-        if (!hasDiffuseTexture && !material.diffuse) throw ``;
+        if (!material.map_diffuse && !material.diffuse) throw ``;
+
+        // Load shader files from static directory
+        const [vsSource, fsSource] = await Promise.all([
+            fetch('/src/shaders/gbuffer.vert').then(r => {
+                if (!r.ok) throw new Error(`Failed to load vertex shader: ${r.statusText}`);
+                return r.text();
+            }),
+            fetch('/src/shaders/gbuffer.frag').then(r => {
+                if (!r.ok) throw new Error(`Failed to load fragment shader: ${r.statusText}`);
+                return r.text();
+            })
+        ]);
 
         const shaderProgram = await createShaderProgram(gl, {
-            vs: `#version 300 es // vert
-
-                precision highp float;
-
-                in vec4 aVertexPosition;
-                in vec3 aVertexNormal;
-                in vec2 aVertexTexCoord;
-
-                uniform mat4 uModelMatrix;
-                uniform mat4 uViewMatrix;
-                uniform mat4 uProjectionMatrix;
-
-                out vec2 vTextureCoord;
-                out vec4 vGlobalPos;
-                out vec3 vNormal;
-
-                void main() {
-                    vec4 modelSpacePos=aVertexPosition;
-                    vec4 globalSpacePos=uModelMatrix * aVertexPosition;
-                    vec4 viewSpacePos=uViewMatrix * globalSpacePos;
-                    vec4 clipSpacePos=uProjectionMatrix * viewSpacePos;
-
-                    vGlobalPos=globalSpacePos;
-                    gl_Position = clipSpacePos;
-                    vTextureCoord = aVertexTexCoord;
-
-                    // would be good to calculate this on the cpu instead
-                    mat3 normalTransformMatrix=transpose(inverse(mat3(uModelMatrix)));
-                    vNormal = normalTransformMatrix * normalize(aVertexNormal);
-                }
-            `,
-            fs: `#version 300 es // frag
-
-                precision highp float;
-
-                layout (location = 0) out vec3 gPosition;
-                layout (location = 1) out vec3 gNormal;
-                layout (location = 2) out vec4 gAlbedoSpec;
-
-                in vec2 vTextureCoord;
-                in vec4 vGlobalPos;
-                in vec3 vNormal;
-
-                #if ${hasDiffuseTexture ? "1" : "0"}
-                    uniform sampler2D uDiffuseSampler;
-                #else
-                    uniform vec4 uDiffuseColor;
-                #endif
-
-                void main() {
-                    gPosition=vGlobalPos.xyz;
-                    gNormal=vNormal;
-
-                    #if ${hasDiffuseTexture ? "1" : "0"}
-                        gAlbedoSpec=texture(uDiffuseSampler, vTextureCoord);
-                    #else
-                        gAlbedoSpec=vec4(uDiffuseColor.rgb,1.0);
-                    #endif
-                }
-            `,
+            vs: vsSource,
+            fs: fsSource
         });
 
         const numAttributes = gl.getProgramParameter(
