@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import {makeStruct, makeUnion, TYPE_REGISTRY} from "./struct";
+import {makeStruct, makeUnion, TYPE_REGISTRY, Field} from "./struct";
 
 describe('Struct', () => {
     describe('primitive types', () => {
@@ -381,6 +381,50 @@ describe('Struct', () => {
                 expect(AlignedStruct.sizeof).toBe(12);
             });
         });
+
+        test('struct field offsets', () => {
+            // Create a struct with different sized fields to test alignment
+            const TestStruct = makeStruct([
+                { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
+                { name: 'b', type: TYPE_REGISTRY['u32'] }, // 4 bytes, should be aligned to 4
+                { name: 'c', type: TYPE_REGISTRY['u16'] }, // 2 bytes
+                { name: 'd', type: TYPE_REGISTRY['u32'] }, // 4 bytes, should be aligned to 4
+            ]);
+
+            // Get the fields from the struct definition
+            const fields = TestStruct.fields;
+
+            // Verify offsets
+            expect(fields[0].offset).toBe(0);  // a: starts at 0
+            expect(fields[1].offset).toBe(4);  // b: aligned to 4
+            expect(fields[2].offset).toBe(8);  // c: starts at 8
+            expect(fields[3].offset).toBe(12); // d: aligned to 4
+
+            // Verify total size (should be 16 bytes with padding)
+            expect(TestStruct.sizeof).toBe(16);
+        });
+
+        test('struct field offsets with custom alignment', () => {
+            // Create a struct with custom alignment
+            const TestStruct = makeStruct([
+                { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
+                { name: 'b', type: TYPE_REGISTRY['u32'] }, // 4 bytes
+                { name: 'c', type: TYPE_REGISTRY['u16'] }, // 2 bytes
+                { name: 'd', type: TYPE_REGISTRY['u32'] }, // 4 bytes
+            ], undefined, 8); // Force 8-byte alignment
+
+            // Get the fields from the struct definition
+            const fields = TestStruct.fields;
+
+            // Verify offsets
+            expect(fields[0].offset).toBe(0);  // a: starts at 0
+            expect(fields[1].offset).toBe(4);  // b: starts at 4 (u32 is 4 bytes)
+            expect(fields[2].offset).toBe(8);  // c: starts at 8 (aligned to 8)
+            expect(fields[3].offset).toBe(12); // d: starts at 12 (u32 is 4 bytes)
+
+            // Verify total size (should be 16 bytes with padding)
+            expect(TestStruct.sizeof).toBe(16);
+        });
     });
 
     describe('arrays', () => {
@@ -617,6 +661,51 @@ describe('Struct', () => {
                 ], unionName);
             }).toThrow('Type name already exists in TYPE_REGISTRY');
         });
+
+        test('union field offsets', () => {
+            // Create a union with different sized fields
+            const TestUnion = makeUnion([
+                { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
+                { name: 'b', type: TYPE_REGISTRY['u32'] }, // 4 bytes
+                { name: 'c', type: TYPE_REGISTRY['u16'] }, // 2 bytes
+                { name: 'd', type: TYPE_REGISTRY['u32'] }, // 4 bytes
+            ]);
+
+            // Get the fields from the union definition
+            const fields = TestUnion.fields;
+
+            // Verify all fields have offset 0 in a union
+            fields.forEach((field: Field) => {
+                expect(field.offset).toBe(0);
+            });
+
+            // Verify total size (should be 4 bytes, the size of the largest field)
+            expect(TestUnion.sizeof).toBe(4);
+        });
+
+        test('nested struct field offsets', () => {
+            // Create Point type
+            const Point = makeStruct([
+                { name: 'x', type: TYPE_REGISTRY['f32'] },
+                { name: 'y', type: TYPE_REGISTRY['f32'] }
+            ]);
+
+            // Create Line type with two points
+            const Line = makeStruct([
+                { name: 'start', type: Point },
+                { name: 'end', type: Point }
+            ]);
+
+            // Get the fields from the Line struct
+            const fields = Line.fields;
+
+            // Verify offsets
+            expect(fields[0].offset).toBe(0);   // start: starts at 0
+            expect(fields[1].offset).toBe(8);   // end: starts at 8 (after start's 8 bytes)
+
+            // Verify total size
+            expect(Line.sizeof).toBe(16); // 2 points * 8 bytes each
+        });
     });
 
     describe('complex type assignments', () => {
@@ -775,6 +864,54 @@ describe('Struct', () => {
             // Modify the original point - should not affect the array
             newPoint.x = 5.0;
             expect(shape.data[0].point.x).toBeCloseTo(3.0, 5);
+        });
+    });
+
+    describe('array type information', () => {
+        test('array of struct exposes fields on array and elements', () => {
+            const Point = makeStruct([
+                { name: 'x', type: TYPE_REGISTRY['f32'] },
+                { name: 'y', type: TYPE_REGISTRY['f32'] }
+            ]);
+            const PointArray = Point.array(3);
+            const arr = PointArray();
+            // Array type exposes fields
+            expect(PointArray.fields).toBeDefined();
+            expect(PointArray.fields.length).toBe(2);
+            expect(PointArray.fields[0].name).toBe('x');
+            // Array instance exposes fields
+            expect(arr.fields).toBeDefined();
+            expect(arr.fields[0].name).toBe('x');
+            // Each element exposes fields
+            expect(arr[0].fields).toBeDefined();
+            expect(arr[0].fields[0].name).toBe('x');
+            expect(arr[1].fields[1].name).toBe('y');
+        });
+        test('array of union exposes fields on array and elements', () => {
+            const NumberUnion = makeUnion([
+                { name: 'i32', type: TYPE_REGISTRY['i32'] },
+                { name: 'f32', type: TYPE_REGISTRY['f32'] }
+            ]);
+            const UnionArray = NumberUnion.array(2);
+            const arr = UnionArray();
+            // Array type exposes fields
+            expect(UnionArray.fields).toBeDefined();
+            expect(UnionArray.fields.length).toBe(2);
+            expect(UnionArray.fields[0].name).toBe('i32');
+            // Array instance exposes fields
+            expect(arr.fields).toBeDefined();
+            expect(arr.fields[1].name).toBe('f32');
+            // Each element exposes fields
+            expect(arr[0].fields).toBeDefined();
+            expect(arr[0].fields[0].name).toBe('i32');
+            expect(arr[1].fields[1].name).toBe('f32');
+        });
+        test('array of primitive does not expose fields', () => {
+            const U8Array = TYPE_REGISTRY['u8'].array(4);
+            const arr = U8Array();
+            expect(U8Array.fields).toBeUndefined();
+            expect(arr.fields).toBeUndefined();
+            expect(arr[0].fields).toBeUndefined();
         });
     });
 });

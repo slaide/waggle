@@ -59,12 +59,33 @@ function calculateAlignment(fields: Field[], customAlignment?: number): number {
  * @returns A proxied array with get/set traps.
  */
 function createArrayProxy(arr: any[], size: number, view: DataView, offset: number, elementType: TypeDescriptor, ctor?: Function): any {
+    // If the elementType has fields, create a proxy for each element that exposes them
+    function makeElementProxy(idx: number) {
+        const element = arr[idx];
+        if (elementType && (elementType as any).fields) {
+            return new Proxy(element, {
+                get(target, prop) {
+                    if (prop === 'fields') return (elementType as any).fields;
+                    return target[prop as any];
+                },
+                set(target, prop, value) {
+                    target[prop as any] = value;
+                    return true;
+                }
+            });
+        }
+        return element;
+    }
     return new Proxy(arr, {
         get(target, prop) {
             if (typeof prop === "string" && /^\d+$/.test(prop)) {
-                return target[Number(prop)];
+                return makeElementProxy(Number(prop));
             }
             if (prop === 'length') return size;
+            // Expose fields on the array itself if elementType has fields
+            if (prop === 'fields' && elementType && (elementType as any).fields) {
+                return (elementType as any).fields;
+            }
             return target[prop as any];
         },
         set(target, prop, value) {
@@ -143,6 +164,10 @@ function createArrayType(elementType: TypeDescriptor, size: number, ctor?: Funct
         },
         array: (newSize: number) => createArrayType(elementType, newSize, ctor)
     });
+    // Attach fields property if elementType has it
+    if ((elementType as any).fields) {
+        (ArrayCtor as any).fields = (elementType as any).fields;
+    }
     return ArrayCtor as any;
 }
 
@@ -211,13 +236,15 @@ export const TYPE_REGISTRY: { [key: string]: any } = {
 /**
  * Represents a field in a struct or union.
  */
-type Field = {
+export type Field = {
     /** Field name */
     name: string;
     /** Field type descriptor */
     type: TypeDescriptor;
     /** Optional custom alignment */
     alignment?: number;
+    /** Offset in bytes from the start of the struct/union */
+    offset?: number;
 };
 
 /**
@@ -233,6 +260,8 @@ export interface StructConstructor extends TypeDescriptor {
     (): StructInstance;
     /** Creates an array type of this struct */
     array: (size: number) => any;
+    /** The fields of this struct */
+    fields: Field[];
 }
 
 /**
@@ -270,6 +299,8 @@ export function makeStruct(fields: Field[], name?: string, alignment?: number): 
         if (totalSize % fieldAlignment !== 0) {
             totalSize += fieldAlignment - (totalSize % fieldAlignment);
         }
+        // Store the offset for this field
+        field.offset = totalSize;
         totalSize += field.type.sizeof;
     }
     // Final struct alignment
@@ -283,50 +314,31 @@ export function makeStruct(fields: Field[], name?: string, alignment?: number): 
             const buffer = new ArrayBuffer(totalSize);
             const view = new DataView(buffer);
             const instance: StructInstance = {};
-            let currentOffset = 0;
             // Define properties for each field
             fields.forEach(field => {
-                let fieldAlignment = field.alignment || field.type.alignment;
-                if (alignment && fieldAlignment > alignment) {
-                    fieldAlignment = alignment;
-                }
-                if (currentOffset % fieldAlignment !== 0) {
-                    currentOffset += fieldAlignment - (currentOffset % fieldAlignment);
-                }
-                const offset = currentOffset;
                 Object.defineProperty(instance, field.name, {
-                    get: () => field.type.get(view, offset),
-                    set: (value: any) => field.type.set(view, offset, value),
+                    get: () => field.type.get(view, field.offset!),
+                    set: (value: any) => field.type.set(view, field.offset!, value),
                     enumerable: true
                 });
-                currentOffset += field.type.sizeof;
             });
             return instance;
         },
         {
             sizeof: totalSize,
             alignment: maxAlignment,
+            fields: fields,
             /**
              * Get a struct instance from a DataView and offset
              */
             get: (view: DataView, offset: number) => {
                 const instance: StructInstance = {};
-                let currentOffset = offset;
                 fields.forEach(field => {
-                    let fieldAlignment = field.alignment || field.type.alignment;
-                    if (alignment && fieldAlignment > alignment) {
-                        fieldAlignment = alignment;
-                    }
-                    if (currentOffset % fieldAlignment !== 0) {
-                        currentOffset += fieldAlignment - (currentOffset % fieldAlignment);
-                    }
-                    const fieldOffset = currentOffset;
                     Object.defineProperty(instance, field.name, {
-                        get: () => field.type.get(view, fieldOffset),
-                        set: (value: any) => field.type.set(view, fieldOffset, value),
+                        get: () => field.type.get(view, offset + field.offset!),
+                        set: (value: any) => field.type.set(view, offset + field.offset!, value),
                         enumerable: true
                     });
-                    currentOffset += field.type.sizeof;
                 });
                 return instance;
             },
@@ -334,18 +346,8 @@ export function makeStruct(fields: Field[], name?: string, alignment?: number): 
              * Set a struct instance's fields from a value object
              */
             set: (view: DataView, offset: number, value: StructInstance) => {
-                let currentOffset = offset;
                 fields.forEach(field => {
-                    let fieldAlignment = field.alignment || field.type.alignment;
-                    if (alignment && fieldAlignment > alignment) {
-                        fieldAlignment = alignment;
-                    }
-                    if (currentOffset % fieldAlignment !== 0) {
-                        currentOffset += fieldAlignment - (currentOffset % fieldAlignment);
-                    }
-                    const fieldOffset = currentOffset;
-                    field.type.set(view, fieldOffset, value[field.name]);
-                    currentOffset += field.type.sizeof;
+                    field.type.set(view, offset + field.offset!, value[field.name]);
                 });
             },
             /**
@@ -385,6 +387,8 @@ export type UnionConstructor = {
     set: (view: DataView, offset: number, value: UnionInstance) => void;
     /** Create an array type of this union */
     array: (size: number) => any;
+    /** The fields of this union */
+    fields: Field[];
 };
 
 /**
@@ -409,6 +413,9 @@ export function makeUnion(fields: Field[], name?: string, alignment?: number): U
     // Calculate alignment and size
     const maxAlignment = calculateAlignment(fields, alignment);
     const totalSize = Math.max(...fields.map(f => f.type.sizeof));
+    // Set all field offsets to 0 for unions
+    fields.forEach(field => field.offset = 0);
+
     // Union constructor: creates a new instance backed by a DataView
     const UnionConstructor = Object.assign(
         function() {
@@ -428,6 +435,7 @@ export function makeUnion(fields: Field[], name?: string, alignment?: number): U
         {
             sizeof: totalSize,
             alignment: maxAlignment,
+            fields: fields,
             /**
              * Get a union instance from a DataView and offset
              */
