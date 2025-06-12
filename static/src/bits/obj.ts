@@ -403,27 +403,12 @@ export async function parseObj(filepath: string, options?: {
         .replace(/\r/g, "")
         .split("\n");
 
-    // First pass: count vertices and track positions for bounding box
-    const size: BB = {
-        x: { min: Infinity, max: -Infinity },
-        y: { min: Infinity, max: -Infinity },
-        z: { min: Infinity, max: -Infinity }
-    };
-
+    // First pass: count vertices
     for (const line of lines) {
         if (!line || line[0] === "#") continue;
         const [directive, ...args] = line.split(" ").filter(l => l.length);
         if (directive === "v") {
             vertexCount++;
-            const x = parseFloat(args[0]);
-            const y = parseFloat(args[1]);
-            const z = parseFloat(args[2]);
-            size.x.min = Math.min(size.x.min, x);
-            size.x.max = Math.max(size.x.max, x);
-            size.y.min = Math.min(size.y.min, y);
-            size.y.max = Math.max(size.y.max, y);
-            size.z.min = Math.min(size.z.min, z);
-            size.z.max = Math.max(size.z.max, z);
         } else if (directive === "vt") uvCount++;
         else if (directive === "vn") normalCount++;
     }
@@ -652,12 +637,6 @@ export async function parseObj(filepath: string, options?: {
             centroid[0] /= facePositions.length;
             centroid[1] /= facePositions.length;
             centroid[2] /= facePositions.length;
-            // Calculate bounding box center
-            const bboxCenter = [
-                (size.x.min + size.x.max) / 2,
-                (size.y.min + size.y.max) / 2,
-                (size.z.min + size.z.max) / 2
-            ];
             const outIndices: number[] = [];
             for (let i = 0; i < args.length; i++) {
                 const faceVertex = args[i];
@@ -758,6 +737,31 @@ export async function parseObj(filepath: string, options?: {
 
     // Normalize size if requested
     if (options?.normalizeSize ?? false) {
+        // Calculate bounding box
+        const size: BB = {
+            x: { min: Infinity, max: -Infinity },
+            y: { min: Infinity, max: -Infinity },
+            z: { min: Infinity, max: -Infinity }
+        };
+
+        // Calculate bounding box from all vertices
+        for (const obj of Object.values(objects)) {
+            for (const group of Object.values(obj.groups)) {
+                for (let i = 0; i < group.vertexData.length; i += 8) {
+                    const x = group.vertexData[i];
+                    const y = group.vertexData[i + 1];
+                    const z = group.vertexData[i + 2];
+                    size.x.min = Math.min(size.x.min, x);
+                    size.x.max = Math.max(size.x.max, x);
+                    size.y.min = Math.min(size.y.min, y);
+                    size.y.max = Math.max(size.y.max, y);
+                    size.z.min = Math.min(size.z.min, z);
+                    size.z.max = Math.max(size.z.max, z);
+                }
+            }
+        }
+
+        // Calculate normalization parameters
         const extent = {
             x: size.x.max - size.x.min,
             y: size.y.max - size.y.min,
@@ -770,6 +774,8 @@ export async function parseObj(filepath: string, options?: {
         };
         const max_extent = Math.max(extent.x, extent.y, extent.z);
         const scale = max_extent === 0 ? 1 : 0.5 / max_extent;
+
+        // Normalize vertices
         for (const obj of Object.values(objects)) {
             for (const group of Object.values(obj.groups)) {
                 for (let i = 0; i < group.vertexData.length; i += 8) {
@@ -779,7 +785,14 @@ export async function parseObj(filepath: string, options?: {
                 }
             }
         }
+
+        return new ObjFile(objects, size);
     }
 
-    return new ObjFile(objects, size);
+    // Return empty bounding box if not normalizing
+    return new ObjFile(objects, {
+        x: { min: 0, max: 0 },
+        y: { min: 0, max: 0 },
+        z: { min: 0, max: 0 }
+    });
 }
