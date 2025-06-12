@@ -90,55 +90,23 @@ export class GameObject {
     constructor(
         public gl: GLC,
         public buffers: Buffer,
-        public programInfo: ProgramInfo,
-        public numTris: number,
         public transform: Transform,
+        public programInfo?: ProgramInfo,  // Make programInfo optional
+        public numTris: number = 0,  // Default to 0 for lights
         public material?: MtlMaterial,
+        public enabled: boolean = true,  // if false, children won't be traversed
+        public visible: boolean = true,  // if false, object won't be drawn
+        public name?: string,  // optional name for the object
     ) {}
 
-    static async make(
-        gl: GLC,
-        obj: {
-            objects: {
-                [key: string]: {
-                    groups: {
-                        [key: string]: {
-                            vertexData: Float32Array;
-                            indices: Uint32Array;
-                            material: MtlMaterial | null;
-                        };
-                    };
-                };
-            };
-            boundingBox: any;
-        },
-        transform: Transform
-    ) {
-        // Get the first (and only) group from the temporary structure
-        const group = Object.values(Object.values(obj.objects)[0].groups)[0];
-        const shaderMaterial = group.material ?? new MtlMaterial();
-        if (!shaderMaterial.diffuse) {
-            shaderMaterial.diffuse = vec3.fromValues(1, 1, 1);
-        }
-
-        const diffuse_map_source = shaderMaterial?.map_diffuse?.source ?? "";
-
-        return new GameObject(
-            gl,
-            await GameObject.makeBuffers(
-                gl,
-                diffuse_map_source,
-                group.vertexData,
-                group.indices,
-            ),
-            await GameObject.makeProgram(gl, shaderMaterial),
-            group.indices.length / 3,
-            transform,
-            shaderMaterial,
-        );
+    // Getter to determine if object should be drawn
+    get shouldDraw(): boolean {
+        return this.visible && this.enabled && !!this.programInfo;
     }
 
     upload() {
+        if (!this.programInfo) return;  // Skip if no program info
+
         const F32SIZE = 4;
 
         // 3 floats for vert pos, 3 for normal, then 2 floats for uv
@@ -212,6 +180,9 @@ export class GameObject {
     }
 
     draw() {
+        if (!this.shouldDraw) return;  // Use the getter instead of visible flag
+        if (!this.programInfo) return;  // Extra safety check
+
         const { buffers, programInfo } = this;
         const gl = this.gl;
 
@@ -244,6 +215,35 @@ export class GameObject {
         gl.drawElements(GL.TRIANGLES, this.numTris * 3, GL.UNSIGNED_INT, 0);
 
         gl.bindVertexArray;
+    }
+
+    static async make(
+        gl: GLC,
+        obj: ObjFile,
+        transform: Transform
+    ) {
+        // Get the first (and only) group from the temporary structure
+        const group = Object.values(Object.values(obj.objects)[0].groups)[0];
+        const shaderMaterial = group.material ?? new MtlMaterial();
+        if (!shaderMaterial.diffuse) {
+            shaderMaterial.diffuse = vec3.fromValues(1, 1, 1);
+        }
+
+        const diffuse_map_source = shaderMaterial?.map_diffuse?.source ?? "";
+
+        return new GameObject(
+            gl,
+            await GameObject.makeBuffers(
+                gl,
+                diffuse_map_source,
+                group.vertexData,
+                group.indices,
+            ),
+            transform,
+            await GameObject.makeProgram(gl, shaderMaterial),
+            group.indices.length / 3,
+            shaderMaterial,
+        );
     }
 
     static async makeProgram(

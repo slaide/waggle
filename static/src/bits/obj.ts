@@ -89,33 +89,6 @@ function parseVertexData(args: string[], numComponents: number): number[] {
     return data;
 }
 
-// Helper function to handle vertex data directives (v, vt, vn)
-function handleVertexDirective(
-    directive: string,
-    args: string[],
-    vertexPositions: number[],
-    vertexUVs: number[][],
-    vertexNormals: number[][]
-) {
-    switch (directive) {
-        case 'v': {
-            const data = parseVertexData(args, 4);
-            vertexPositions.push(...data);
-            break;
-        }
-        case 'vn': {
-            const data = parseVertexData(args, 3);
-            vertexNormals.push(data);
-            break;
-        }
-        case 'vt': {
-            const data = parseVertexData(args, 3);
-            vertexUVs.push(data);
-            break;
-        }
-    }
-}
-
 // Helper function to calculate normal for a triangle
 function calculateTriangleNormal(vertexData: number[], offset: number): vec3 {
     const v1 = vec3.fromValues(
@@ -263,16 +236,6 @@ export class ObjFile {
         },
         public boundingBox: BB,
     ) { }
-}
-
-function vec3Equals(a: vec3, b: vec3, epsilon: number = 0.001): boolean {
-    return Math.abs(a[0] - b[0]) < epsilon &&
-        Math.abs(a[1] - b[1]) < epsilon &&
-        Math.abs(a[2] - b[2]) < epsilon;
-}
-
-function vec3ToString(v: vec3): string {
-    return `${v[0].toFixed(3)},${v[1].toFixed(3)},${v[2].toFixed(3)}`;
 }
 
 type VertexInfo = {

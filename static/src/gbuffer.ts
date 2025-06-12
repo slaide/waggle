@@ -37,7 +37,11 @@ export class GBuffer {
         }[] = [],
         /** used with gl.drawBuffers */
         public layerAttachments: GLint[] = [],
-    ) {}
+    ) {
+        // Initialize lights to empty arrays
+        this.updatePointlights([]);
+        this.updateDirectionalLights([]);
+    }
 
     static async make(gl: GLC, size: { width: number; height: number }) {
         const fsq = await createShaderProgram(gl, {

@@ -1,5 +1,11 @@
 import { vec3, quat } from "gl-matrix";
 import { GBuffer } from "./gbuffer";
+import { GL } from "./gl";
+import { Scene } from "./scene/scene";
+import { Transform } from "./scene/transform";
+import { GameObject } from "./scene/gameobject";
+import { parseObj } from "./bits/obj";
+import { loadScene, SceneDescription } from "./scene/scene_format";
 
 console.log(
     `running in strict mode? ${(function () {
@@ -7,12 +13,6 @@ console.log(
         return !this;
     })()}`,
 );
-
-import { GL } from "./gl";
-import { Scene } from "./scene/scene";
-import { Transform } from "./scene/transform";
-import { GameObject } from "./scene/gameobject";
-import { parseObj } from "./bits/obj";
 
 export async function main() {
     // import wasm like this (instead of top level import!)
@@ -60,7 +60,61 @@ export async function main() {
     };
 
     const gbuffer = await GBuffer.make(gl, canvas_size);
-    const scene = await Scene.make(gl);
+    
+    // Load scene from description
+    const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
+    const scene = await loadScene(gl, sceneDescription);
+
+    // Print scene state and collect lights
+    console.log("Scene state before draw loop:");
+    console.log("Number of objects:", scene.children.length);
+    
+    // Traverse scene and print object information
+    scene.traverse((obj, parentTransform) => {
+        console.log(`\nObject: ${obj.name || 'unnamed'}`);
+        console.log("- Position:", Array.from(obj.transform.position));
+        console.log("- Rotation:", Array.from(obj.transform.rotation));
+        console.log("- Scale:", Array.from(obj.transform.scale));
+        console.log("- Enabled:", obj.enabled);
+        console.log("- Visible:", obj.visible);
+        console.log("- Has material:", !!obj.material);
+        if (obj.material) {
+            console.log("  - Diffuse:", obj.material.diffuse ? Array.from(obj.material.diffuse) : "none");
+            console.log("  - Specular exponent:", obj.material.specularExponent);
+            console.log("  - Has diffuse texture:", !!obj.material.map_diffuse);
+        }
+        if (parentTransform) {
+            console.log("- Has parent transform");
+        }
+    });
+
+    // Collect and update lights
+    const { pointLights, directionalLights } = scene.collectLights();
+    gbuffer.updatePointlights(pointLights);
+    gbuffer.updateDirectionalLights(directionalLights);
+
+    console.log("\nCamera state:");
+    console.log("- Position:", Array.from(gbuffer.camera.position));
+    console.log("- Rotation:", Array.from(gbuffer.camera.rotation));
+    console.log("- FOV:", gbuffer.camera.fov);
+    console.log("- Aspect:", gbuffer.camera.aspect);
+    console.log("- Near/Far:", gbuffer.camera.znear, gbuffer.camera.zfar);
+    console.log("\nLights:");
+    console.log("- Point lights:", pointLights.length);
+    pointLights.forEach((light, i) => {
+        console.log(`  Point light ${i}:`);
+        console.log("  - Position:", Array.from(light.position));
+        console.log("  - Color:", Array.from(light.color));
+        console.log("  - Intensity:", light.intensity);
+        console.log("  - Radius:", light.radius);
+    });
+    console.log("- Directional lights:", directionalLights.length);
+    directionalLights.forEach((light, i) => {
+        console.log(`  Directional light ${i}:`);
+        console.log("  - Direction:", Array.from(light.direction));
+        console.log("  - Color:", Array.from(light.color));
+        console.log("  - Intensity:", light.intensity);
+    });
 
     window.addEventListener("keydown", (ev) => {
         if (ev.key == "f") {
@@ -89,39 +143,7 @@ export async function main() {
         scene.shouldDraw = !document.hidden;
     });
 
-    for (let i = 0; i < 2; i++) {
-        const transform = new Transform();
-        transform.position = vec3.fromValues(-1.5 + i * 3, 0, -6);
-
-        const objpath = "./static/resources/cube.obj";
-        console.time(`OBJ parse and process ${i}`);
-        const obj = await parseObj(objpath, { normalizeSize: true });
-        console.timeEnd(`OBJ parse and process ${i}`);
-
-        // Print vertex count
-        let totalVertices = 0;
-        for (const objObject of Object.values(obj.objects)) {
-            for (const group of Object.values(objObject.groups)) {
-                totalVertices += group.vertexData.length / 8; // Each vertex has 8 components
-            }
-        }
-        console.log(`Total vertices in ${objpath}: ${totalVertices}`);
-
-        // Iterate over all objects and groups in the parsed OBJ
-        console.time(`OBJ upload to GPU ${i}`);
-        for (const objObject of Object.values(obj.objects)) {
-            for (const group of Object.values(objObject.groups)) {
-                const newobject = await GameObject.make(gl, { objects: { temp: { groups: { temp: group } } }, boundingBox: obj.boundingBox }, transform);
-                newobject.upload();
-                scene.children.push(newobject);
-            }
-        }
-        console.timeEnd(`OBJ upload to GPU ${i}`);
-    }
-
     // setup drawing loop
-
-    // this is used as part of game logic
     let rotation = 0;
 
     const camera = gbuffer.camera;
@@ -269,7 +291,8 @@ export async function main() {
         const projectionMatrix = camera.projectionMatrix;
 
         for (const object of scene.children) {
-            const { programInfo } = object;
+            // Skip objects without program info (like lights)
+            if (!object.programInfo) continue;
 
             // animate quad rotation
             rotation += 40 * deltatime_ms;
@@ -280,51 +303,29 @@ export async function main() {
                 rotation,
             );
 
-            gl.useProgram(programInfo.program);
+            gl.useProgram(object.programInfo.program);
             // ensure transform is up to date
             gl.uniformMatrix4fv(
-                programInfo.uniformLocations.uModelMatrix,
+                object.programInfo.uniformLocations.uModelMatrix,
                 false,
                 object.transform.matrix,
             );
             // ensure transform is up to date
             gl.uniformMatrix4fv(
-                programInfo.uniformLocations.uViewMatrix,
+                object.programInfo.uniformLocations.uViewMatrix,
                 false,
                 camera.viewMatrix,
             );
             // also update camera projection matrix (TODO optimize to share this between draws)
             gl.uniformMatrix4fv(
-                programInfo.uniformLocations.uProjectionMatrix,
+                object.programInfo.uniformLocations.uProjectionMatrix,
                 false,
                 projectionMatrix,
             );
         }
     };
 
-    // init buffers to no lights
-    gbuffer.updatePointlights([]);
-    gbuffer.updateDirectionalLights([]);
-
-    gbuffer.updatePointlights([
-        {
-            position: vec3.fromValues(0, 2, -6),
-            radius: 1,
-            color: vec3.fromValues(1.0, 1.0, 1.0),
-            intensity: 0.3,
-        },
-    ]);
-
-    // Add a directional light (sun-like light from above)
-    gbuffer.updateDirectionalLights([
-        {
-            direction: vec3.fromValues(0, -1, 0), // pointing down
-            color: vec3.fromValues(1.0, 0.95, 0.8), // slightly warm sunlight color
-            intensity: 0.5,
-        },
-    ]);
-
-    const frametimes = new Float32Array(30);
+    const frametimes = new Float32Array(32);
     let framenum = 0;
     const original_title = document.title;
 
