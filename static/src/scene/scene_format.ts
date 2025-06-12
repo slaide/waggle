@@ -2,8 +2,6 @@ import { vec3, quat } from "gl-matrix";
 import { Transform } from "./transform";
 import { GameObject } from "./gameobject";
 import { Scene } from "./scene";
-import { Camera } from "./camera";
-import { PointLight } from "./lights";
 import { parseObj } from "../bits/obj";
 import { MtlMaterial } from "../bits/obj";
 

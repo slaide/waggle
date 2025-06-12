@@ -278,7 +278,7 @@ export class GameObject {
             const attribute = gl.getActiveAttrib(shaderProgram, i);
             // should not happen
             if (attribute == null) continue;
-            const { name, size, type } = attribute;
+            const { name } = attribute;
 
             const loc = gl.getAttribLocation(shaderProgram, name);
 
@@ -294,7 +294,7 @@ export class GameObject {
             const uniform = gl.getActiveUniform(shaderProgram, i);
             // should not happen
             if (uniform == null) continue;
-            const { name, size, type } = uniform;
+            const { name } = uniform;
 
             const loc = gl.getUniformLocation(shaderProgram, name);
             if (!loc) {

@@ -135,7 +135,7 @@ export async function main() {
     onresize();
     window.addEventListener("resize", onresize);
 
-    window.addEventListener("visibilitychange", (_ev) => {
+    window.addEventListener("visibilitychange", () => {
         scene.shouldDraw = !document.hidden;
     });
 
