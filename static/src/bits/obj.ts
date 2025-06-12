@@ -394,55 +394,77 @@ export async function parseObj(filepath: string, options?: {
         }
     }
 
-    // Pre-count vertices to allocate arrays efficiently
-    let vertexCount = 0;
-    let uvCount = 0;
-    let normalCount = 0;
+    // Initialize dynamic buffers with reasonable initial sizes
+    const INITIAL_BUFFER_SIZE = 1024; // Start with 1K vertices
+    const GROWTH_FACTOR = 2; // Double size when needed
+
+    // Dynamic buffer for vertex positions (x,y,z,w)
+    let vertexPositions: Float32Array = new Float32Array(INITIAL_BUFFER_SIZE * 4);
+    let vertexPositionsLength = 0;
+
+    // Dynamic buffer for vertex UVs (u,v,w)
+    let vertexUVs: Float32Array = new Float32Array(INITIAL_BUFFER_SIZE * 3);
+    let vertexUVsLength = 0;
+
+    // Dynamic buffer for vertex normals (x,y,z)
+    let vertexNormals: Float32Array = new Float32Array(INITIAL_BUFFER_SIZE * 3);
+    let vertexNormalsLength = 0;
+
+    // Helper function to grow a buffer
+    function growBuffer(buffer: Float32Array, elementSize: number): Float32Array {
+        const newBuffer = new Float32Array(buffer.length * GROWTH_FACTOR);
+        newBuffer.set(buffer);
+        return newBuffer;
+    }
+
+    // Helper function to add vertex data
+    function addVertexData(buffer: Float32Array, length: number, data: number[], elementSize: number): [Float32Array, number] {
+        if (length + data.length > buffer.length) {
+            buffer = growBuffer(buffer, elementSize);
+        }
+        buffer.set(data, length);
+        return [buffer, length + data.length];
+    }
+
     const lines = filedata
         .replace(/\t/g, " ")
         .replace(/\r/g, "")
         .split("\n");
 
-    // First pass: count vertices
+    // Single pass to process vertices
     for (const line of lines) {
         if (!line || line[0] === "#") continue;
         const [directive, ...args] = line.split(" ").filter(l => l.length);
+        
         if (directive === "v") {
-            vertexCount++;
-        } else if (directive === "vt") uvCount++;
-        else if (directive === "vn") normalCount++;
-    }
-
-    // Pre-allocate arrays with exact sizes
-    const vertexPositions = new Float32Array(vertexCount * 4);
-    const vertexUVs = new Float32Array(uvCount * 3);
-    const vertexNormals = new Float32Array(normalCount * 3);
-    let vertexIndex = 0;
-    let uvIndex = 0;
-    let normalIndex = 0;
-
-    // Second pass: fill arrays
-    for (const line of lines) {
-        if (!line || line[0] === "#") continue;
-        const [directive, ...args] = line.split(" ").filter(l => l.length);
-        if (directive === "v") {
-            vertexPositions[vertexIndex * 4] = parseFloat(args[0]);
-            vertexPositions[vertexIndex * 4 + 1] = parseFloat(args[1]);
-            vertexPositions[vertexIndex * 4 + 2] = parseFloat(args[2]);
-            vertexPositions[vertexIndex * 4 + 3] = parseFloat(args[3] || "1.0");
-            vertexIndex++;
+            const data = [
+                parseFloat(args[0]),
+                parseFloat(args[1]),
+                parseFloat(args[2]),
+                parseFloat(args[3] || "1.0")
+            ];
+            [vertexPositions, vertexPositionsLength] = addVertexData(vertexPositions, vertexPositionsLength, data, 4);
         } else if (directive === "vt") {
-            vertexUVs[uvIndex * 3] = parseFloat(args[0]);
-            vertexUVs[uvIndex * 3 + 1] = parseFloat(args[1]);
-            vertexUVs[uvIndex * 3 + 2] = parseFloat(args[2] || "0.0");
-            uvIndex++;
+            const data = [
+                parseFloat(args[0]),
+                parseFloat(args[1]),
+                parseFloat(args[2] || "0.0")
+            ];
+            [vertexUVs, vertexUVsLength] = addVertexData(vertexUVs, vertexUVsLength, data, 3);
         } else if (directive === "vn") {
-            vertexNormals[normalIndex * 3] = parseFloat(args[0]);
-            vertexNormals[normalIndex * 3 + 1] = parseFloat(args[1]);
-            vertexNormals[normalIndex * 3 + 2] = parseFloat(args[2]);
-            normalIndex++;
+            const data = [
+                parseFloat(args[0]),
+                parseFloat(args[1]),
+                parseFloat(args[2])
+            ];
+            [vertexNormals, vertexNormalsLength] = addVertexData(vertexNormals, vertexNormalsLength, data, 3);
         }
     }
+
+    // Trim buffers to actual size
+    vertexPositions = vertexPositions.slice(0, vertexPositionsLength);
+    vertexUVs = vertexUVs.slice(0, vertexUVsLength);
+    vertexNormals = vertexNormals.slice(0, vertexNormalsLength);
 
     let material: MtlMaterial | null = null;
     const NUM_VERT_COMPONENTS = 8;
