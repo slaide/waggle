@@ -5,6 +5,11 @@ import { parsePng } from "../bits/png";
 import { MtlMaterial, ObjFile } from "../bits/obj";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
+import { TYPE_REGISTRY, makeStruct } from "../struct";
+
+// Define vector types for reuse
+const Vec3 = TYPE_REGISTRY.f32.array(3);
+const Vec2 = TYPE_REGISTRY.f32.array(2);
 
 type ProgramInfo = {
     program: WebGLProgram;
@@ -107,10 +112,13 @@ export class GameObject {
     upload() {
         if (!this.programInfo) return;  // Skip if no program info
 
-        const F32SIZE = 4;
-
-        // 3 floats for vert pos, 3 for normal, then 2 floats for uv
-        const VERTEX_DATA_SIZE = 8 * F32SIZE;
+        // Define the vertex data structure to calculate its size
+        const VertexData = makeStruct([
+            { name: 'position', type: Vec3 },
+            { name: 'normal', type: Vec3 },
+            { name: 'texCoord', type: Vec2 }
+        ]);
+        const VERTEX_DATA_SIZE = VertexData.sizeof;
 
         this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
         // bind vertex data: position (in common vertexdata buffer)
@@ -122,14 +130,14 @@ export class GameObject {
             VERTEX_DATA_SIZE,
             0,
         );
-        // bind vertex data: position (in common vertexdata buffer)
+        // bind vertex data: normal (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
             this.programInfo.attributeLocations.aVertexNormal,
             3,
             GL.FLOAT,
             false,
             VERTEX_DATA_SIZE,
-            3 * F32SIZE,
+            Vec3.sizeof,
         );
         // bind vertex data: uv coords (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
@@ -138,7 +146,7 @@ export class GameObject {
             GL.FLOAT,
             false,
             VERTEX_DATA_SIZE,
-            6 * F32SIZE,
+            Vec3.sizeof * 2,
         );
 
         // upload shader binding data
@@ -294,16 +302,15 @@ export class GameObject {
             const uniform = gl.getActiveUniform(shaderProgram, i);
             // should not happen
             if (uniform == null) continue;
-            const { name } = uniform;
 
-            const loc = gl.getUniformLocation(shaderProgram, name);
+            const loc = gl.getUniformLocation(shaderProgram, uniform.name);
             if (!loc) {
                 const error = `getUniformLocation failed ${name}`;
                 console.error(error);
                 throw error;
             }
 
-            uniformLocations[name] = loc;
+            uniformLocations[uniform.name] = loc;
         }
 
         const programInfo: ProgramInfo = {
@@ -370,10 +377,6 @@ export class GameObject {
         gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
         gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
         gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
-
-        //const hasDiffuseTexture=material
-        //const diffuseColor:vec3=hasDiffuseTexture?vec3.fromValues(0.2,0.2,0.2):material.diffuse;
-        //`vec4(${diffuseColor.join(',')},1)`;
 
         return buffers;
     }
