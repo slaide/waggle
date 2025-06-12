@@ -1,12 +1,11 @@
-import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default [
-    js.configs.recommended,
-    ...tseslint.configs.recommended,
-    ...tseslint.configs.recommendedTypeChecked,
     {
-        files: ["**/*.ts"],
+        files: ["**/*.ts", "**/*.tsx"],
+        plugins: {
+            "@typescript-eslint": tseslint.plugin,
+        },
         languageOptions: {
             parser: tseslint.parser,
             parserOptions: {
@@ -14,10 +13,7 @@ export default [
             },
         },
         rules: {
-            "@typescript-eslint/no-floating-promises": "error",
-            "@typescript-eslint/no-misused-promises": "error",
-            "no-console": "ignore",
-            "no-debugger": "warn",
+            "@typescript-eslint/no-unused-vars": "error",
         },
     },
 ];

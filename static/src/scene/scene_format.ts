@@ -64,18 +64,6 @@ function createTransform(transform: SceneTransform): Transform {
     return t;
 }
 
-// Helper function to create a camera from scene description
-function createCamera(camera: SceneCamera): Camera {
-    return new Camera(
-        camera.fov,
-        camera.aspect,
-        camera.znear,
-        camera.zfar,
-        vec3.fromValues(...camera.position),
-        quat.fromValues(...camera.rotation)
-    );
-}
-
 // Main function to load a scene from a description
 export async function loadScene(gl: WebGL2RenderingContext, description: SceneDescription): Promise<Scene> {
     const scene = await Scene.make(gl);

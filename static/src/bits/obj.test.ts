@@ -1,13 +1,10 @@
-import { parseObj, ObjFile, MtlMaterial, BB } from './obj';
-import { vec3 } from 'gl-matrix';
-
-// Mock fetch for testing
-global.fetch = jest.fn();
+import { parseObj } from './obj';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('OBJ Parser', () => {
     beforeEach(() => {
         // Reset fetch mock before each test
-        (global.fetch as jest.Mock).mockClear();
+        vi.clearAllMocks();
     });
 
     describe('parseObj', () => {

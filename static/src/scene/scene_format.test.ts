@@ -1,82 +1,67 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { SceneDescription, loadScene } from './scene_format';
 import { Scene } from './scene';
 import { GameObject } from './gameobject';
-import { Camera } from './camera';
-import { vec3, quat } from 'gl-matrix';
+import * as ObjModule from '../bits/obj';
+import { vec3 } from 'gl-matrix';
 
 // Mock WebGL context
 const mockGL = {
-    createBuffer: jest.fn(),
-    bindBuffer: jest.fn(),
-    bufferData: jest.fn(),
-    createTexture: jest.fn(),
-    bindTexture: jest.fn(),
-    texImage2D: jest.fn(),
-    createProgram: jest.fn(),
-    createShader: jest.fn(),
-    shaderSource: jest.fn(),
-    compileShader: jest.fn(),
-    attachShader: jest.fn(),
-    linkProgram: jest.fn(),
-    getProgramParameter: jest.fn(),
-    getShaderParameter: jest.fn(),
-    getShaderInfoLog: jest.fn(),
-    getProgramInfoLog: jest.fn(),
+    createBuffer: vi.fn(),
+    bindBuffer: vi.fn(),
+    bufferData: vi.fn(),
+    createTexture: vi.fn(),
+    bindTexture: vi.fn(),
+    texImage2D: vi.fn(),
+    createProgram: vi.fn(),
+    createShader: vi.fn(),
+    shaderSource: vi.fn(),
+    compileShader: vi.fn(),
+    attachShader: vi.fn(),
+    linkProgram: vi.fn(),
+    getProgramParameter: vi.fn(),
+    getShaderParameter: vi.fn(),
+    getShaderInfoLog: vi.fn(),
+    getProgramInfoLog: vi.fn(),
 } as unknown as WebGL2RenderingContext;
 
-// Mock Scene.make
-jest.mock('./scene', () => ({
-    Scene: {
-        make: jest.fn().mockImplementation(() => Promise.resolve({
-            children: [],
-        })),
-    },
-}));
+let sceneMakeSpy: any;
+let gameObjectMakeSpy: any;
+let parseObjSpy: any;
+let mtlMaterialSpy: any;
+let OriginalMtlMaterial: any;
 
-// Mock GameObject.make and GameObject constructor
-jest.mock('./gameobject', () => {
-    const mockGameObject = jest.fn().mockImplementation(() => ({
-        material: null,
-        upload: jest.fn(),
-    }));
-    return {
-        GameObject: Object.assign(mockGameObject, {
-            make: jest.fn().mockResolvedValue({
-                material: null,
-                upload: jest.fn(),
-            }),
-        }),
-    };
+beforeEach(() => {
+    vi.clearAllMocks();
+    sceneMakeSpy = vi.spyOn(Scene, 'make').mockImplementation((gl) => Promise.resolve(new Scene(gl, [])));
+    gameObjectMakeSpy = vi.spyOn(GameObject, 'make').mockResolvedValue(Object.create(GameObject.prototype));
+    // Provide a realistic mock structure for ObjFile using constructors
+    const group = new ObjModule.ObjGroup(new Float32Array(), new Uint32Array(), null);
+    const obj = new ObjModule.ObjObject({ temp: group });
+    const objects = { temp: obj };
+    parseObjSpy = vi.spyOn(ObjModule, 'parseObj').mockResolvedValue(
+        new ObjModule.ObjFile(objects, { x: { min: 0, max: 1 }, y: { min: 0, max: 1 }, z: { min: 0, max: 1 } })
+    );
+    // Save the original constructor
+    OriginalMtlMaterial = ObjModule.MtlMaterial;
+    mtlMaterialSpy = vi.spyOn(ObjModule, 'MtlMaterial').mockImplementation(() => {
+        const mat = new OriginalMtlMaterial();
+        mat.diffuse = vec3.create();
+        mat.specularExponent = 64;
+        mat.map_diffuse = undefined;
+        return mat;
+    });
 });
-
-// Mock MtlMaterial
-jest.mock('../bits/obj', () => ({
-    parseObj: jest.fn().mockResolvedValue({
-        objects: {
-            temp: {
-                groups: {
-                    temp: {
-                        vertices: [],
-                        indices: [],
-                    },
-                },
-            },
-        },
-        boundingBox: {
-            min: [0, 0, 0],
-            max: [1, 1, 1],
-        },
-    }),
-    MtlMaterial: jest.fn().mockImplementation(() => ({
-        diffuse: vec3.create(),
-        specularExponent: 64,
-        map_diffuse: null,
-    })),
-}));
+afterEach(() => {
+    sceneMakeSpy.mockRestore();
+    gameObjectMakeSpy.mockRestore();
+    parseObjSpy.mockRestore();
+    mtlMaterialSpy.mockRestore();
+});
 
 describe('Scene Format', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it('should load a basic scene with a single mesh object', async () => {

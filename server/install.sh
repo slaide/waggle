@@ -15,8 +15,5 @@ pip install -r requirements.txt
 # setup ssl (https)
 pa website create-autorenew-cert --domain padraig.eu.pythonanywhere.com
 
-# install npm (from https://help.pythonanywhere.com/pages/Node/)
-git clone --depth 1 https://github.com/creationix/nvm.git
-source ~/nvm/nvm.sh
-echo 'source ~/nvm/nvm.sh' >> ~/.bashrc
-nvm install v23.11.0
+# install bun
+curl -fsSL https://bun.sh/install | bash

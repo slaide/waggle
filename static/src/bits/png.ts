@@ -99,6 +99,7 @@ export async function parsePng(
         let chunklength = arrToUint32(pngslice.subarray(0, 4));
         let header = uint8ArrayToString(pngslice.subarray(4, 8));
         let chunkdata = pngslice.subarray(8, 8 + chunklength);
+        // ignored but required to be present
         let crc = pngslice.subarray(8 + chunklength, 8 + chunklength + 4);
 
         pngslice = pngslice.subarray(8 + chunklength + 4);

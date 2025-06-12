@@ -77,53 +77,6 @@ function createTexture(path: string, args: string[]): MtlTexture {
     return texture;
 }
 
-// Helper function to parse vertex data
-function parseVertexData(args: string[], numComponents: number): number[] {
-    const data = new Array(numComponents).fill(0);
-    for (let i = 0; i < Math.min(data.length, args.length); i++) {
-        const value = parseFloat(args[i]);
-        if (!isNaN(value)) {
-            data[i] = value;
-        }
-    }
-    return data;
-}
-
-// Helper function to calculate normal for a triangle
-function calculateTriangleNormal(vertexData: number[], offset: number): vec3 {
-    const v1 = vec3.fromValues(
-        vertexData[offset + 0],
-        vertexData[offset + 1],
-        vertexData[offset + 2]
-    );
-    const v2 = vec3.fromValues(
-        vertexData[offset + 8 + 0],
-        vertexData[offset + 8 + 1],
-        vertexData[offset + 8 + 2]
-    );
-    const v3 = vec3.fromValues(
-        vertexData[offset + 16 + 0],
-        vertexData[offset + 16 + 1],
-        vertexData[offset + 16 + 2]
-    );
-    const normal = vec3.cross(
-        vec3.create(),
-        vec3.sub(vec3.create(), v2, v1),
-        vec3.sub(vec3.create(), v3, v1)
-    );
-    vec3.normalize(normal, normal);
-    return normal;
-}
-
-// Helper function to apply normal to vertex data
-function applyNormal(vertexData: number[], offset: number, normal: vec3) {
-    for (let i = 0; i < 3; i++) {
-        vertexData[offset + i * 8 + 3] = normal[0];
-        vertexData[offset + i * 8 + 4] = normal[1];
-        vertexData[offset + i * 8 + 5] = normal[2];
-    }
-}
-
 // Helper for default material values
 const DEFAULT_AMBIENT = [0.2, 0.2, 0.2];
 const DEFAULT_DIFFUSE = [0.8, 0.8, 0.8];
@@ -237,13 +190,6 @@ export class ObjFile {
         public boundingBox: BB,
     ) { }
 }
-
-type VertexInfo = {
-    position: vec3;
-    normal: vec3;
-    uv: number[];
-    smoothingGroup: string | null;
-};
 
 function deepCloneMaterial(mat: MtlMaterial | null): MtlMaterial | null {
     if (!mat) return null;

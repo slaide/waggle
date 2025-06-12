@@ -1,17 +1,10 @@
 "use strict";
 
-import { GL, GLC } from "../gl";
+import { GLC } from "../gl";
 import { GameObject } from "./gameobject";
 import { PointLight, DirectionalLight } from "./lights";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
-
-function glCheckError(gl: GLC, msg: string = "") {
-    const err = gl.getError();
-    if (err !== gl.NO_ERROR) {
-        console.error("WebGL error: 0x" + err.toString(16), "at", msg);
-    }
-}
 
 export class Scene {
     constructor(

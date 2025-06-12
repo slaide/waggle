@@ -4,8 +4,6 @@
 # nodejs install docs from https://help.pythonanywhere.com/pages/Node/
 
 # ensure deps are installed
-npm ci
+bun install
 # run typescript compiler and bundler
-npm run bundle
-# occasionally useful to run
-# $ npm cache clean --force
+bun run bundle

@@ -1,0 +1,10 @@
+[test]
+preload = "./test/setup.ts" 
+
+[install.cache]
+# the directory to use for the cache
+dir = "~/.bun/install/cache"
+
+# when true, don't load from the global cache.
+# Bun may still write to node_modules/.cache
+disable = true

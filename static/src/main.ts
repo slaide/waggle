@@ -1,10 +1,6 @@
 import { vec3, quat } from "gl-matrix";
 import { GBuffer } from "./gbuffer";
 import { GL } from "./gl";
-import { Scene } from "./scene/scene";
-import { Transform } from "./scene/transform";
-import { GameObject } from "./scene/gameobject";
-import { parseObj } from "./bits/obj";
 import { loadScene, SceneDescription } from "./scene/scene_format";
 
 console.log(
