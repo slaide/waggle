@@ -1,3 +1,4 @@
+import { describe, test, expect } from 'vitest';
 import {makeStruct, makeUnion, TYPE_REGISTRY} from "./struct";
 
 describe('Struct', () => {
