@@ -44,7 +44,7 @@ def update_server(request:Request):
     repo=git.Repo(PROJROOTDIR)
 
     # pull (and keep depth low to minimize footprint)
-    repo.git.pull('origin', 'main', '--depth', '1', '--allow-unrelated-histories')
+    repo.git.pull('origin', 'main')
 
     # manually execute post-merge commands because --depth 1 does not trigger the hook
     subprocess.run(['bash', '/home/padraig/waggle/server/build.sh'], check=True)
