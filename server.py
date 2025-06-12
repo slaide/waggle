@@ -8,6 +8,7 @@ mimetypes.add_type("text/plain", ".mtl", strict=True)
 import argparse
 import git
 import uvicorn
+import subprocess
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -22,8 +23,14 @@ app = FastAPI()
 @app.post("/update_server")
 def update_server(request:Request):
     repo=git.Repo(PROJROOTDIR)
-    # pull, with post-merge hooks set locally to restart server
+
+    # pull (and keep depth low to minimize footprint)
     repo.git.pull('origin', 'main', '--depth', '1')
+
+    # manually execute post-merge commands because --depth 1 does not trigger the hook
+    subprocess.run(['bash', '/home/padraig/waggle/server/build.sh'], check=True)
+    subprocess.run(['touch', '/var/www/padraig_eu_pythonanywhere_com_wsgi.py'], check=True)
+    subprocess.run(['bash', '/home/padraig/waggle/server/reload.sh'], check=True)
 
     return "Updated successfully", 200
 
