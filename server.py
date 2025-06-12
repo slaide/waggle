@@ -27,11 +27,10 @@ def update_server(request:Request):
 
     return "Updated successfully", 200
 
-STATIC_DIR=PROJROOTDIR/"static"
 # this matches all requests, so any other path that should be registered must be registered before!
 @app.get("/{full_path:path}")
 async def serve(full_path: str):
-    file_path = STATIC_DIR / full_path
+    file_path = PROJROOTDIR / full_path
     if file_path.is_file():
         media_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
 
@@ -57,8 +56,8 @@ async def serve(full_path: str):
             headers=headers,
         )
 
-    if full_path=="":
-        return await serve("index.html")
+    if full_path=="" or full_path=="/":
+        return await serve("static/index.html")
 
     # 3) Neither found → 404
     raise HTTPException(status_code=404, detail="Not Found")

@@ -93,10 +93,19 @@ export async function main() {
         const transform = new Transform();
         transform.position = vec3.fromValues(-1.5 + i * 3, 0, -6);
 
-        const objpath = "./resources/cube.obj";
+        const objpath = "./static/resources/cube.obj";
         console.time(`OBJ parse and process ${i}`);
         const obj = await parseObj(objpath, { normalizeSize: true });
         console.timeEnd(`OBJ parse and process ${i}`);
+
+        // Print vertex count
+        let totalVertices = 0;
+        for (const objObject of Object.values(obj.objects)) {
+            for (const group of Object.values(objObject.groups)) {
+                totalVertices += group.vertexData.length / 8; // Each vertex has 8 components
+            }
+        }
+        console.log(`Total vertices in ${objpath}: ${totalVertices}`);
 
         // Iterate over all objects and groups in the parsed OBJ
         console.time(`OBJ upload to GPU ${i}`);
