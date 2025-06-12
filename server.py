@@ -10,13 +10,32 @@ import git
 import uvicorn
 import subprocess
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
 from email.utils import formatdate
 
 PROJROOTDIR=Path(__file__).resolve().parent
 
 app = FastAPI()
+
+@app.get("/repo_url")
+def get_repo_url():
+    repo = git.Repo(PROJROOTDIR)
+    url = repo.remotes.origin.url
+    branch = repo.active_branch.name
+    commit = repo.head.commit
+    # Convert git@github.com:user/repo.git to https://github.com/user/repo
+    https_url = url.replace('git@github.com:', 'https://github.com/').replace('.git', '')
+    html = f"""
+    <html>
+        <body>
+            repository: <a href="{https_url}">{url}</a><br>
+            commit: <a href="{https_url}/commit/{commit.hexsha}">{commit.hexsha}</a><br>
+            branch: {branch}, timestamp: {commit.committed_datetime}
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 # target for webhook that triggers code pull on commit.
 # from https://medium.com/@aadibajpai/deploying-to-pythonanywhere-via-github-6f967956e664
@@ -33,6 +52,8 @@ def update_server(request:Request):
     subprocess.run(['bash', '/home/padraig/waggle/server/reload.sh'], check=True)
 
     return "Updated successfully", 200
+
+
 
 # this matches all requests, so any other path that should be registered must be registered before!
 @app.get("/{full_path:path}")
