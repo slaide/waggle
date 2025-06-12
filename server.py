@@ -22,8 +22,8 @@ app = FastAPI()
 @app.post("/update_server")
 def update_server(request:Request):
     repo=git.Repo(PROJROOTDIR)
-    # git pull --depth=1 origin main
-    repo.git.fetch('origin', 'main', '--depth', '1')
+    # pull, with post-merge hooks set locally to restart server
+    repo.git.pull('origin', 'main', '--depth', '1')
 
     return "Updated successfully", 200
 
