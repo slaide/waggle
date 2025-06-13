@@ -44,7 +44,7 @@ def update_server(request:Request):
     repo=git.Repo(PROJROOTDIR)
 
     # pull
-    subprocess.run(['git', 'pull', 'origin', 'main'], cwd=PROJROOTDIR, check=True)
+    subprocess.run(['git', 'pull'], cwd=PROJROOTDIR, check=True)
 
     # manually execute post-merge commands to keep them tracked in the repo
     subprocess.run(['bash', '/home/padraig/waggle/server/build.sh'], check=True)

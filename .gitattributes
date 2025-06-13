@@ -6,3 +6,11 @@
 *.json filter=lfs diff=lfs merge=lfs -text
 package.json !filter !diff !merge -text
 package-lock.json !filter !diff !merge -text
+.vscode/settings.json filter=lfs diff=lfs merge=lfs -text
+asconfig.json filter=lfs diff=lfs merge=lfs -text
+pyrightconfig.json filter=lfs diff=lfs merge=lfs -text
+tsconfig.json filter=lfs diff=lfs merge=lfs -text
+.vscode/settings.json !text !filter !merge !diff
+asconfig.json !text !filter !merge !diff
+pyrightconfig.json !text !filter !merge !diff
+tsconfig.json !text !filter !merge !diff
