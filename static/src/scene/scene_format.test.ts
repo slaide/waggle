@@ -4,6 +4,7 @@ import { Scene } from './scene';
 import { GameObject } from './gameobject';
 import * as ObjModule from '../bits/obj';
 import { vec3 } from 'gl-matrix';
+import * as PngModule from '../bits/png';
 
 // Mock WebGL context
 const mockGL = {
@@ -13,16 +14,29 @@ const mockGL = {
     createTexture: vi.fn(),
     bindTexture: vi.fn(),
     texImage2D: vi.fn(),
-    createProgram: vi.fn(),
-    createShader: vi.fn(),
+    createProgram: vi.fn(() => ({})),
+    createShader: vi.fn(() => ({})),
     shaderSource: vi.fn(),
     compileShader: vi.fn(),
     attachShader: vi.fn(),
     linkProgram: vi.fn(),
-    getProgramParameter: vi.fn(),
-    getShaderParameter: vi.fn(),
-    getShaderInfoLog: vi.fn(),
-    getProgramInfoLog: vi.fn(),
+    getProgramParameter: vi.fn((program, pname) => pname === 35714 /* GL.LINK_STATUS */ ? true : 1),
+    getShaderParameter: vi.fn((shader, pname) => pname === 35713 /* GL.COMPILE_STATUS */ ? true : 1),
+    getShaderInfoLog: vi.fn(() => ''),
+    getProgramInfoLog: vi.fn(() => ''),
+    pixelStorei: vi.fn(),
+    texParameteri: vi.fn(),
+    getAttribLocation: vi.fn(),
+    getUniformLocation: vi.fn(() => ({})),
+    getActiveAttrib: vi.fn(() => ({ name: 'a_position' })),
+    getActiveUniform: vi.fn(() => ({ name: 'u_matrix' })),
+    vertexAttribPointer: vi.fn(),
+    useProgram: vi.fn(),
+    uniformMatrix4fv: vi.fn(),
+    uniform1f: vi.fn(),
+    uniform4f: vi.fn(),
+    uniform1i: vi.fn(),
+    activeTexture: vi.fn(),
 } as unknown as WebGL2RenderingContext;
 
 let sceneMakeSpy: any;
@@ -33,8 +47,29 @@ let OriginalMtlMaterial: any;
 
 beforeEach(() => {
     vi.clearAllMocks();
+    // Mock fetch to return dummy shader code or dummy PNG buffer
+    globalThis.fetch = vi.fn((url) => {
+        if (typeof url === 'string' && url.endsWith('.png')) {
+            return Promise.resolve({
+                ok: true,
+                arrayBuffer: () => Promise.resolve(new Uint8Array([128, 128, 128, 255]).buffer),
+            });
+        }
+        return Promise.resolve({
+            ok: true,
+            text: () => Promise.resolve('// dummy shader code'),
+        });
+    }) as any;
+    // Mock parsePng to always return a dummy image
+    vi.spyOn(PngModule, 'parsePng').mockResolvedValue({
+        width: 1,
+        height: 1,
+        data: new Uint8Array([128, 128, 128, 255]),
+    });
+    // Mock alert to a no-op
+    globalThis.alert = () => {};
     sceneMakeSpy = vi.spyOn(Scene, 'make').mockImplementation((gl) => Promise.resolve(new Scene(gl, [])));
-    gameObjectMakeSpy = vi.spyOn(GameObject, 'make').mockResolvedValue(Object.create(GameObject.prototype));
+    gameObjectMakeSpy = vi.spyOn(GameObject, 'fromJSON').mockResolvedValue(Object.create(GameObject.prototype));
     // Provide a realistic mock structure for ObjFile using constructors
     const group = new ObjModule.ObjGroup(new Float32Array(), new Uint32Array(), null);
     const obj = new ObjModule.ObjObject({ temp: group });
@@ -46,9 +81,9 @@ beforeEach(() => {
     OriginalMtlMaterial = ObjModule.MtlMaterial;
     mtlMaterialSpy = vi.spyOn(ObjModule, 'MtlMaterial').mockImplementation(() => {
         const mat = new OriginalMtlMaterial();
-        mat.diffuse = vec3.create();
+        mat.diffuse = vec3.fromValues(1, 0, 0);  // Set default diffuse color to red
         mat.specularExponent = 64;
-        mat.map_diffuse = undefined;
+        mat.map_diffuse = { source: 'texture.png' };
         return mat;
     });
 });
@@ -57,6 +92,8 @@ afterEach(() => {
     gameObjectMakeSpy.mockRestore();
     parseObjSpy.mockRestore();
     mtlMaterialSpy.mockRestore();
+    // Restore fetch
+    delete (globalThis as any).fetch;
 });
 
 describe('Scene Format', () => {
@@ -85,7 +122,7 @@ describe('Scene Format', () => {
 
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
-        expect(scene.children.length).toBe(1);
+        expect(scene.objects.length).toBe(1);
     });
 
     it('should load a scene with nested objects', async () => {
@@ -120,7 +157,7 @@ describe('Scene Format', () => {
 
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
-        expect(scene.children.length).toBe(2);
+        expect(scene.objects.length).toBe(2);
     });
 
     it('should load a scene with materials', async () => {
@@ -149,11 +186,11 @@ describe('Scene Format', () => {
 
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
-        expect(scene.children[0].material).toBeDefined();
-        const material = scene.children[0].material!;
+        expect(scene.objects[0].material).toBeDefined();
+        const material = scene.objects[0].material!;
         expect(material.diffuse).toEqual(vec3.fromValues(1, 0, 0));
         expect(material.specularExponent).toBe(64);
-        expect(material.map_diffuse).toBeDefined();
+        expect(material.diffuseTexture).toBeDefined();
     });
 
     it('should load a scene with lights', async () => {
@@ -186,9 +223,9 @@ describe('Scene Format', () => {
 
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
-        expect(scene.children.length).toBe(2);
-        expect((scene.children[0] as any).type).toBe('point_light');
-        expect((scene.children[1] as any).type).toBe('directional_light');
+        expect(scene.objects.length).toBe(2);
+        expect((scene.objects[0] as any).type).toBe('point_light');
+        expect((scene.objects[1] as any).type).toBe('directional_light');
     });
 
     it('should handle missing optional properties', async () => {
@@ -208,7 +245,7 @@ describe('Scene Format', () => {
 
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
-        expect(scene.children.length).toBe(1);
+        expect(scene.objects.length).toBe(1);
     });
 
     it('should handle camera with all properties', async () => {
@@ -242,6 +279,95 @@ describe('Scene Format', () => {
             ],
         };
 
-        await expect(loadScene(mockGL, description)).rejects.toThrow("Mesh object must have a model property");
+        await expect(loadScene(mockGL, description)).rejects.toThrow(
+            "Mesh object must have either a model property or meshData"
+        );
+    });
+
+    it('should load a scene with serialized mesh data', async () => {
+        const description: SceneDescription = {
+            camera: {
+                position: [0, 0, 0],
+                rotation: [0, 0, 0, 1],
+            },
+            objects: [
+                {
+                    type: "mesh",
+                    meshData: {
+                        vertexData: [0, 0, 0, 0, 1, 0, 1, 0, 0],  // Simple triangle
+                        indices: [0, 1, 2],
+                        texturePath: 'texture.png'
+                    },
+                    transform: {
+                        position: [0, 0, 0],
+                        rotation: [0, 0, 0, 1],
+                        scale: [1, 1, 1],
+                    },
+                    material: {
+                        diffuse: [1, 0, 0],
+                        specularExponent: 64,
+                    },
+                },
+            ],
+        };
+
+        const scene = await loadScene(mockGL, description);
+        expect(scene).toBeDefined();
+        expect(scene.objects.length).toBe(1);
+        expect(scene.objects[0].material).toBeDefined();
+        expect(scene.objects[0].material!.diffuseTexture).toBeDefined();
+        expect(scene.objects[0].material!.diffuseTexture).toBe('texture.png');
+    });
+
+    it('should load a scene with mixed mesh data sources', async () => {
+        const description: SceneDescription = {
+            camera: {
+                position: [0, 0, 0],
+                rotation: [0, 0, 0, 1],
+            },
+            objects: [
+                {
+                    type: "mesh",
+                    model: 'test.obj',  // OBJ file
+                    transform: {
+                        position: [0, 0, 0],
+                    },
+                },
+                {
+                    type: "mesh",
+                    meshData: {  // Serialized data
+                        vertexData: [0, 0, 0, 0, 1, 0, 1, 0, 0],
+                        indices: [0, 1, 2],
+                    },
+                    transform: {
+                        position: [1, 0, 0],
+                    },
+                },
+            ],
+        };
+
+        const scene = await loadScene(mockGL, description);
+        expect(scene).toBeDefined();
+        expect(scene.objects.length).toBe(2);
+        expect(parseObjSpy).toHaveBeenCalledTimes(1);  // Should only parse OBJ once
+    });
+
+    it('should throw error for mesh without model or meshData', async () => {
+        const description: SceneDescription = {
+            camera: {
+                position: [0, 0, 0],
+                rotation: [0, 0, 0, 1],
+            },
+            objects: [
+                {
+                    type: "mesh",
+                    transform: {},
+                },
+            ],
+        };
+
+        await expect(loadScene(mockGL, description)).rejects.toThrow(
+            "Mesh object must have either a model property or meshData"
+        );
     });
 }); 

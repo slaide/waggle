@@ -63,7 +63,7 @@ export async function main() {
 
     // Print scene state and collect lights
     console.log("Scene state before draw loop:");
-    console.log("Number of objects:", scene.children.length);
+    console.log("Number of objects:", scene.objects.length);
     
     // Traverse scene and print object information
     scene.traverse((obj, parentTransform) => {
@@ -135,8 +135,10 @@ export async function main() {
     onresize();
     window.addEventListener("resize", onresize);
 
+    let isDrawing = true;  // Add flag to control drawing loop
+
     window.addEventListener("visibilitychange", () => {
-        scene.shouldDraw = !document.hidden;
+        isDrawing = !document.hidden;
     });
 
     // setup drawing loop
@@ -286,7 +288,7 @@ export async function main() {
         // set up camera
         const projectionMatrix = camera.projectionMatrix;
 
-        for (const object of scene.children) {
+        for (const object of scene.objects) {
             // Skip objects without program info (like lights)
             if (!object.programInfo) continue;
 
@@ -356,7 +358,9 @@ export async function main() {
     };
 
     const drawLoop = () => {
-        draw();
+        if (isDrawing) {
+            draw();
+        }
         requestAnimationFrame(drawLoop);
     };
     drawLoop();

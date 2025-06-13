@@ -6,6 +6,17 @@ import { MtlMaterial, ObjFile } from "../bits/obj";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct, asObj } from "../struct";
+import { 
+    Serializable, 
+    SerializableStatic, 
+    SceneObject, 
+    isSceneObject,
+    BaseSceneObject,
+    MeshObject,
+    PointLightObject,
+    DirectionalLightObject,
+    SceneTransform
+} from "./scene_format";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
@@ -28,6 +39,7 @@ type ProgramInfo = {
     program: WebGLProgram;
     attributeLocations: { [name: string]: GLint };
     uniformLocations: { [name: string]: WebGLUniformLocation };
+    shaderSources: { vs: string, fs: string };
 };
 
 type Buffer = {
@@ -104,285 +116,77 @@ export async function createShaderProgram(
     return shaderProgram;
 }
 
-export class GameObject {
+// Base class for all game objects
+export class GameObject implements Serializable<GameObject> {
+    public type: "mesh" | "point_light" | "directional_light";
+    public programInfo?: ProgramInfo;
+    
+    get material(): any { return undefined; }
+    set material(_: any) {}
+    
     constructor(
         public gl: GLC,
-        public buffers: Buffer,
         public transform: Transform,
-        public programInfo?: ProgramInfo,  // Make programInfo optional
-        public numTris: number = 0,  // Default to 0 for lights
-        public material?: MtlMaterial,
-        public enabled: boolean = true,  // if false, children won't be traversed
-        public visible: boolean = true,  // if false, object won't be drawn
-        public name?: string,  // optional name for the object
-    ) {}
+        public enabled: boolean = true,
+        public visible: boolean = true,
+        public name?: string,
+    ) {
+        // Type must be set by derived classes
+        this.type = "mesh" as const;
+    }
 
     // Getter to determine if object should be drawn
     get shouldDraw(): boolean {
-        return this.visible && this.enabled && !!this.programInfo;
+        return this.visible && this.enabled;
     }
 
-    upload() {
-        if (!this.programInfo) return;  // Skip if no program info
-
-        this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
-        // bind vertex data: position (in common vertexdata buffer)
-        this.gl.vertexAttribPointer(
-            this.programInfo.attributeLocations.aVertexPosition,
-            3,
-            GL.FLOAT,
-            false,
-            VertexData.size,
-            VertexData.fields.position.offset!,
-        );
-        // bind vertex data: normal (in common vertexdata buffer)
-        this.gl.vertexAttribPointer(
-            this.programInfo.attributeLocations.aVertexNormal,
-            3,
-            GL.FLOAT,
-            false,
-            VertexData.size,
-            VertexData.fields.normal.offset!,
-        );
-        // bind vertex data: uv coords (in common vertexdata buffer)
-        this.gl.vertexAttribPointer(
-            this.programInfo.attributeLocations.aVertexTexCoord,
-            2,
-            GL.FLOAT,
-            false,
-            VertexData.size,
-            VertexData.fields.texCoord.offset!,
-        );
-
-        // upload shader binding data
-        this.gl.useProgram(this.programInfo.program);
-        this.gl.uniformMatrix4fv(
-            this.programInfo.uniformLocations.uModelMatrix,
-            false,
-            this.transform.matrix,
-        );
-
-        // Set specular exponent uniform
-        const specularExponent = this.material?.specularExponent ?? 64.0;
-        this.gl.uniform1f(
-            this.programInfo.uniformLocations.uSpecularExponent,
-            specularExponent
-        );
-
-        // Set diffuse color uniform
-        if (this.material?.diffuse) {
-            this.gl.uniform4f(
-                this.programInfo.uniformLocations.uDiffuseColor,
-                this.material.diffuse[0],
-                this.material.diffuse[1],
-                this.material.diffuse[2],
-                1.0
-            );
-        }
-
-        const gl = this.gl;
-        // Set texture usage flag and bind texture if needed
-        const useTexture = this.material?.map_diffuse !== undefined;
-        gl.uniform1i(this.programInfo.uniformLocations.uUseDiffuseTexture, useTexture ? 1 : 0);
-        
-        if (useTexture) {
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
-            gl.uniform1i(this.programInfo.uniformLocations.uDiffuseSampler, 0);
-        }
-    }
-
+    // Base draw method - to be overridden by subclasses
     draw() {
-        if (!this.shouldDraw) return;  // Use the getter instead of visible flag
-        if (!this.programInfo) return;  // Extra safety check
-
-        const { buffers, programInfo } = this;
-        const gl = this.gl;
-
-        // prepare draw: activate shader
-        gl.useProgram(programInfo.program);
-
-        // bind vertex and index buffers
-        gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
-        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
-
-        // prepare draw: enable vertex data
-        gl.enableVertexAttribArray(
-            programInfo.attributeLocations.aVertexPosition,
-        );
-        gl.enableVertexAttribArray(
-            programInfo.attributeLocations.aVertexNormal,
-        );
-        gl.enableVertexAttribArray(
-            programInfo.attributeLocations.aVertexTexCoord,
-        );
-
-        // bind texture buffer
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
-
-        // draw mesh
-        // in triangle mode: 3 elements per tri (hence count=numTris*3)
-        // in line mode: 2 elements per line (hence count=numLines*2)
-        // in point mode: 1 element per point (hence count=numPoints)
-        gl.drawElements(GL.TRIANGLES, this.numTris * 3, GL.UNSIGNED_INT, 0);
-
-        gl.bindVertexArray;
+        // Base implementation does nothing
     }
 
-    static async make(
-        gl: GLC,
-        obj: ObjFile,
-        transform: Transform
-    ) {
-        // Get the first (and only) group from the temporary structure
-        const group = Object.values(Object.values(obj.objects)[0].groups)[0];
-        const shaderMaterial = group.material ?? new MtlMaterial();
-        if (!shaderMaterial.diffuse) {
-            shaderMaterial.diffuse = vec3.fromValues(1, 1, 1);
-        }
-
-        const diffuse_map_source = shaderMaterial?.map_diffuse?.source ?? "";
-
-        return new GameObject(
-            gl,
-            await GameObject.makeBuffers(
-                gl,
-                diffuse_map_source,
-                group.vertexData,
-                group.indices,
-            ),
-            transform,
-            await GameObject.makeProgram(gl, shaderMaterial),
-            group.indices.length / 3,
-            shaderMaterial,
-        );
+    // Base upload method - to be overridden by subclasses
+    upload() {
+        // Base implementation does nothing
     }
 
-    static async makeProgram(
-        gl: GLC,
-        material: MtlMaterial,
-    ): Promise<ProgramInfo> {
-        if (!material.map_diffuse && !material.diffuse) throw ``;
-
-        // Load shader files from static directory
-        const [vsSource, fsSource] = await Promise.all([
-            fetch('/static/src/shaders/gbuffer.vert').then(r => {
-                if (!r.ok) throw new Error(`Failed to load vertex shader: ${r.statusText}`);
-                return r.text();
-            }),
-            fetch('/static/src/shaders/gbuffer.frag').then(r => {
-                if (!r.ok) throw new Error(`Failed to load fragment shader: ${r.statusText}`);
-                return r.text();
-            })
-        ]);
-
-        const shaderProgram = await createShaderProgram(gl, {
-            vs: vsSource,
-            fs: fsSource
-        });
-
-        const numAttributes = gl.getProgramParameter(
-            shaderProgram,
-            gl.ACTIVE_ATTRIBUTES,
-        );
-        const attributeLocations: { [name: string]: GLint } = {};
-        for (let i = 0; i < numAttributes; i++) {
-            const attribute = gl.getActiveAttrib(shaderProgram, i);
-            // should not happen
-            if (attribute == null) continue;
-            const { name } = attribute;
-
-            const loc = gl.getAttribLocation(shaderProgram, name);
-
-            attributeLocations[name] = loc;
-        }
-
-        const numUniforms = gl.getProgramParameter(
-            shaderProgram,
-            gl.ACTIVE_UNIFORMS,
-        );
-        const uniformLocations: { [name: string]: WebGLUniformLocation } = {};
-        for (let i = 0; i < numUniforms; i++) {
-            const uniform = gl.getActiveUniform(shaderProgram, i);
-            // should not happen
-            if (uniform == null) continue;
-
-            const loc = gl.getUniformLocation(shaderProgram, uniform.name);
-            if (!loc) {
-                const error = `getUniformLocation failed ${name}`;
-                console.error(error);
-                throw error;
+    // Base serialization
+    toJSON(): SceneObject {
+        return {
+            type: this.type,
+            name: this.name,
+            enabled: this.enabled,
+            visible: this.visible,
+            transform: {
+                position: Array.from(this.transform.position) as [number, number, number],
+                rotation: Array.from(this.transform.rotation) as [number, number, number, number],
+                scale: Array.from(this.transform.scale) as [number, number, number]
             }
-
-            uniformLocations[uniform.name] = loc;
-        }
-
-        const programInfo: ProgramInfo = {
-            program: shaderProgram,
-            attributeLocations,
-            uniformLocations,
-        };
-
-        return programInfo;
+        } as SceneObject;
     }
 
-    static async makeBuffers(
-        gl: GLC,
-        diffuseTexturePath: string,
-        vertexData: Float32Array,
-        indices: Uint32Array,
-    ): Promise<Buffer> {
-        const buffers: Buffer = {
-            vertexData: 0,
-            indices: 0,
-            texture: 0,
-        };
-
-        buffers.vertexData = gl.createBuffer();
-        gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
-        gl.bufferData(GL.ARRAY_BUFFER, vertexData, GL.STATIC_DRAW);
-
-        buffers.indices = gl.createBuffer();
-        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
-        gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, indices, GL.STATIC_DRAW);
-
-        buffers.texture = gl.createTexture();
-        gl.bindTexture(GL.TEXTURE_2D, buffers.texture);
-
-        let imageres = {
-            width: 1,
-            height: 1,
-            data: new Uint8Array([0.5, 0.5, 0.5, 1]),
-        };
-        if (diffuseTexturePath) {
-            // @ts-ignore
-            imageres = await parsePng(diffuseTexturePath);
+    // Base deserialization
+    static async fromJSON(gl: GLC, data: SceneObject): Promise<GameObject> {
+        if (!isSceneObject(data)) {
+            throw new Error("Invalid game object data format");
         }
-        const { width, height, data } = imageres;
 
-        // Flip image pixels into the bottom-to-top order that WebGL expects.
-        // must be called BEFORE image data is uploaded!
-        gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
-
-        gl.texImage2D(
-            GL.TEXTURE_2D,
-            0,
-            GL.RGBA,
-            width,
-            height,
-            0,
-            GL.RGBA,
-            GL.UNSIGNED_BYTE,
-            data,
-        );
-
-        // set these parameters on the bound texture (anytime between creation and usage)
-        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
-        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
-        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
-        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
-
-        return buffers;
+        const transform = Transform.fromJSON(data.transform);
+        
+        // Import dynamically to avoid circular dependencies
+        const { Model } = await import("./model");
+        const { PointLight, DirectionalLight } = await import("./light");
+        
+        const type = (data as BaseSceneObject).type;
+        switch (type) {
+            case "mesh":
+                return Model.fromJSON(gl, data as MeshObject);
+            case "point_light":
+                return PointLight.fromJSON(gl, data as PointLightObject);
+            case "directional_light":
+                return DirectionalLight.fromJSON(gl, data as DirectionalLightObject);
+            default:
+                throw new Error(`Unknown object type: ${type}`);
+        }
     }
 }
