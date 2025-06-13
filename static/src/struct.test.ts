@@ -1,277 +1,1017 @@
 import { describe, test, expect } from 'vitest';
-import {makeStruct, makeUnion, TYPE_REGISTRY, Field} from "./struct";
+import { makeStruct, makeUnion, TYPE_REGISTRY, asObj, StructInstance, isPrimitiveInstance, makeArrayType, toPlainObject, ArrayInstance, UnionInstance } from "./struct";
 
 describe('Struct', () => {
     describe('primitive types', () => {
-        test('primitive type size f32',()=>{
-            expect(TYPE_REGISTRY["f32"].sizeof).toBe(4);
-        });
-        test('primitive type size f64',()=>{
-            expect(TYPE_REGISTRY["f64"].sizeof).toBe(8);
-        });
-        test('primitive type size i8',()=>{
-            expect(TYPE_REGISTRY["i8"].sizeof).toBe(1);
-        });
-        test('primitive type size i16',()=>{
-            expect(TYPE_REGISTRY["i16"].sizeof).toBe(2);
-        });
-        test('primitive type size i32',()=>{
-            expect(TYPE_REGISTRY["i32"].sizeof).toBe(4);
-        });
-        test('primitive type size u8',()=>{
-            expect(TYPE_REGISTRY["u8"].sizeof).toBe(1);
-        });
-        test('primitive type size u16',()=>{
-            expect(TYPE_REGISTRY["u16"].sizeof).toBe(2);
-        });
-        test('primitive type size u32',()=>{
-            expect(TYPE_REGISTRY["u32"].sizeof).toBe(4);
+        test('primitive type sizes', () => {
+            expect(TYPE_REGISTRY.i8.size).toBe(1);
+            expect(TYPE_REGISTRY.i16.size).toBe(2);
+            expect(TYPE_REGISTRY.i32.size).toBe(4);
+            expect(TYPE_REGISTRY.i64.size).toBe(8);
         });
     });
 
-    describe('structs', () => {
-        test('assign to fields', () => {
-            const Vec3=makeStruct([
-                {name:"x",type:TYPE_REGISTRY["f32"]},
-                {name:"y",type:TYPE_REGISTRY["f32"]},
-                {name:"z",type:TYPE_REGISTRY["f32"]},
-            ]);
-            const myvec=Vec3();
-            myvec.x=2.0;
-            myvec.y=3.0;
-            myvec.z=0.1;
+    describe('raw TypeInstance API', () => {
+        describe('struct field access', () => {
+            test('assign and read primitive fields', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                const point = new Point();
+                const x = point.getField('x');
+                const y = point.getField('y');
+                if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                    throw new Error('Expected primitive instances');
+                }
+                x.set(42);
+                y.set(43);
+                expect(x.get()).toBe(42);
+                expect(y.get()).toBe(43);
+            });
+
+            test('struct size and alignment', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                expect(Point.size).toBe(8);
+                expect(Point.alignment).toBe(4);
+            });
+
+            test('field offsets', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                expect(Point.fields.x.offset).toBe(0);
+                expect(Point.fields.y.offset).toBe(4);
+            });
+
+            test('non-existent field throws error', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                const point = new Point();
+                expect(() => point.getField('z')).toThrow('Field z not found in struct');
+            });
         });
 
-        test('read value written to fields', () => {
-            const Vec3=makeStruct([
-                {name:"x",type:TYPE_REGISTRY["f32"]},
-                {name:"y",type:TYPE_REGISTRY["f32"]},
-                {name:"z",type:TYPE_REGISTRY["f32"]},
-            ]);
-            const myvec=Vec3();
-            myvec.x=2.0;
-            myvec.y=3.0;
-            myvec.z=0.1;
-
-            expect(myvec.x).toBeCloseTo(2.0,5);
-            expect(myvec.y).toBeCloseTo(3.0,5);
-            expect(myvec.z).toBeCloseTo(0.1,5);
+        describe('nested structs', () => {
+            test('nested struct field access', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const start = line.getField('start');
+                const end = line.getField('end');
+                if (!start || !end) throw new Error('Expected struct instances');
+                const startX = (start as StructInstance).getField('x');
+                const startY = (start as StructInstance).getField('y');
+                if (!startX || !startY || !isPrimitiveInstance(startX) || !isPrimitiveInstance(startY)) {
+                    throw new Error('Expected primitive instances');
+                }
+                startX.set(42);
+                startY.set(43);
+                expect(startX.get()).toBe(42);
+                expect(startY.get()).toBe(43);
+            });
         });
 
-        test('struct size should match', () => {
-            const Vec3=makeStruct([
-                {name:"x",type:TYPE_REGISTRY["f32"]},
-                {name:"y",type:TYPE_REGISTRY["f32"]},
-                {name:"z",type:TYPE_REGISTRY["f32"]},
-            ]);
-            const myvec=Vec3();
-            expect(Vec3.sizeof).toBe(3*4);
+        describe('arrays', () => {
+            test('array element access', () => {
+                const Points = makeArrayType(TYPE_REGISTRY.i32, 2);
+                const points = new Points();
+                const item0 = points.getItem(0);
+                const item1 = points.getItem(1);
+                if (!item0 || !item1 || !isPrimitiveInstance(item0) || !isPrimitiveInstance(item1)) {
+                    throw new Error('Expected primitive instances');
+                }
+                item0.set(42);
+                item1.set(43);
+                expect(item0.get()).toBe(42);
+                expect(item1.get()).toBe(43);
+            });
+
+            test('out of bounds array access throws error', () => {
+                const Points = makeArrayType(TYPE_REGISTRY.i32, 2);
+                const points = new Points();
+                expect(() => points.getItem(-1)).toThrow('Index -1 out of bounds for array of length 2');
+                expect(() => points.getItem(2)).toThrow('Index 2 out of bounds for array of length 2');
+            });
+        });
+    });
+
+    describe('asObj wrapper API', () => {
+        describe('primitive field access', () => {
+            test('get primitive field returns number', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                const point = new Point();
+                const x = point.getField('x');
+                if (!x || !isPrimitiveInstance(x)) throw new Error('Expected primitive instance');
+                x.set(42);
+                const pointObj = asObj<{ x: number, y: number }>(point);
+                expect(pointObj.x).toBe(42);
+            });
+
+            test('set primitive field with number', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                const point = new Point();
+                const pointObj = asObj<{ x: number, y: number }>(point);
+                pointObj.x = 42;
+                const x = point.getField('x');
+                if (!x || !isPrimitiveInstance(x)) throw new Error('Expected primitive instance');
+                expect(x.get()).toBe(42);
+            });
         });
 
-        test('nested struct types', () => {
-            // Create Point type with x,y coordinates
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
+        describe('nested struct field access', () => {
+            test('get nested struct field returns object', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const start = line.getField('start');
+                const end = line.getField('end');
+                if (!start || !end) throw new Error('Expected struct instances');
+                expect(toPlainObject(start)).toEqual({ x: 0, y: 0 });
+                expect(toPlainObject(end)).toEqual({ x: 0, y: 0 });
+            });
 
-            // Create Line type with two points
-            const Line = makeStruct([
-                {name: "start", type: Point},
-                {name: "end", type: Point}
-            ]);
+            test('set nested struct field with object', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const start = line.getField('start');
+                if (!start) throw new Error('Expected struct instance');
+                const x = (start as StructInstance).getField('x');
+                const y = (start as StructInstance).getField('y');
+                if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                    throw new Error('Expected primitive instances');
+                }
+                x.set(42.0);
+                y.set(43.0);
+                expect(toPlainObject(start)).toEqual({ x: 42.0, y: 43.0 });
+            });
 
-            // Create a line and set values
-            const line = Line();
-            line.start.x = 1.0;
-            line.start.y = 2.0;
-            line.end.x = 3.0;
-            line.end.y = 4.0;
+            test('nested struct field access - step by step', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const start = line.getField('start');
+                const end = line.getField('end');
+                if (!start || !end) throw new Error('Expected struct instances');
+                const startX = (start as StructInstance).getField('x');
+                const startY = (start as StructInstance).getField('y');
+                const endX = (end as StructInstance).getField('x');
+                const endY = (end as StructInstance).getField('y');
+                if (!startX || !startY || !endX || !endY || 
+                    !isPrimitiveInstance(startX) || !isPrimitiveInstance(startY) ||
+                    !isPrimitiveInstance(endX) || !isPrimitiveInstance(endY)) {
+                    throw new Error('Expected primitive instances');
+                }
 
-            // Verify all values are set correctly
-            expect(line.start.x).toBeCloseTo(1.0, 5);
-            expect(line.start.y).toBeCloseTo(2.0, 5);
-            expect(line.end.x).toBeCloseTo(3.0, 5);
-            expect(line.end.y).toBeCloseTo(4.0, 5);
+                // Test initial state
+                expect(toPlainObject(start)).toEqual({ x: 0, y: 0 });
+                expect(toPlainObject(end)).toEqual({ x: 0, y: 0 });
+
+                // Test setting individual fields
+                startX.set(1.0);
+                expect(startX.get()).toBe(1.0);
+                expect(startY.get()).toBe(0.0);
+                expect(endX.get()).toBe(0.0);
+                expect(endY.get()).toBe(0.0);
+
+                // Test setting both nested structs individually
+                startX.set(2.0);
+                startY.set(3.0);
+                expect(toPlainObject(start)).toEqual({ x: 2.0, y: 3.0 });
+                expect(toPlainObject(end)).toEqual({ x: 0.0, y: 0.0 });
+
+                endX.set(4.0);
+                endY.set(5.0);
+                expect(toPlainObject(start)).toEqual({ x: 2.0, y: 3.0 });
+                expect(toPlainObject(end)).toEqual({ x: 4.0, y: 5.0 });
+            });
         });
 
-        test('nested struct assignment with arrays', () => {
-            // Create Point type
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
+        describe('array element access', () => {
+            test('get array element returns number', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const points = new Points();
+                const point0 = points.getItem(0);
+                const point1 = points.getItem(1);
+                if (!point0 || !point1) throw new Error('Expected struct instances');
+                expect(toPlainObject(point0)).toEqual({ x: 0, y: 0 });
+                expect(toPlainObject(point1)).toEqual({ x: 0, y: 0 });
+            });
+
+            test('set array element with object', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const points = new Points();
+                const point0 = points.getItem(0);
+                if (!point0) throw new Error('Expected struct instance');
+                const x = (point0 as StructInstance).getField('x');
+                const y = (point0 as StructInstance).getField('y');
+                if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                    throw new Error('Expected primitive instances');
+                }
+                x.set(42.0);
+                y.set(43.0);
+                expect(toPlainObject(point0)).toEqual({ x: 42.0, y: 43.0 });
+            });
+
+            test('array element access - step by step', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const points = new Points();
+                const point0 = points.getItem(0);
+                const point1 = points.getItem(1);
+                if (!point0 || !point1) throw new Error('Expected struct instances');
+                const x0 = (point0 as StructInstance).getField('x');
+                const y0 = (point0 as StructInstance).getField('y');
+                const x1 = (point1 as StructInstance).getField('x');
+                const y1 = (point1 as StructInstance).getField('y');
+                if (!x0 || !y0 || !x1 || !y1 || 
+                    !isPrimitiveInstance(x0) || !isPrimitiveInstance(y0) ||
+                    !isPrimitiveInstance(x1) || !isPrimitiveInstance(y1)) {
+                    throw new Error('Expected primitive instances');
+                }
+
+                // Test initial state
+                expect(toPlainObject(point0)).toEqual({ x: 0, y: 0 });
+                expect(toPlainObject(point1)).toEqual({ x: 0, y: 0 });
+
+                // Test setting individual fields
+                x0.set(1.0);
+                expect(x0.get()).toBe(1.0);
+                expect(y0.get()).toBe(0.0);
+                expect(x1.get()).toBe(0.0);
+                expect(y1.get()).toBe(0.0);
+
+                // Test setting both elements individually
+                x0.set(2.0);
+                y0.set(3.0);
+                expect(toPlainObject(point0)).toEqual({ x: 2.0, y: 3.0 });
+                expect(toPlainObject(point1)).toEqual({ x: 0.0, y: 0.0 });
+
+                x1.set(4.0);
+                y1.set(5.0);
+                expect(toPlainObject(point0)).toEqual({ x: 2.0, y: 3.0 });
+                expect(toPlainObject(point1)).toEqual({ x: 4.0, y: 5.0 });
+            });
+        });
+    });
+
+    describe('API interoperability', () => {
+        test('raw API and asObj wrapper work together', () => {
+            const Vec3 = makeStruct([
+                {name:"x", type:TYPE_REGISTRY["f32"]},
+                {name:"y", type:TYPE_REGISTRY["f32"]},
+                {name:"z", type:TYPE_REGISTRY["f32"]},
             ]);
+            type Vec3Type = {x:number, y:number, z:number};
+            
+            const vec = new Vec3();
+            const wrappedVec = asObj<Vec3Type>(vec);
 
-            // Create Polygon type with array of points
-            const Polygon = makeStruct([
-                {name: "points", type: Point.array(3)}
-            ]);
+            // Verify fields exist and are primitive instances
+            const x = vec.getField('x');
+            const y = vec.getField('y');
+            const z = vec.getField('z');
+            expect(x).toBeDefined();
+            expect(y).toBeDefined();
+            expect(z).toBeDefined();
+            expect(isPrimitiveInstance(x)).toBe(true);
+            expect(isPrimitiveInstance(y)).toBe(true);
+            expect(isPrimitiveInstance(z)).toBe(true);
 
-            // Create a polygon and set values
-            const polygon = Polygon();
-            polygon.points[0].x = 1.0;
-            polygon.points[0].y = 2.0;
-            polygon.points[1].x = 3.0;
-            polygon.points[1].y = 4.0;
-            polygon.points[2].x = 5.0;
-            polygon.points[2].y = 6.0;
+            // Set using raw API
+            if (!x || !y || !z) throw new Error('Fields must exist');
+            if (!isPrimitiveInstance(x) || !isPrimitiveInstance(y) || !isPrimitiveInstance(z)) {
+                throw new Error('Fields must be primitive instances');
+            }
+            x.set(2.0);
+            y.set(3.0);
+            z.set(0.1);
 
-            // Create a new point and assign it to the first point in the array
-            const newPoint = Point();
-            newPoint.x = 7.0;
-            newPoint.y = 8.0;
-            polygon.points[0] = newPoint;
+            // Read using asObj wrapper
+            expect(wrappedVec.x).toBeCloseTo(2.0, 5);
+            expect(wrappedVec.y).toBeCloseTo(3.0, 5);
+            expect(wrappedVec.z).toBeCloseTo(0.1, 5);
 
-            // Verify the new point was assigned correctly
-            expect(polygon.points[0].x).toBeCloseTo(7.0, 5);
-            expect(polygon.points[0].y).toBeCloseTo(8.0, 5);
-            // Other points should be unchanged
-            expect(polygon.points[1].x).toBeCloseTo(3.0, 5);
-            expect(polygon.points[1].y).toBeCloseTo(4.0, 5);
-            expect(polygon.points[2].x).toBeCloseTo(5.0, 5);
-            expect(polygon.points[2].y).toBeCloseTo(6.0, 5);
+            // Set using asObj wrapper
+            wrappedVec.x = 4.0;
+            wrappedVec.y = 5.0;
+            wrappedVec.z = 0.2;
+
+            // Read using raw API
+            expect(x.get()).toBeCloseTo(4.0, 5);
+            expect(y.get()).toBeCloseTo(5.0, 5);
+            expect(z.get()).toBeCloseTo(0.2, 5);
+        });
+    });
+
+    describe('complex asObj cases', () => {
+        describe('nested struct assignment', () => {
+            test('assign entire nested struct object', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const lineObj = asObj<{ start: { x: number, y: number }, end: { x: number, y: number } }>(line);
+
+                // Assign entire nested struct
+                lineObj.start = { x: 1.0, y: 2.0 };
+                lineObj.end = { x: 3.0, y: 4.0 };
+
+                // Verify through raw API
+                const start = line.getField('start');
+                const end = line.getField('end');
+                if (!start || !end) throw new Error('Expected struct instances');
+                const startX = (start as StructInstance).getField('x');
+                const startY = (start as StructInstance).getField('y');
+                const endX = (end as StructInstance).getField('x');
+                const endY = (end as StructInstance).getField('y');
+                if (!startX || !startY || !endX || !endY || 
+                    !isPrimitiveInstance(startX) || !isPrimitiveInstance(startY) ||
+                    !isPrimitiveInstance(endX) || !isPrimitiveInstance(endY)) {
+                    throw new Error('Expected primitive instances');
+                }
+
+                expect(startX.get()).toBeCloseTo(1.0, 5);
+                expect(startY.get()).toBeCloseTo(2.0, 5);
+                expect(endX.get()).toBeCloseTo(3.0, 5);
+                expect(endY.get()).toBeCloseTo(4.0, 5);
+            });
         });
 
-        test('union assignment with complex types', () => {
-            // Create Point type
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
+        describe('array of structs', () => {
+            test('assign entire struct element in array', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const points = new Points();
+                const pointsObj = asObj<{ x: number, y: number }[]>(points);
 
-            // Create a union that can hold either a Point or a float
-            const PointOrFloat = makeUnion([
-                { name: 'point', type: Point },
-                { name: 'value', type: TYPE_REGISTRY['f32'] }
-            ]);
+                // Assign entire struct elements
+                pointsObj[0] = { x: 1.0, y: 2.0 };
+                pointsObj[1] = { x: 3.0, y: 4.0 };
 
-            // Create a struct that contains the union
-            const Shape = makeStruct([
-                { name: 'type', type: TYPE_REGISTRY['u8'] },
-                { name: 'data', type: PointOrFloat }
-            ]);
+                // Verify through raw API
+                const point0 = points.getItem(0);
+                const point1 = points.getItem(1);
+                if (!point0 || !point1) throw new Error('Expected struct instances');
+                const x0 = (point0 as StructInstance).getField('x');
+                const y0 = (point0 as StructInstance).getField('y');
+                const x1 = (point1 as StructInstance).getField('x');
+                const y1 = (point1 as StructInstance).getField('y');
+                if (!x0 || !y0 || !x1 || !y1 || 
+                    !isPrimitiveInstance(x0) || !isPrimitiveInstance(y0) ||
+                    !isPrimitiveInstance(x1) || !isPrimitiveInstance(y1)) {
+                    throw new Error('Expected primitive instances');
+                }
 
-            // Create a shape and set a point
-            const shape = Shape();
-            shape.type = 1;
-            const point = Point();
-            point.x = 1.0;
-            point.y = 2.0;
-            shape.data.point = point;
-
-            // Verify the point was set correctly
-            expect(shape.data.point.x).toBeCloseTo(1.0, 5);
-            expect(shape.data.point.y).toBeCloseTo(2.0, 5);
-
-            // Create a new point and assign it
-            const newPoint = Point();
-            newPoint.x = 3.0;
-            newPoint.y = 4.0;
-            shape.data.point = newPoint;
-
-            // Verify the new point was assigned correctly
-            expect(shape.data.point.x).toBeCloseTo(3.0, 5);
-            expect(shape.data.point.y).toBeCloseTo(4.0, 5);
-
-            // Now set it to a float value
-            shape.data.value = 5.0;
-            expect(shape.data.value).toBeCloseTo(5.0, 5);
+                expect(x0.get()).toBeCloseTo(1.0, 5);
+                expect(y0.get()).toBeCloseTo(2.0, 5);
+                expect(x1.get()).toBeCloseTo(3.0, 5);
+                expect(y1.get()).toBeCloseTo(4.0, 5);
+            });
         });
 
-        test('deep nested struct assignment', () => {
-            // Create Point type
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
+        describe('union types', () => {
+            test('assign values to union fields', () => {
+                const Number = makeUnion([
+                    { name: 'i', type: TYPE_REGISTRY.i32 },
+                    { name: 'f', type: TYPE_REGISTRY.f64 }
+                ]);
+                const num = new Number();
+                type NumberType = { i: number } | { f: number };
+                const numObj = asObj<NumberType>(num);
 
-            // Create Line type
-            const Line = makeStruct([
-                {name: "start", type: Point},
-                {name: "end", type: Point}
-            ]);
+                // Assign to integer field
+                (numObj as { i: number }).i = 42;
+                const i = num.getField('i');
+                if (!i || !isPrimitiveInstance(i)) throw new Error('Expected primitive instance');
+                expect(i.get()).toBe(42);
 
-            // Create Polygon type with array of lines
-            const Polygon = makeStruct([
-                {name: "lines", type: Line.array(2)}
-            ]);
-
-            // Create a polygon and set values
-            const polygon = Polygon();
-            polygon.lines[0].start.x = 1.0;
-            polygon.lines[0].start.y = 2.0;
-            polygon.lines[0].end.x = 3.0;
-            polygon.lines[0].end.y = 4.0;
-            polygon.lines[1].start.x = 5.0;
-            polygon.lines[1].start.y = 6.0;
-            polygon.lines[1].end.x = 7.0;
-            polygon.lines[1].end.y = 8.0;
-
-            // Create a new line and assign it to the first line
-            const newLine = Line();
-            newLine.start.x = 9.0;
-            newLine.start.y = 10.0;
-            newLine.end.x = 11.0;
-            newLine.end.y = 12.0;
-            polygon.lines[0] = newLine;
-
-            // Verify the new line was assigned correctly
-            expect(polygon.lines[0].start.x).toBeCloseTo(9.0, 5);
-            expect(polygon.lines[0].start.y).toBeCloseTo(10.0, 5);
-            expect(polygon.lines[0].end.x).toBeCloseTo(11.0, 5);
-            expect(polygon.lines[0].end.y).toBeCloseTo(12.0, 5);
-
-            // Second line should be unchanged
-            expect(polygon.lines[1].start.x).toBeCloseTo(5.0, 5);
-            expect(polygon.lines[1].start.y).toBeCloseTo(6.0, 5);
-            expect(polygon.lines[1].end.x).toBeCloseTo(7.0, 5);
-            expect(polygon.lines[1].end.y).toBeCloseTo(8.0, 5);
+                // Assign to float field
+                (numObj as { f: number }).f = 3.14;
+                const f = num.getField('f');
+                if (!f || !isPrimitiveInstance(f)) throw new Error('Expected primitive instance');
+                expect(f.get()).toBeCloseTo(3.14, 5);
+            });
         });
 
-        test('struct sizes', () => {
-            // Create Point type with x,y coordinates
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
+        describe('nested arrays', () => {
+            test('assign to nested array elements', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const Lines = makeArrayType(Points, 2);
+                const lines = new Lines();
+                const linesObj = asObj<{ x: number, y: number }[][]>(lines);
 
-            // Create Line type with two points
-            const Line = makeStruct([
-                {name: "start", type: Point},
-                {name: "end", type: Point}
-            ]);
+                // Assign to nested array elements
+                linesObj[0][0] = { x: 1.0, y: 2.0 };
+                linesObj[0][1] = { x: 3.0, y: 4.0 };
+                linesObj[1][0] = { x: 5.0, y: 6.0 };
+                linesObj[1][1] = { x: 7.0, y: 8.0 };
 
-            // Point should be 8 bytes (2 f32s)
-            expect(Point.sizeof).toBe(8);
-            // Line should be 16 bytes (2 Points)
-            expect(Line.sizeof).toBe(16);
+                // Verify through raw API
+                for (let i = 0; i < 2; i++) {
+                    const line = lines.getItem(i);
+                    if (!line) throw new Error('Expected array instance');
+                    for (let j = 0; j < 2; j++) {
+                        const point = (line as ArrayInstance).getItem(j);
+                        if (!point) throw new Error('Expected struct instance');
+                        const x = (point as StructInstance).getField('x');
+                        const y = (point as StructInstance).getField('y');
+                        if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                            throw new Error('Expected primitive instances');
+                        }
+                        expect(x.get()).toBeCloseTo(1.0 + (i * 2 + j) * 2, 5);
+                        expect(y.get()).toBeCloseTo(2.0 + (i * 2 + j) * 2, 5);
+                    }
+                }
+            });
         });
 
-        test('struct type caching in TYPE_REGISTRY', () => {
-            const structName = 'CachedStruct';
-            const CachedStruct = makeStruct([
-                { name: 'field1', type: TYPE_REGISTRY['f32'] },
-                { name: 'field2', type: TYPE_REGISTRY['i32'] }
-            ], structName);
+        describe('complex mixed types', () => {
+            test('assign to complex mixed type structure', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Number = makeUnion([
+                    { name: 'i', type: TYPE_REGISTRY.i32 },
+                    { name: 'f', type: TYPE_REGISTRY.f64 }
+                ]);
+                const Complex = makeStruct([
+                    { name: 'points', type: makeArrayType(Point, 2) },
+                    { name: 'value', type: Number }
+                ]);
+                const complex = new Complex();
+                const complexObj = asObj<{ 
+                    points: { x: number, y: number }[], 
+                    value: { i: number } | { f: number } 
+                }>(complex);
 
-            // Verify the struct is cached in TYPE_REGISTRY
-            expect(TYPE_REGISTRY[structName]).toBe(CachedStruct);
+                // Assign to complex structure
+                complexObj.points[0] = { x: 1.0, y: 2.0 };
+                complexObj.points[1] = { x: 3.0, y: 4.0 };
+                complexObj.value = { i: 42 };
+
+                // Verify through raw API
+                const points = complex.getField('points');
+                const value = complex.getField('value');
+                if (!points || !value) throw new Error('Expected instances');
+
+                // Check points array
+                const point0 = (points as ArrayInstance).getItem(0);
+                const point1 = (points as ArrayInstance).getItem(1);
+                if (!point0 || !point1) throw new Error('Expected struct instances');
+                const x0 = (point0 as StructInstance).getField('x');
+                const y0 = (point0 as StructInstance).getField('y');
+                const x1 = (point1 as StructInstance).getField('x');
+                const y1 = (point1 as StructInstance).getField('y');
+                if (!x0 || !y0 || !x1 || !y1 || 
+                    !isPrimitiveInstance(x0) || !isPrimitiveInstance(y0) ||
+                    !isPrimitiveInstance(x1) || !isPrimitiveInstance(y1)) {
+                    throw new Error('Expected primitive instances');
+                }
+                expect(x0.get()).toBeCloseTo(1.0, 5);
+                expect(y0.get()).toBeCloseTo(2.0, 5);
+                expect(x1.get()).toBeCloseTo(3.0, 5);
+                expect(y1.get()).toBeCloseTo(4.0, 5);
+
+                // Check union value
+                const i = (value as UnionInstance).getField('i');
+                if (!i || !isPrimitiveInstance(i)) throw new Error('Expected primitive instance');
+                expect(i.get()).toBe(42);
+            });
         });
 
-        test('throw error on duplicate type name', () => {
-            const structName = 'DuplicateStruct';
-            makeStruct([
-                { name: 'field1', type: TYPE_REGISTRY['f32'] }
-            ], structName);
+        describe('error cases', () => {
+            test('assign wrong type to nested struct', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const lineObj = asObj<{ start: { x: number, y: number }, end: { x: number, y: number } }>(line);
 
-            // Attempting to create another struct with the same name should throw an error
-            expect(() => {
-                makeStruct([
-                    { name: 'field1', type: TYPE_REGISTRY['i32'] }
-                ], structName);
-            }).toThrow('Type name already exists in TYPE_REGISTRY');
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.start = { x: 'invalid', y: 2.0 };
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.start = { x: 1.0 }; // Missing required field
+                }).toThrow();
+            });
+
+            test('assign wrong type to union field', () => {
+                const Number = makeUnion([
+                    { name: 'i', type: TYPE_REGISTRY.i32 },
+                    { name: 'f', type: TYPE_REGISTRY.f64 }
+                ]);
+                const num = new Number();
+                const numObj = asObj<{ i: number } | { f: number }>(num);
+
+                expect(() => {
+                    // @ts-expect-error
+                    numObj.i = 'invalid';
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    numObj.f = 'invalid';
+                }).toThrow();
+            });
+
+            test('assign out of bounds array index', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const points = new Points();
+                const pointsObj = asObj<{ x: number, y: number }[]>(points);
+
+                expect(() => {
+                    pointsObj[-1] = { x: 1.0, y: 2.0 };
+                }).toThrow();
+                expect(() => {
+                    pointsObj[2] = { x: 1.0, y: 2.0 };
+                }).toThrow();
+            });
+
+            test('assign null/undefined to fields', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const point = new Point();
+                const pointObj = asObj<{ x: number, y: number }>(point);
+
+                expect(() => {
+                    // @ts-expect-error
+                    pointObj.x = null;
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    pointObj.y = undefined;
+                }).toThrow();
+            });
+
+            test('assign object with missing required fields', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const lineObj = asObj<{ start: { x: number, y: number }, end: { x: number, y: number } }>(line);
+
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.start = { x: 1.0 }; // Missing y field
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.end = { y: 2.0 }; // Missing x field
+                }).toThrow();
+            });
         });
 
+        describe('deeply nested structures', () => {
+            test('deeply nested structs (3+ levels)', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const Polygon = makeStruct([
+                    { name: 'lines', type: makeArrayType(Line, 2) },
+                    { name: 'center', type: Point }
+                ]);
+                const Scene = makeStruct([
+                    { name: 'polygons', type: makeArrayType(Polygon, 2) },
+                    { name: 'origin', type: Point }
+                ]);
+
+                const scene = new Scene();
+                const sceneObj = asObj<{
+                    polygons: {
+                        lines: { start: { x: number, y: number }, end: { x: number, y: number } }[],
+                        center: { x: number, y: number }
+                    }[],
+                    origin: { x: number, y: number }
+                }>(scene);
+
+                // Set deeply nested values
+                sceneObj.polygons[0].lines[0].start.x = 1.0;
+                sceneObj.polygons[0].lines[0].start.y = 2.0;
+                sceneObj.polygons[0].lines[0].end.x = 3.0;
+                sceneObj.polygons[0].lines[0].end.y = 4.0;
+                sceneObj.polygons[0].center.x = 5.0;
+                sceneObj.polygons[0].center.y = 6.0;
+                sceneObj.origin.x = 7.0;
+                sceneObj.origin.y = 8.0;
+
+                // Verify through raw API
+                const polygons = scene.getField('polygons');
+                const origin = scene.getField('origin');
+                if (!polygons || !origin) throw new Error('Expected instances');
+
+                const polygon0 = (polygons as ArrayInstance).getItem(0);
+                if (!polygon0) throw new Error('Expected struct instance');
+                const lines = (polygon0 as StructInstance).getField('lines');
+                const center = (polygon0 as StructInstance).getField('center');
+                if (!lines || !center) throw new Error('Expected instances');
+
+                const line0 = (lines as ArrayInstance).getItem(0);
+                if (!line0) throw new Error('Expected struct instance');
+                const start = (line0 as StructInstance).getField('start');
+                const end = (line0 as StructInstance).getField('end');
+                if (!start || !end) throw new Error('Expected struct instances');
+
+                const startX = (start as StructInstance).getField('x');
+                const startY = (start as StructInstance).getField('y');
+                const endX = (end as StructInstance).getField('x');
+                const endY = (end as StructInstance).getField('y');
+                const centerX = (center as StructInstance).getField('x');
+                const centerY = (center as StructInstance).getField('y');
+                const originX = (origin as StructInstance).getField('x');
+                const originY = (origin as StructInstance).getField('y');
+
+                if (!startX || !startY || !endX || !endY || !centerX || !centerY || !originX || !originY ||
+                    !isPrimitiveInstance(startX) || !isPrimitiveInstance(startY) ||
+                    !isPrimitiveInstance(endX) || !isPrimitiveInstance(endY) ||
+                    !isPrimitiveInstance(centerX) || !isPrimitiveInstance(centerY) ||
+                    !isPrimitiveInstance(originX) || !isPrimitiveInstance(originY)) {
+                    throw new Error('Expected primitive instances');
+                }
+
+                expect(startX.get()).toBeCloseTo(1.0, 5);
+                expect(startY.get()).toBeCloseTo(2.0, 5);
+                expect(endX.get()).toBeCloseTo(3.0, 5);
+                expect(endY.get()).toBeCloseTo(4.0, 5);
+                expect(centerX.get()).toBeCloseTo(5.0, 5);
+                expect(centerY.get()).toBeCloseTo(6.0, 5);
+                expect(originX.get()).toBeCloseTo(7.0, 5);
+                expect(originY.get()).toBeCloseTo(8.0, 5);
+            });
+
+            test('arrays of arrays of structs', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const Grid = makeArrayType(Points, 2);
+                const grid = new Grid();
+                const gridObj = asObj<{ x: number, y: number }[][]>(grid);
+
+                // Set values in nested arrays
+                gridObj[0][0] = { x: 1.0, y: 2.0 };
+                gridObj[0][1] = { x: 3.0, y: 4.0 };
+                gridObj[1][0] = { x: 5.0, y: 6.0 };
+                gridObj[1][1] = { x: 7.0, y: 8.0 };
+
+                // Verify through raw API
+                for (let i = 0; i < 2; i++) {
+                    const row = grid.getItem(i);
+                    if (!row) throw new Error('Expected array instance');
+                    for (let j = 0; j < 2; j++) {
+                        const point = (row as ArrayInstance).getItem(j);
+                        if (!point) throw new Error('Expected struct instance');
+                        const x = (point as StructInstance).getField('x');
+                        const y = (point as StructInstance).getField('y');
+                        if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                            throw new Error('Expected primitive instances');
+                        }
+                        expect(x.get()).toBeCloseTo(1.0 + (i * 2 + j) * 2, 5);
+                        expect(y.get()).toBeCloseTo(2.0 + (i * 2 + j) * 2, 5);
+                    }
+                }
+            });
+        });
+
+        describe('unions with structs', () => {
+            test('union containing structs', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const Shape = makeUnion([
+                    { name: 'point', type: Point },
+                    { name: 'line', type: Line }
+                ]);
+                const shape = new Shape();
+                type ShapeType = { point: { x: number, y: number } } | { line: { start: { x: number, y: number }, end: { x: number, y: number } } };
+                const shapeObj = asObj<ShapeType>(shape);
+
+                // Test point variant
+                (shapeObj as { point: { x: number, y: number } }).point = { x: 1.0, y: 2.0 };
+                const point = shape.getField('point');
+                if (!point) throw new Error('Expected struct instance');
+                const x = (point as StructInstance).getField('x');
+                const y = (point as StructInstance).getField('y');
+                if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                    throw new Error('Expected primitive instances');
+                }
+                expect(x.get()).toBeCloseTo(1.0, 5);
+                expect(y.get()).toBeCloseTo(2.0, 5);
+
+                // Test line variant
+                (shapeObj as { line: { start: { x: number, y: number }, end: { x: number, y: number } } }).line = {
+                    start: { x: 3.0, y: 4.0 },
+                    end: { x: 5.0, y: 6.0 }
+                };
+                const line = shape.getField('line');
+                if (!line) throw new Error('Expected struct instance');
+                const start = (line as StructInstance).getField('start');
+                const end = (line as StructInstance).getField('end');
+                if (!start || !end) throw new Error('Expected struct instances');
+                const startX = (start as StructInstance).getField('x');
+                const startY = (start as StructInstance).getField('y');
+                const endX = (end as StructInstance).getField('x');
+                const endY = (end as StructInstance).getField('y');
+                if (!startX || !startY || !endX || !endY ||
+                    !isPrimitiveInstance(startX) || !isPrimitiveInstance(startY) ||
+                    !isPrimitiveInstance(endX) || !isPrimitiveInstance(endY)) {
+                    throw new Error('Expected primitive instances');
+                }
+                expect(startX.get()).toBeCloseTo(3.0, 5);
+                expect(startY.get()).toBeCloseTo(4.0, 5);
+                expect(endX.get()).toBeCloseTo(5.0, 5);
+                expect(endY.get()).toBeCloseTo(6.0, 5);
+            });
+
+            test('struct containing union containing array', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const Shape = makeUnion([
+                    { name: 'points', type: Points },
+                    { name: 'center', type: Point }
+                ]);
+                const Container = makeStruct([
+                    { name: 'shape', type: Shape },
+                    { name: 'id', type: TYPE_REGISTRY.i32 }
+                ]);
+                const container = new Container();
+                type ContainerType = {
+                    shape: { points: { x: number, y: number }[] } | { center: { x: number, y: number } },
+                    id: number
+                };
+                const containerObj = asObj<ContainerType>(container);
+
+                // Test points variant
+                (containerObj.shape as { points: { x: number, y: number }[] }).points = [
+                    { x: 1.0, y: 2.0 },
+                    { x: 3.0, y: 4.0 }
+                ];
+                containerObj.id = 42;
+
+                const shape = container.getField('shape');
+                const id = container.getField('id');
+                if (!shape || !id) throw new Error('Expected instances');
+                const points = (shape as UnionInstance).getField('points');
+                if (!points) throw new Error('Expected array instance');
+                const point0 = (points as ArrayInstance).getItem(0);
+                const point1 = (points as ArrayInstance).getItem(1);
+                if (!point0 || !point1) throw new Error('Expected struct instances');
+                const x0 = (point0 as StructInstance).getField('x');
+                const y0 = (point0 as StructInstance).getField('y');
+                const x1 = (point1 as StructInstance).getField('x');
+                const y1 = (point1 as StructInstance).getField('y');
+                if (!x0 || !y0 || !x1 || !y1 || !isPrimitiveInstance(id) ||
+                    !isPrimitiveInstance(x0) || !isPrimitiveInstance(y0) ||
+                    !isPrimitiveInstance(x1) || !isPrimitiveInstance(y1)) {
+                    throw new Error('Expected primitive instances');
+                }
+                expect(x0.get()).toBeCloseTo(1.0, 5);
+                expect(y0.get()).toBeCloseTo(2.0, 5);
+                expect(x1.get()).toBeCloseTo(3.0, 5);
+                expect(y1.get()).toBeCloseTo(4.0, 5);
+                expect(id.get()).toBe(42);
+
+                // Test center variant
+                (containerObj.shape as { center: { x: number, y: number } }).center = { x: 5.0, y: 6.0 };
+                const center = (shape as UnionInstance).getField('center');
+                if (!center) throw new Error('Expected struct instance');
+                const centerX = (center as StructInstance).getField('x');
+                const centerY = (center as StructInstance).getField('y');
+                if (!centerX || !centerY ||
+                    !isPrimitiveInstance(centerX) || !isPrimitiveInstance(centerY)) {
+                    throw new Error('Expected primitive instances');
+                }
+                expect(centerX.get()).toBeCloseTo(5.0, 5);
+                expect(centerY.get()).toBeCloseTo(6.0, 5);
+            });
+        });
+
+        describe('edge cases', () => {
+            test('empty array of structs', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 0);
+                const points = new Points();
+                const pointsObj = asObj<{ x: number, y: number }[]>(points);
+
+                expect(pointsObj.length).toBe(0);
+                expect(() => pointsObj[0]).toThrow();
+            });
+
+            test('struct with empty array field', () => {
+                const EmptyArray = makeArrayType(TYPE_REGISTRY.i32, 0);
+                const Container = makeStruct([
+                    { name: 'values', type: EmptyArray },
+                    { name: 'id', type: TYPE_REGISTRY.i32 }
+                ]);
+                const container = new Container();
+                const containerObj = asObj<{ values: number[], id: number }>(container);
+
+                expect(containerObj.values.length).toBe(0);
+                expect(() => containerObj.values[0]).toThrow();
+                containerObj.id = 42;
+                const id = container.getField('id');
+                if (!id || !isPrimitiveInstance(id)) throw new Error('Expected primitive instance');
+                expect(id.get()).toBe(42);
+            });
+
+            test('type coercion for nested structures', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.i32 },
+                    { name: 'y', type: TYPE_REGISTRY.i32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const lineObj = asObj<{ start: { x: number, y: number }, end: { x: number, y: number } }>(line);
+
+                // Test integer coercion
+                lineObj.start.x = 1.5; // Should be coerced to 1
+                lineObj.start.y = 2.7; // Should be coerced to 2
+                const start = line.getField('start');
+                if (!start) throw new Error('Expected struct instance');
+                const x = (start as StructInstance).getField('x');
+                const y = (start as StructInstance).getField('y');
+                if (!x || !y || !isPrimitiveInstance(x) || !isPrimitiveInstance(y)) {
+                    throw new Error('Expected primitive instances');
+                }
+                expect(x.get()).toBe(1);
+                expect(y.get()).toBe(2);
+            });
+        });
+
+        describe('error handling', () => {
+            test('invalid nested struct assignment', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Line = makeStruct([
+                    { name: 'start', type: Point },
+                    { name: 'end', type: Point }
+                ]);
+                const line = new Line();
+                const lineObj = asObj<{ start: { x: number, y: number }, end: { x: number, y: number } }>(line);
+
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.start = { x: 'invalid', y: 2.0 };
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.start = { x: 1.0 }; // Missing required field
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    lineObj.start = { x: 1.0, y: 2.0, z: 3.0 }; // Extra field
+                }).toThrow();
+            });
+
+            test('invalid union variant assignment', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Shape = makeUnion([
+                    { name: 'point', type: Point },
+                    { name: 'radius', type: TYPE_REGISTRY.f32 }
+                ]);
+                const shape = new Shape();
+                type ShapeType = { point: { x: number, y: number } } | { radius: number };
+                const shapeObj = asObj<ShapeType>(shape);
+
+                expect(() => {
+                    // @ts-expect-error
+                    (shapeObj as { point: { x: number, y: number } }).point = { x: 'invalid', y: 2.0 };
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    (shapeObj as { radius: number }).radius = 'invalid';
+                }).toThrow();
+            });
+
+            test('invalid array element assignment', () => {
+                const Point = makeStruct([
+                    { name: 'x', type: TYPE_REGISTRY.f32 },
+                    { name: 'y', type: TYPE_REGISTRY.f32 }
+                ]);
+                const Points = makeArrayType(Point, 2);
+                const points = new Points();
+                const pointsObj = asObj<{ x: number, y: number }[]>(points);
+
+                expect(() => {
+                    // @ts-expect-error
+                    pointsObj[0] = { x: 'invalid', y: 2.0 };
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    pointsObj[0] = { x: 1.0 }; // Missing required field
+                }).toThrow();
+                expect(() => {
+                    // @ts-expect-error
+                    pointsObj[0] = { x: 1.0, y: 2.0, z: 3.0 }; // Extra field
+                }).toThrow();
+            });
+        });
+    });
+
+    describe('type validation', () => {
         test('throw error on empty field name', () => {
             expect(() => {
                 makeStruct([
@@ -284,634 +1024,21 @@ describe('Struct', () => {
             expect(() => {
                 makeStruct([
                     { name: 'field1', type: TYPE_REGISTRY['f32'] }
-                ], '');
+                ], {name:''});
             }).toThrow('Struct name cannot be empty');
         });
 
-        describe('alignment', () => {
-            test('default alignment follows largest field type', () => {
-                const MixedStruct = makeStruct([
-                    { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
-                    { name: 'b', type: TYPE_REGISTRY['f64'] }, // 8 bytes
-                    { name: 'c', type: TYPE_REGISTRY['u16'] }  // 2 bytes
-                ]);
-                
-                // Struct should be aligned to 8 bytes (largest field)
-                expect(MixedStruct.alignment).toBe(8);
-                
-                // Total size should be padded to maintain alignment
-                // u8 (1) + padding(7) + f64(8) + u16(2) + padding(6) = 24 bytes
-                expect(MixedStruct.sizeof).toBe(24);
-            });
+        test('throw error on duplicate type name', () => {
+            const structName = 'DuplicateStruct';
+            makeStruct([
+                { name: 'field1', type: TYPE_REGISTRY['f32'] }
+            ], {name:structName});
 
-            test('custom field alignment', () => {
-                const AlignedStruct = makeStruct([
-                    { name: 'a', type: TYPE_REGISTRY['u8'], alignment: 4 },  // Force 4-byte alignment
-                    { name: 'b', type: TYPE_REGISTRY['u16'] },               // 2-byte alignment
-                    { name: 'c', type: TYPE_REGISTRY['u8'] }                 // 1-byte alignment
-                ]);
-                
-                // Struct should be aligned to 4 bytes (largest alignment)
-                expect(AlignedStruct.alignment).toBe(4);
-                
-                // Total size should be padded to maintain alignment
-                // u8 (1) + padding(3) + u16(2) + u8(1) + padding(1) = 8 bytes
-                expect(AlignedStruct.sizeof).toBe(8);
-            });
-
-            test('custom struct alignment', () => {
-                const AlignedStruct = makeStruct([
-                    { name: 'a', type: TYPE_REGISTRY['u8'] },
-                    { name: 'b', type: TYPE_REGISTRY['u16'] }
-                ], undefined, 8); // Force 8-byte alignment
-                
-                // Struct should be aligned to 8 bytes (custom alignment)
-                expect(AlignedStruct.alignment).toBe(8);
-                
-                // Total size should be padded to maintain alignment
-                // u8 (1) + padding(1) + u16(2) + padding(4) = 8 bytes
-                expect(AlignedStruct.sizeof).toBe(8);
-            });
-
-            test('nested struct alignment', () => {
-                const InnerStruct = makeStruct([
-                    { name: 'a', type: TYPE_REGISTRY['u8'] },
-                    { name: 'b', type: TYPE_REGISTRY['f64'] }
-                ]);
-                
-                const OuterStruct = makeStruct([
-                    { name: 'x', type: TYPE_REGISTRY['u16'] },
-                    { name: 'inner', type: InnerStruct },
-                    { name: 'y', type: TYPE_REGISTRY['u8'] }
-                ]);
-                
-                // Outer struct should be aligned to 8 bytes (largest field)
-                expect(OuterStruct.alignment).toBe(8);
-                
-                // Total size should be padded to maintain alignment
-                // u16(2) + padding(6) + InnerStruct(16) + u8(1) + padding(7) = 32 bytes
-                expect(OuterStruct.sizeof).toBe(32);
-            });
-
-            test('array alignment', () => {
-                const ArrayStruct = makeStruct([
-                    { name: 'a', type: TYPE_REGISTRY['u8'].array(3) },  // 3 bytes
-                    { name: 'b', type: TYPE_REGISTRY['f64'] }           // 8 bytes
-                ]);
-                
-                // Struct should be aligned to 8 bytes (largest field)
-                expect(ArrayStruct.alignment).toBe(8);
-                
-                // Total size should be padded to maintain alignment
-                // u8[3](3) + padding(5) + f64(8) = 16 bytes
-                expect(ArrayStruct.sizeof).toBe(16);
-            });
-
-            test('custom alignment overrides field alignment', () => {
-                const AlignedStruct = makeStruct([
-                    { name: 'a', type: TYPE_REGISTRY['u8'], alignment: 16 },  // Try to force 16-byte alignment
-                    { name: 'b', type: TYPE_REGISTRY['f64'] }                 // 8-byte alignment
-                ], undefined, 4); // Force 4-byte alignment
-                
-                // Struct should be aligned to 4 bytes (custom alignment)
-                expect(AlignedStruct.alignment).toBe(4);
-                
-                // Total size should be padded to maintain alignment
-                // u8 (1) + padding(3) + f64(8) = 12 bytes
-                expect(AlignedStruct.sizeof).toBe(12);
-            });
-        });
-
-        test('struct field offsets', () => {
-            // Create a struct with different sized fields to test alignment
-            const TestStruct = makeStruct([
-                { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
-                { name: 'b', type: TYPE_REGISTRY['u32'] }, // 4 bytes, should be aligned to 4
-                { name: 'c', type: TYPE_REGISTRY['u16'] }, // 2 bytes
-                { name: 'd', type: TYPE_REGISTRY['u32'] }, // 4 bytes, should be aligned to 4
-            ]);
-
-            // Get the fields from the struct definition
-            const fields = TestStruct.fields;
-
-            // Verify offsets
-            expect(fields[0].offset).toBe(0);  // a: starts at 0
-            expect(fields[1].offset).toBe(4);  // b: aligned to 4
-            expect(fields[2].offset).toBe(8);  // c: starts at 8
-            expect(fields[3].offset).toBe(12); // d: aligned to 4
-
-            // Verify total size (should be 16 bytes with padding)
-            expect(TestStruct.sizeof).toBe(16);
-        });
-
-        test('struct field offsets with custom alignment', () => {
-            // Create a struct with custom alignment
-            const TestStruct = makeStruct([
-                { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
-                { name: 'b', type: TYPE_REGISTRY['u32'] }, // 4 bytes
-                { name: 'c', type: TYPE_REGISTRY['u16'] }, // 2 bytes
-                { name: 'd', type: TYPE_REGISTRY['u32'] }, // 4 bytes
-            ], undefined, 8); // Force 8-byte alignment
-
-            // Get the fields from the struct definition
-            const fields = TestStruct.fields;
-
-            // Verify offsets
-            expect(fields[0].offset).toBe(0);  // a: starts at 0
-            expect(fields[1].offset).toBe(4);  // b: starts at 4 (u32 is 4 bytes)
-            expect(fields[2].offset).toBe(8);  // c: starts at 8 (aligned to 8)
-            expect(fields[3].offset).toBe(12); // d: starts at 12 (u32 is 4 bytes)
-
-            // Verify total size (should be 16 bytes with padding)
-            expect(TestStruct.sizeof).toBe(16);
-        });
-    });
-
-    describe('arrays', () => {
-        test('array type sizes', () => {
-            // Create a struct with arrays of different types
-            const ArrayStruct = makeStruct([
-                {name: "f32array", type: TYPE_REGISTRY["f32"].array(3)},
-                {name: "i16array", type: TYPE_REGISTRY["i16"].array(2)},
-                {name: "u8array", type: TYPE_REGISTRY["u8"].array(4)}
-            ]);
-
-            // f32[3] should be 12 bytes (3 * 4)
-            expect(TYPE_REGISTRY["f32"].array(3).sizeof).toBe(12);
-            // i16[2] should be 4 bytes (2 * 2)
-            expect(TYPE_REGISTRY["i16"].array(2).sizeof).toBe(4);
-            // u8[4] should be 4 bytes (4 * 1)
-            expect(TYPE_REGISTRY["u8"].array(4).sizeof).toBe(4);
-            // Total struct size should be 20 bytes (12 + 4 + 4)
-            expect(ArrayStruct.sizeof).toBe(20);
-        });
-
-        test('array type read/write', () => {
-            // Create a struct with arrays
-            const ArrayStruct = makeStruct([
-                {name: "f32array", type: TYPE_REGISTRY["f32"].array(3)},
-                {name: "i16array", type: TYPE_REGISTRY["i16"].array(2)},
-                {name: "u8array", type: TYPE_REGISTRY["u8"].array(4)}
-            ]);
-
-            const instance = ArrayStruct();
-            
-            // Set array values
-            instance.f32array[0] = 1.0;
-            instance.f32array[1] = 2.0;
-            instance.f32array[2] = 3.0;
-            
-            instance.i16array[0] = 4;
-            instance.i16array[1] = 5;
-            
-            instance.u8array[0] = 6;
-            instance.u8array[1] = 7;
-            instance.u8array[2] = 8;
-            instance.u8array[3] = 9;
-
-            // Verify array values
-            expect(instance.f32array[0]).toBeCloseTo(1.0, 5);
-            expect(instance.f32array[1]).toBeCloseTo(2.0, 5);
-            expect(instance.f32array[2]).toBeCloseTo(3.0, 5);
-            
-            expect(instance.i16array[0]).toBe(4);
-            expect(instance.i16array[1]).toBe(5);
-            
-            expect(instance.u8array[0]).toBe(6);
-            expect(instance.u8array[1]).toBe(7);
-            expect(instance.u8array[2]).toBe(8);
-            expect(instance.u8array[3]).toBe(9);
-        });
-
-        test('array of struct types', () => {
-            // Create a Point type
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
-
-            // Create a struct with an array of Points
-            const Polygon = makeStruct([
-                {name: "points", type: Point.array(3)}
-            ]);
-
-            // Verify array size (3 points * 8 bytes per point)
-            expect(Point.array(3).sizeof).toBe(24);
-            expect(Polygon.sizeof).toBe(24);
-
-            // Create instance and set values
-            const polygon = Polygon();
-            polygon.points[0].x = 1.0;
-            polygon.points[0].y = 2.0;
-            polygon.points[1].x = 3.0;
-            polygon.points[1].y = 4.0;
-            polygon.points[2].x = 5.0;
-            polygon.points[2].y = 6.0;
-
-            // Verify values
-            expect(polygon.points[0].x).toBeCloseTo(1.0, 5);
-            expect(polygon.points[0].y).toBeCloseTo(2.0, 5);
-            expect(polygon.points[1].x).toBeCloseTo(3.0, 5);
-            expect(polygon.points[1].y).toBeCloseTo(4.0, 5);
-            expect(polygon.points[2].x).toBeCloseTo(5.0, 5);
-            expect(polygon.points[2].y).toBeCloseTo(6.0, 5);
-        });
-    });
-
-    describe('unions', () => {
-        test('basic union creation and field access', () => {
-            const NumberUnion = makeUnion([
-                { name: 'i32', type: TYPE_REGISTRY['i32'] },
-                { name: 'f32', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            const union = NumberUnion();
-            union.i32 = 42;
-            expect(union.i32).toBe(42);
-            expect(union.f32).toBeCloseTo(5.877471754111438e-39); // IEEE 754 representation of 42
-
-            union.f32 = 3.14;
-            expect(union.f32).toBeCloseTo(3.14, 5);
-            expect(union.i32).toBe(1078523331); // IEEE 754 representation of 3.14
-        });
-
-        test('union size matches largest member', () => {
-            const MixedUnion = makeUnion([
-                { name: 'u8', type: TYPE_REGISTRY['u8'] },    // 1 byte
-                { name: 'u16', type: TYPE_REGISTRY['u16'] },  // 2 bytes
-                { name: 'f64', type: TYPE_REGISTRY['f64'] }   // 8 bytes
-            ]);
-
-            // Union size should be size of largest member (f64 = 8 bytes)
-            expect(MixedUnion.sizeof).toBe(8);
-        });
-
-        test('union alignment matches largest member', () => {
-            const MixedUnion = makeUnion([
-                { name: 'u8', type: TYPE_REGISTRY['u8'] },    // 1 byte alignment
-                { name: 'u16', type: TYPE_REGISTRY['u16'] },  // 2 byte alignment
-                { name: 'f64', type: TYPE_REGISTRY['f64'] }   // 8 byte alignment
-            ]);
-
-            // Union alignment should be alignment of largest member (f64 = 8)
-            expect(MixedUnion.alignment).toBe(8);
-        });
-
-        test('nested unions', () => {
-            const InnerUnion = makeUnion([
-                { name: 'u8', type: TYPE_REGISTRY['u8'] },
-                { name: 'u16', type: TYPE_REGISTRY['u16'] }
-            ]);
-
-            const OuterUnion = makeUnion([
-                { name: 'inner', type: InnerUnion },
-                { name: 'f32', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            // Outer union size should be max of InnerUnion (2) and f32 (4)
-            expect(OuterUnion.sizeof).toBe(4);
-            expect(OuterUnion.alignment).toBe(4);
-
-            const union = OuterUnion();
-            union.inner.u8 = 42;
-            expect(union.inner.u8).toBe(42);
-            expect(union.inner.u16).toBe(42);
-
-            union.f32 = 3.14;
-            expect(union.f32).toBeCloseTo(3.14, 5);
-        });
-
-        test('union within struct', () => {
-            const NumberUnion = makeUnion([
-                { name: 'i32', type: TYPE_REGISTRY['i32'] },
-                { name: 'f32', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            const StructWithUnion = makeStruct([
-                { name: 'tag', type: TYPE_REGISTRY['u8'] },
-                { name: 'value', type: NumberUnion }
-            ]);
-
-            // Struct size should account for union alignment
-            // u8 (1) + padding(3) + union(4) = 8 bytes
-            expect(StructWithUnion.sizeof).toBe(8);
-            expect(StructWithUnion.alignment).toBe(4);
-
-            const instance = StructWithUnion();
-            instance.tag = 1;
-            instance.value.i32 = 42;
-            expect(instance.value.i32).toBe(42);
-            expect(instance.value.f32).toBeCloseTo(5.877471754111438e-39);
-        });
-
-        test('array of unions', () => {
-            const NumberUnion = makeUnion([
-                { name: 'i32', type: TYPE_REGISTRY['i32'] },
-                { name: 'f32', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            const UnionArray = NumberUnion.array(3);
-            expect(UnionArray.sizeof).toBe(12); // 3 * 4 bytes per union
-
-            const array = UnionArray();
-            array[0].i32 = 1;
-            array[1].f32 = 2.0;
-            array[2].i32 = 3;
-
-            expect(array[0].i32).toBe(1);
-            expect(array[1].f32).toBeCloseTo(2.0);
-            expect(array[2].i32).toBe(3);
-        });
-
-        test('throw error on empty field name', () => {
             expect(() => {
-                makeUnion([
-                    { name: '', type: TYPE_REGISTRY['f32'] }
-                ]);
-            }).toThrow('Field name cannot be empty');
-        });
-
-        test('union type caching in TYPE_REGISTRY', () => {
-            const unionName = 'CachedUnion';
-            const CachedUnion = makeUnion([
-                { name: 'i32', type: TYPE_REGISTRY['i32'] },
-                { name: 'f32', type: TYPE_REGISTRY['f32'] }
-            ], unionName);
-
-            // Verify the union is cached in TYPE_REGISTRY
-            expect(TYPE_REGISTRY[unionName]).toBe(CachedUnion);
-
-            // Verify we can create instances using the cached type
-            const instance = TYPE_REGISTRY[unionName]();
-            instance.i32 = 42;
-            expect(instance.i32).toBe(42);
-            expect(instance.f32).toBeCloseTo(5.877471754111438e-39);
-        });
-
-        test('throw error on duplicate union name', () => {
-            const unionName = 'DuplicateUnion';
-            makeUnion([
-                { name: 'i32', type: TYPE_REGISTRY['i32'] }
-            ], unionName);
-
-            // Attempting to create another union with the same name should throw an error
-            expect(() => {
-                makeUnion([
-                    { name: 'f32', type: TYPE_REGISTRY['f32'] }
-                ], unionName);
+                makeStruct([
+                    { name: 'field1', type: TYPE_REGISTRY['i32'] }
+                ], {name:structName});
             }).toThrow('Type name already exists in TYPE_REGISTRY');
-        });
-
-        test('union field offsets', () => {
-            // Create a union with different sized fields
-            const TestUnion = makeUnion([
-                { name: 'a', type: TYPE_REGISTRY['u8'] },  // 1 byte
-                { name: 'b', type: TYPE_REGISTRY['u32'] }, // 4 bytes
-                { name: 'c', type: TYPE_REGISTRY['u16'] }, // 2 bytes
-                { name: 'd', type: TYPE_REGISTRY['u32'] }, // 4 bytes
-            ]);
-
-            // Get the fields from the union definition
-            const fields = TestUnion.fields;
-
-            // Verify all fields have offset 0 in a union
-            fields.forEach((field: Field) => {
-                expect(field.offset).toBe(0);
-            });
-
-            // Verify total size (should be 4 bytes, the size of the largest field)
-            expect(TestUnion.sizeof).toBe(4);
-        });
-
-        test('nested struct field offsets', () => {
-            // Create Point type
-            const Point = makeStruct([
-                { name: 'x', type: TYPE_REGISTRY['f32'] },
-                { name: 'y', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            // Create Line type with two points
-            const Line = makeStruct([
-                { name: 'start', type: Point },
-                { name: 'end', type: Point }
-            ]);
-
-            // Get the fields from the Line struct
-            const fields = Line.fields;
-
-            // Verify offsets
-            expect(fields[0].offset).toBe(0);   // start: starts at 0
-            expect(fields[1].offset).toBe(8);   // end: starts at 8 (after start's 8 bytes)
-
-            // Verify total size
-            expect(Line.sizeof).toBe(16); // 2 points * 8 bytes each
-        });
-    });
-
-    describe('complex type assignments', () => {
-        test('struct assignment performs memory copy', () => {
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
-
-            const Line = makeStruct([
-                {name: "start", type: Point},
-                {name: "end", type: Point}
-            ]);
-
-            const line = Line();
-            const newPoint = Point();
-            newPoint.x = 5.0;
-            newPoint.y = 6.0;
-            
-            // Assign the new point to start
-            line.start = newPoint;
-            
-            // Verify the assignment
-            expect(line.start.x).toBeCloseTo(5.0, 5);
-            expect(line.start.y).toBeCloseTo(6.0, 5);
-            
-            // Modify the original point - should not affect the line
-            newPoint.x = 7.0;
-            expect(line.start.x).toBeCloseTo(5.0, 5);
-        });
-
-        test('union assignment performs memory copy', () => {
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
-
-            const PointOrFloat = makeUnion([
-                { name: 'point', type: Point },
-                { name: 'value', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            const Shape = makeStruct([
-                { name: 'type', type: TYPE_REGISTRY['u8'] },
-                { name: 'data', type: PointOrFloat }
-            ]);
-
-            const shape = Shape();
-            const newPoint = Point();
-            newPoint.x = 3.0;
-            newPoint.y = 4.0;
-            
-            // Assign the new point to the union field
-            shape.data.point = newPoint;
-            
-            // Verify the assignment
-            expect(shape.data.point.x).toBeCloseTo(3.0, 5);
-            expect(shape.data.point.y).toBeCloseTo(4.0, 5);
-            
-            // Modify the original point - should not affect the union
-            newPoint.x = 5.0;
-            expect(shape.data.point.x).toBeCloseTo(3.0, 5);
-        });
-
-        test('array element assignment performs memory copy', () => {
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
-
-            const Polygon = makeStruct([
-                {name: "points", type: Point.array(3)}
-            ]);
-
-            const polygon = Polygon();
-            const newPoint = Point();
-            newPoint.x = 7.0;
-            newPoint.y = 8.0;
-            
-            // Assign the new point to the first array element
-            polygon.points[0] = newPoint;
-            
-            // Verify the assignment
-            expect(polygon.points[0].x).toBeCloseTo(7.0, 5);
-            expect(polygon.points[0].y).toBeCloseTo(8.0, 5);
-            
-            // Modify the original point - should not affect the array
-            newPoint.x = 9.0;
-            expect(polygon.points[0].x).toBeCloseTo(7.0, 5);
-        });
-
-        test('deep nested assignment performs memory copy', () => {
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
-
-            const Line = makeStruct([
-                {name: "start", type: Point},
-                {name: "end", type: Point}
-            ]);
-
-            const Polygon = makeStruct([
-                {name: "lines", type: Line.array(2)}
-            ]);
-
-            const polygon = Polygon();
-            const newLine = Line();
-            newLine.start.x = 9.0;
-            newLine.start.y = 10.0;
-            newLine.end.x = 11.0;
-            newLine.end.y = 12.0;
-            
-            // Assign the new line to the first array element
-            polygon.lines[0] = newLine;
-            
-            // Verify the assignment
-            expect(polygon.lines[0].start.x).toBeCloseTo(9.0, 5);
-            expect(polygon.lines[0].start.y).toBeCloseTo(10.0, 5);
-            expect(polygon.lines[0].end.x).toBeCloseTo(11.0, 5);
-            expect(polygon.lines[0].end.y).toBeCloseTo(12.0, 5);
-            
-            // Modify the original line - should not affect the array
-            newLine.start.x = 13.0;
-            expect(polygon.lines[0].start.x).toBeCloseTo(9.0, 5);
-        });
-
-        test('nested union array assignment performs memory copy', () => {
-            const Point = makeStruct([
-                {name: "x", type: TYPE_REGISTRY["f32"]},
-                {name: "y", type: TYPE_REGISTRY["f32"]}
-            ]);
-
-            const PointOrFloat = makeUnion([
-                { name: 'point', type: Point },
-                { name: 'value', type: TYPE_REGISTRY['f32'] }
-            ]);
-
-            const Shape = makeStruct([
-                { name: 'type', type: TYPE_REGISTRY['u8'] },
-                { name: 'data', type: PointOrFloat.array(2) }
-            ]);
-
-            const shape = Shape();
-            const newPoint = Point();
-            newPoint.x = 3.0;
-            newPoint.y = 4.0;
-            
-            // Assign the new point to the first union in the array
-            shape.data[0].point = newPoint;
-            
-            // Verify the assignment
-            expect(shape.data[0].point.x).toBeCloseTo(3.0, 5);
-            expect(shape.data[0].point.y).toBeCloseTo(4.0, 5);
-            
-            // Modify the original point - should not affect the array
-            newPoint.x = 5.0;
-            expect(shape.data[0].point.x).toBeCloseTo(3.0, 5);
-        });
-    });
-
-    describe('array type information', () => {
-        test('array of struct exposes fields on array and elements', () => {
-            const Point = makeStruct([
-                { name: 'x', type: TYPE_REGISTRY['f32'] },
-                { name: 'y', type: TYPE_REGISTRY['f32'] }
-            ]);
-            const PointArray = Point.array(3);
-            const arr = PointArray();
-            // Array type exposes fields
-            expect(PointArray.fields).toBeDefined();
-            expect(PointArray.fields.length).toBe(2);
-            expect(PointArray.fields[0].name).toBe('x');
-            // Array instance exposes fields
-            expect(arr.fields).toBeDefined();
-            expect(arr.fields[0].name).toBe('x');
-            // Each element exposes fields
-            expect(arr[0].fields).toBeDefined();
-            expect(arr[0].fields[0].name).toBe('x');
-            expect(arr[1].fields[1].name).toBe('y');
-        });
-        test('array of union exposes fields on array and elements', () => {
-            const NumberUnion = makeUnion([
-                { name: 'i32', type: TYPE_REGISTRY['i32'] },
-                { name: 'f32', type: TYPE_REGISTRY['f32'] }
-            ]);
-            const UnionArray = NumberUnion.array(2);
-            const arr = UnionArray();
-            // Array type exposes fields
-            expect(UnionArray.fields).toBeDefined();
-            expect(UnionArray.fields.length).toBe(2);
-            expect(UnionArray.fields[0].name).toBe('i32');
-            // Array instance exposes fields
-            expect(arr.fields).toBeDefined();
-            expect(arr.fields[1].name).toBe('f32');
-            // Each element exposes fields
-            expect(arr[0].fields).toBeDefined();
-            expect(arr[0].fields[0].name).toBe('i32');
-            expect(arr[1].fields[1].name).toBe('f32');
-        });
-        test('array of primitive does not expose fields', () => {
-            const U8Array = TYPE_REGISTRY['u8'].array(4);
-            const arr = U8Array();
-            expect(U8Array.fields).toBeUndefined();
-            expect(arr.fields).toBeUndefined();
-            expect(arr[0].fields).toBeUndefined();
         });
     });
 });

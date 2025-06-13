@@ -5,11 +5,24 @@ import { parsePng } from "../bits/png";
 import { MtlMaterial, ObjFile } from "../bits/obj";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
-import { TYPE_REGISTRY, makeStruct } from "../struct";
+import { TYPE_REGISTRY, makeStruct, asObj } from "../struct";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
+type Vec3Type=number[];
 const Vec2 = TYPE_REGISTRY.f32.array(2);
+type Vec2Type=number[];
+const VertexData=makeStruct([
+    { name: 'position', type: Vec3 },
+    { name: 'normal', type: Vec3 },
+    { name: 'texCoord', type: Vec2 }
+]);
+// Define the field types for type safety
+type VertexDataType={
+    position:Vec3Type;
+    normal:Vec3Type;
+    texCoord:Vec2Type;
+};
 
 type ProgramInfo = {
     program: WebGLProgram;
@@ -112,14 +125,6 @@ export class GameObject {
     upload() {
         if (!this.programInfo) return;  // Skip if no program info
 
-        // Define the vertex data structure to calculate its size
-        const VertexData = makeStruct([
-            { name: 'position', type: Vec3 },
-            { name: 'normal', type: Vec3 },
-            { name: 'texCoord', type: Vec2 }
-        ]);
-        const VERTEX_DATA_SIZE = VertexData.sizeof;
-
         this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
         // bind vertex data: position (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
@@ -127,8 +132,8 @@ export class GameObject {
             3,
             GL.FLOAT,
             false,
-            VERTEX_DATA_SIZE,
-            0,
+            VertexData.size,
+            VertexData.fields.position.offset!,
         );
         // bind vertex data: normal (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
@@ -136,8 +141,8 @@ export class GameObject {
             3,
             GL.FLOAT,
             false,
-            VERTEX_DATA_SIZE,
-            Vec3.sizeof,
+            VertexData.size,
+            VertexData.fields.normal.offset!,
         );
         // bind vertex data: uv coords (in common vertexdata buffer)
         this.gl.vertexAttribPointer(
@@ -145,8 +150,8 @@ export class GameObject {
             2,
             GL.FLOAT,
             false,
-            VERTEX_DATA_SIZE,
-            Vec3.sizeof * 2,
+            VertexData.size,
+            VertexData.fields.texCoord.offset!,
         );
 
         // upload shader binding data
