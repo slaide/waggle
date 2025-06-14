@@ -5,6 +5,7 @@ import { GameObject } from './gameobject';
 import * as ObjModule from '../bits/obj';
 import { vec3 } from 'gl-matrix';
 import * as PngModule from '../bits/png';
+import { PointLight, DirectionalLight } from './light';
 
 // Mock WebGL context
 const mockGL = {
@@ -204,6 +205,8 @@ describe('Scene Format', () => {
                     type: "point_light",
                     transform: {
                         position: [1, 2, 3],
+                        rotation: [0, 0, 0, 1],
+                        scale: [1, 1, 1],
                     },
                     color: [1, 1, 1],
                     intensity: 0.5,
@@ -212,7 +215,9 @@ describe('Scene Format', () => {
                 {
                     type: "directional_light",
                     transform: {
+                        position: [0, 0, 0],
                         rotation: [0, 0, 0, 1],
+                        scale: [1, 1, 1],
                     },
                     direction: [0, -1, 0],
                     color: [1, 0.95, 0.8],
@@ -224,8 +229,23 @@ describe('Scene Format', () => {
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
         expect(scene.objects.length).toBe(2);
-        expect((scene.objects[0] as any).type).toBe('point_light');
-        expect((scene.objects[1] as any).type).toBe('directional_light');
+        
+        // Check if objects are instances of the correct light classes
+        expect(scene.objects[0]).toBeInstanceOf(PointLight);
+        expect(scene.objects[1]).toBeInstanceOf(DirectionalLight);
+        
+        // Verify point light properties
+        const pointLight = scene.objects[0] as PointLight;
+        expect(pointLight.color).toEqual(vec3.fromValues(1, 1, 1));
+        expect(pointLight.intensity).toBe(0.5);
+        expect(pointLight.radius).toBe(10);
+        expect(pointLight.transform.position).toEqual(vec3.fromValues(1, 2, 3));
+        
+        // Verify directional light properties
+        const directionalLight = scene.objects[1] as DirectionalLight;
+        expect(directionalLight.color).toEqual(vec3.fromValues(1, 0.95, 0.8));
+        expect(directionalLight.intensity).toBe(0.3);
+        expect(directionalLight.direction).toEqual(vec3.fromValues(0, -1, 0));
     });
 
     it('should handle missing optional properties', async () => {

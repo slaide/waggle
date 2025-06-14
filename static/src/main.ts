@@ -99,7 +99,7 @@ export async function main() {
     console.log("- Point lights:", pointLights.length);
     pointLights.forEach((light, i) => {
         console.log(`  Point light ${i}:`);
-        console.log("  - Position:", Array.from(light.position));
+        console.log("  - Position:", Array.from(light.transform.position));
         console.log("  - Color:", Array.from(light.color));
         console.log("  - Intensity:", light.intensity);
         console.log("  - Radius:", light.radius);

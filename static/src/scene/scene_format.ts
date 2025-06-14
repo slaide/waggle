@@ -3,9 +3,7 @@ import { Transform } from "./transform";
 import { GameObject } from "./gameobject";
 import { Scene } from "./scene";
 import { parseObj } from "../bits/obj";
-import { MtlMaterial } from "../bits/obj";
-import { PointLight } from "./point_light";
-import { DirectionalLight } from "./directional_light";
+import { PointLight, DirectionalLight } from "./light";
 import { Model } from "./model";
 
 // Serializable interface for type checking

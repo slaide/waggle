@@ -2,10 +2,9 @@
 
 import { GLC } from "../gl";
 import { GameObject } from "./gameobject";
-import { PointLight, DirectionalLight } from "./lights";
-import { vec3 } from "gl-matrix";
+import { PointLight, DirectionalLight } from "./light";
 import { Transform } from "./transform";
-import { Serializable, SerializableStatic, SceneData, isSceneData } from "./scene_format";
+import { Serializable, isSceneData } from "./scene_format";
 
 export class Scene implements Serializable<Scene> {
     constructor(
@@ -39,23 +38,11 @@ export class Scene implements Serializable<Scene> {
         const directionalLights: DirectionalLight[] = [];
 
         this.traverse((obj) => {
-            // Check if this object is a light
-            if ('type' in obj && (obj as any).type === 'point_light') {
-                const light = obj as unknown as PointLight;
-                pointLights.push({
-                    position: vec3.clone(obj.transform.position),
-                    radius: light.radius,
-                    color: vec3.clone(light.color),
-                    intensity: light.intensity
-                });
+            if (obj instanceof PointLight) {
+                pointLights.push(obj);
                 obj.visible = false; // Don't draw the light object
-            } else if ('type' in obj && (obj as any).type === 'directional_light') {
-                const light = obj as unknown as DirectionalLight;
-                directionalLights.push({
-                    direction: vec3.clone(light.direction),
-                    color: vec3.clone(light.color),
-                    intensity: light.intensity
-                });
+            } else if (obj instanceof DirectionalLight) {
+                directionalLights.push(obj);
                 obj.visible = false; // Don't draw the light object
             }
         });

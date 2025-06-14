@@ -1,51 +1,22 @@
 "use strict";
 
 import { GL, GLC } from "../gl";
-import { parsePng } from "../bits/png";
-import { MtlMaterial, ObjFile } from "../bits/obj";
-import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
-import { TYPE_REGISTRY, makeStruct, asObj } from "../struct";
 import { 
     Serializable, 
-    SerializableStatic, 
     SceneObject, 
     isSceneObject,
     BaseSceneObject,
     MeshObject,
     PointLightObject,
-    DirectionalLightObject,
-    SceneTransform
+    DirectionalLightObject
 } from "./scene_format";
-
-// Define vector types for reuse
-const Vec3 = TYPE_REGISTRY.f32.array(3);
-type Vec3Type=number[];
-const Vec2 = TYPE_REGISTRY.f32.array(2);
-type Vec2Type=number[];
-const VertexData=makeStruct([
-    { name: 'position', type: Vec3 },
-    { name: 'normal', type: Vec3 },
-    { name: 'texCoord', type: Vec2 }
-]);
-// Define the field types for type safety
-type VertexDataType={
-    position:Vec3Type;
-    normal:Vec3Type;
-    texCoord:Vec2Type;
-};
 
 type ProgramInfo = {
     program: WebGLProgram;
     attributeLocations: { [name: string]: GLint };
     uniformLocations: { [name: string]: WebGLUniformLocation };
     shaderSources: { vs: string, fs: string };
-};
-
-type Buffer = {
-    vertexData: WebGLBuffer;
-    indices: WebGLBuffer;
-    texture: WebGLTexture;
 };
 
 function createShaderStage(

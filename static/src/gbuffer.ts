@@ -1,7 +1,7 @@
 import { GL, GLC } from "./gl";
 import { Camera } from "./scene/camera";
 import { createShaderProgram } from "./scene/gameobject";
-import { PointLight, DirectionalLight } from "./scene/lights";
+import { PointLight, DirectionalLight } from "./scene/light";
 
 const POINTLIGHTBLOCKBINDING = 1;
 const DIRECTIONALLIGHTBLOCKBINDING = 2;
@@ -222,9 +222,9 @@ export class GBuffer {
         ) {
             const d = pointLightsArray[i];
 
-            dataView.setFloat32(offset + 0 * 4, d.position[0], true);
-            dataView.setFloat32(offset + 1 * 4, d.position[1], true);
-            dataView.setFloat32(offset + 2 * 4, d.position[2], true);
+            dataView.setFloat32(offset + 0 * 4, d.transform.position[0], true);
+            dataView.setFloat32(offset + 1 * 4, d.transform.position[1], true);
+            dataView.setFloat32(offset + 2 * 4, d.transform.position[2], true);
 
             dataView.setFloat32(offset + 3 * 4, d.radius, true);
 
