@@ -4,7 +4,7 @@ import { MtlMaterial, ObjFile } from "../bits/obj";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct } from "../struct";
-import { GameObject } from "./gameobject";
+import { GameObject, GameObjectRegistry } from "./gameobject";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
@@ -580,4 +580,7 @@ export class Model extends GameObject {
             texture: texture,
         };
     }
-} 
+}
+
+// Register the Model class with the GameObjectRegistry
+GameObjectRegistry.register("mesh", Model.fromJSON); 

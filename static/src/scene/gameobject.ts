@@ -1,4 +1,3 @@
-
 import { GL, GLC } from "../gl";
 import { Transform } from "./transform";
 
@@ -8,6 +7,43 @@ type ProgramInfo = {
     uniformLocations: { [name: string]: WebGLUniformLocation };
     shaderSources: { vs: string, fs: string };
 };
+
+// Type for the fromJSON factory function
+type GameObjectFactory = (gl: GLC, data: any) => Promise<GameObject>;
+
+// Central registry for GameObject types
+export class GameObjectRegistry {
+    private static factories = new Map<string, GameObjectFactory>();
+    
+    // Register a GameObject type with its factory function
+    static register(type: string, factory: GameObjectFactory): void {
+        this.factories.set(type, factory);
+    }
+    
+    // Create a GameObject instance from JSON data using the registry
+    static async create(gl: GLC, data: any): Promise<GameObject> {
+        // Type guard inline
+        if (typeof data !== 'object' || data === null) {
+            throw new Error("Invalid game object data format");
+        }
+        
+        if (!data.type || typeof data.type !== 'string') {
+            throw new Error("Game object must have a type field");
+        }
+        
+        const factory = this.factories.get(data.type);
+        if (!factory) {
+            throw new Error(`Unknown or unregistered object type: ${data.type}`);
+        }
+        
+        return factory(gl, data);
+    }
+    
+    // Get all registered types (useful for debugging)
+    static getRegisteredTypes(): string[] {
+        return Array.from(this.factories.keys());
+    }
+}
 
 function createShaderStage(
     gl: GLC,
@@ -122,37 +158,8 @@ export class GameObject {
         };
     }
 
-    // Base deserialization
+    // Simplified deserialization using the registry
     static async fromJSON(gl: GLC, data: any): Promise<GameObject> {
-        // Type guard inline
-        if (typeof data !== 'object' || data === null) {
-            throw new Error("Invalid game object data format");
-        }
-        
-        if (!data.type || typeof data.type !== 'string') {
-            throw new Error("Game object must have a type field");
-        }
-        
-        if (!["mesh", "point_light", "directional_light"].includes(data.type)) {
-            throw new Error(`Unknown object type: ${data.type}`);
-        }
-
-        const transform = Transform.fromJSON(data.transform);
-        
-        // Import dynamically to avoid circular dependencies
-        const { Model } = await import("./model");
-        const { PointLight, DirectionalLight } = await import("./light");
-        
-        const type = data.type;
-        switch (type) {
-            case "mesh":
-                return Model.fromJSON(gl, data);
-            case "point_light":
-                return PointLight.fromJSON(gl, data);
-            case "directional_light":
-                return DirectionalLight.fromJSON(gl, data);
-            default:
-                throw new Error(`Unknown object type: ${type}`);
-        }
+        return GameObjectRegistry.create(gl, data);
     }
 }

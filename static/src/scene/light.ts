@@ -1,7 +1,7 @@
 import { GLC } from "../gl";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
-import { GameObject } from "./gameobject";
+import { GameObject, GameObjectRegistry } from "./gameobject";
 
 // Base class for lights
 export class Light extends GameObject {
@@ -134,4 +134,8 @@ export class DirectionalLight extends Light {
             data.name
         );
     }
-} 
+}
+
+// Register the light classes with the GameObjectRegistry
+GameObjectRegistry.register("point_light", PointLight.fromJSON);
+GameObjectRegistry.register("directional_light", DirectionalLight.fromJSON); 
