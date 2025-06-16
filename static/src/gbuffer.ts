@@ -45,8 +45,8 @@ export class GBuffer {
 
     static async make(gl: GLC, size: { width: number; height: number }) {
         const fsq = await createShaderProgram(gl, {
-            vs: await fetch('/static/src/shaders/gbuffer.vs').then(r => r.text()),
-            fs: await fetch('/static/src/shaders/gbuffer.fs').then(r => r.text()),
+            vs: await fetch('/static/src/shaders/deferred_lighting.vert').then(r => r.text()),
+            fs: await fetch('/static/src/shaders/deferred_lighting.frag').then(r => r.text()),
         });
 
         // create with default size

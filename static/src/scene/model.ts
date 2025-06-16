@@ -433,11 +433,11 @@ export class Model extends GameObject {
 
         // Load shader files from static directory
         const [vsSource, fsSource] = await Promise.all([
-            fetch('/static/src/shaders/gbuffer.vert').then(r => {
+            fetch('/static/src/shaders/geometry.vert').then(r => {
                 if (!r.ok) throw new Error(`Failed to load vertex shader: ${r.statusText}`);
                 return r.text();
             }),
-            fetch('/static/src/shaders/gbuffer.frag').then(r => {
+            fetch('/static/src/shaders/geometry.frag').then(r => {
                 if (!r.ok) throw new Error(`Failed to load fragment shader: ${r.statusText}`);
                 return r.text();
             })
