@@ -1,5 +1,4 @@
 //# allFunctionsCalledOnLoad
-"use strict";
 
 export function stringToUint8Array(str:string):Uint8Array {
     const uint8Array = new Uint8Array(str.length);

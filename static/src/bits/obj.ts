@@ -1,4 +1,3 @@
-"use strict";
 
 import { vec3 } from "gl-matrix";
 

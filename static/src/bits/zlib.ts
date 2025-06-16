@@ -1,5 +1,4 @@
 //# allFunctionsCalledOnLoad
-"use strict";
 
 import { arrToUint32, arrToUint16, arrToUint8 } from "./bits";
 

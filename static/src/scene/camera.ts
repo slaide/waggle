@@ -1,4 +1,3 @@
-"use strict";
 
 import {vec3,quat,mat4,glMatrix as glm} from "gl-matrix";
 

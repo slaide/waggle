@@ -1,4 +1,3 @@
-"use strict";
 
 import { GL, GLC } from "../gl";
 import { Transform } from "./transform";

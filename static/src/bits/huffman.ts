@@ -1,4 +1,3 @@
-"use strict";
 
 import { reverseBits, BitBuffer } from "./bits";
 

@@ -1,4 +1,3 @@
-"use strict";
 
 import { GLC } from "../gl";
 import { GameObject } from "./gameobject";

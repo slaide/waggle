@@ -1,5 +1,4 @@
 //# allFunctionsCalledOnLoad
-"use strict";
 
 import {
     uint8ArrayToString,
