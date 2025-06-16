@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
 import { SceneDescription, loadScene } from '../../../../static/src/scene/scene_format';
 import { Scene } from '../../../../static/src/scene/scene';
 import { GameObject } from '../../../../static/src/scene/gameobject';
@@ -9,48 +9,48 @@ import { PointLight, DirectionalLight } from '../../../../static/src/scene/light
 
 // Mock WebGL context
 const mockGL = {
-    createBuffer: vi.fn(),
-    bindBuffer: vi.fn(),
-    bufferData: vi.fn(),
-    createTexture: vi.fn(),
-    bindTexture: vi.fn(),
-    texImage2D: vi.fn(),
-    createProgram: vi.fn(() => ({})),
-    createShader: vi.fn(() => ({})),
-    shaderSource: vi.fn(),
-    compileShader: vi.fn(),
-    attachShader: vi.fn(),
-    linkProgram: vi.fn(),
-    getProgramParameter: vi.fn((program, pname) => pname === 35714 /* GL.LINK_STATUS */ ? true : 1),
-    getShaderParameter: vi.fn((shader, pname) => pname === 35713 /* GL.COMPILE_STATUS */ ? true : 1),
-    getShaderInfoLog: vi.fn(() => ''),
-    getProgramInfoLog: vi.fn(() => ''),
-    pixelStorei: vi.fn(),
-    texParameteri: vi.fn(),
-    getAttribLocation: vi.fn(),
-    getUniformLocation: vi.fn(() => ({})),
-    getActiveAttrib: vi.fn(() => ({ name: 'a_position' })),
-    getActiveUniform: vi.fn(() => ({ name: 'u_matrix' })),
-    vertexAttribPointer: vi.fn(),
-    useProgram: vi.fn(),
-    uniformMatrix4fv: vi.fn(),
-    uniform1f: vi.fn(),
-    uniform4f: vi.fn(),
-    uniform1i: vi.fn(),
-    activeTexture: vi.fn(),
-    getBufferParameter: vi.fn(() => 1024), // Mock buffer size
-    enableVertexAttribArray: vi.fn(),
-    drawElements: vi.fn(),
-    enable: vi.fn(),
-    depthFunc: vi.fn(),
-    cullFace: vi.fn(),
-    frontFace: vi.fn(),
-    clearColor: vi.fn(),
-    clearDepth: vi.fn(),
-    viewport: vi.fn(),
-    clear: vi.fn(),
-    bindFramebuffer: vi.fn(),
-    drawBuffers: vi.fn(),
+    createBuffer: mock(() => {}),
+    bindBuffer: mock(() => {}),
+    bufferData: mock(() => {}),
+    createTexture: mock(() => {}),
+    bindTexture: mock(() => {}),
+    texImage2D: mock(() => {}),
+    createProgram: mock(() => ({})),
+    createShader: mock(() => ({})),
+    shaderSource: mock(() => {}),
+    compileShader: mock(() => {}),
+    attachShader: mock(() => {}),
+    linkProgram: mock(() => {}),
+    getProgramParameter: mock((program, pname) => pname === 35714 /* GL.LINK_STATUS */ ? true : 1),
+    getShaderParameter: mock((shader, pname) => pname === 35713 /* GL.COMPILE_STATUS */ ? true : 1),
+    getShaderInfoLog: mock(() => ''),
+    getProgramInfoLog: mock(() => ''),
+    pixelStorei: mock(() => {}),
+    texParameteri: mock(() => {}),
+    getAttribLocation: mock(() => {}),
+    getUniformLocation: mock(() => ({})),
+    getActiveAttrib: mock(() => ({ name: 'a_position' })),
+    getActiveUniform: mock(() => ({ name: 'u_matrix' })),
+    vertexAttribPointer: mock(() => {}),
+    useProgram: mock(() => {}),
+    uniformMatrix4fv: mock(() => {}),
+    uniform1f: mock(() => {}),
+    uniform4f: mock(() => {}),
+    uniform1i: mock(() => {}),
+    activeTexture: mock(() => {}),
+    getBufferParameter: mock(() => 1024), // Mock buffer size
+    enableVertexAttribArray: mock(() => {}),
+    drawElements: mock(() => {}),
+    enable: mock(() => {}),
+    depthFunc: mock(() => {}),
+    cullFace: mock(() => {}),
+    frontFace: mock(() => {}),
+    clearColor: mock(() => {}),
+    clearDepth: mock(() => {}),
+    viewport: mock(() => {}),
+    clear: mock(() => {}),
+    bindFramebuffer: mock(() => {}),
+    drawBuffers: mock(() => {}),
 } as unknown as WebGL2RenderingContext;
 
 let sceneMakeSpy: any;
@@ -60,9 +60,8 @@ let mtlMaterialSpy: any;
 let OriginalMtlMaterial: any;
 
 beforeEach(() => {
-    vi.clearAllMocks();
     // Mock fetch to return dummy shader code or dummy PNG buffer
-    globalThis.fetch = vi.fn((url) => {
+    globalThis.fetch = mock((url) => {
         if (typeof url === 'string' && url.endsWith('.png')) {
             return Promise.resolve({
                 ok: true,
@@ -75,25 +74,25 @@ beforeEach(() => {
         });
     }) as any;
     // Mock parsePng to always return a dummy image
-    vi.spyOn(PngModule, 'parsePng').mockResolvedValue({
+    spyOn(PngModule, 'parsePng').mockResolvedValue({
         width: 1,
         height: 1,
         data: new Uint8Array([128, 128, 128, 255]),
     });
     // Mock alert to a no-op
     globalThis.alert = () => {};
-    sceneMakeSpy = vi.spyOn(Scene, 'make').mockImplementation((gl) => Promise.resolve(new Scene(gl, [])));
-    gameObjectMakeSpy = vi.spyOn(GameObject, 'fromJSON').mockResolvedValue(Object.create(GameObject.prototype));
+    sceneMakeSpy = spyOn(Scene, 'make').mockImplementation((gl) => Promise.resolve(new Scene(gl, [])));
+    gameObjectMakeSpy = spyOn(GameObject, 'fromJSON').mockResolvedValue(Object.create(GameObject.prototype));
     // Provide a realistic mock structure for ObjFile using constructors
     const group = new ObjModule.ObjGroup(new Float32Array(), new Uint32Array(), null);
     const obj = new ObjModule.ObjObject({ temp: group });
     const objects = { temp: obj };
-    parseObjSpy = vi.spyOn(ObjModule, 'parseObj').mockResolvedValue(
+    parseObjSpy = spyOn(ObjModule, 'parseObj').mockResolvedValue(
         new ObjModule.ObjFile(objects, { x: { min: 0, max: 1 }, y: { min: 0, max: 1 }, z: { min: 0, max: 1 } })
     );
     // Save the original constructor
     OriginalMtlMaterial = ObjModule.MtlMaterial;
-    mtlMaterialSpy = vi.spyOn(ObjModule, 'MtlMaterial').mockImplementation(() => {
+    mtlMaterialSpy = spyOn(ObjModule, 'MtlMaterial').mockImplementation(() => {
         const mat = new OriginalMtlMaterial();
         mat.diffuse = vec3.fromValues(1, 0, 0);  // Set default diffuse color to red
         mat.specularExponent = 64;
@@ -112,7 +111,7 @@ afterEach(() => {
 
 describe('Scene Format', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        // Clear all mocks - Bun doesn't have a direct equivalent, but individual mocks can be cleared
     });
 
     it('should load a basic scene with a single mesh object', async () => {

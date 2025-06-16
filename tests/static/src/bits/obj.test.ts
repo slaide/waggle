@@ -1,10 +1,10 @@
 import { parseObj } from '../../../../static/src/bits/obj';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 
 describe('OBJ Parser', () => {
     beforeEach(() => {
         // Reset fetch mock before each test
-        vi.clearAllMocks();
+        // Bun doesn't have a direct equivalent to vi.clearAllMocks()
     });
 
     describe('parseObj', () => {
