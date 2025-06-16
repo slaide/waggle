@@ -204,33 +204,15 @@ export class Model extends GameObject {
         if (!this.programInfo) return;
 
         this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
-        // bind vertex data: position (in common vertexdata buffer)
-        this.gl.vertexAttribPointer(
-            this.programInfo.attributeLocations.aVertexPosition,
-            3,
-            GL.FLOAT,
-            false,
-            VertexData.size,
-            VertexData.fields.position.offset!,
-        );
-        // bind vertex data: normal (in common vertexdata buffer)
-        this.gl.vertexAttribPointer(
-            this.programInfo.attributeLocations.aVertexNormal,
-            3,
-            GL.FLOAT,
-            false,
-            VertexData.size,
-            VertexData.fields.normal.offset!,
-        );
-        // bind vertex data: uv coords (in common vertexdata buffer)
-        this.gl.vertexAttribPointer(
-            this.programInfo.attributeLocations.aVertexTexCoord,
-            2,
-            GL.FLOAT,
-            false,
-            VertexData.size,
-            VertexData.fields.texCoord.offset!,
-        );
+        
+        // Debug: uncomment to check vertex attribute setup
+        // console.log(`📊 Upload debug - VertexData.size: ${VertexData.size}, position offset: ${VertexData.fields.position.offset}, normal offset: ${VertexData.fields.normal.offset}, texCoord offset: ${VertexData.fields.texCoord.offset}`);
+        
+        // Check buffer size in WebGL context
+        this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
+        const bufferSize = this.gl.getBufferParameter(GL.ARRAY_BUFFER, GL.BUFFER_SIZE);
+        // Debug: uncomment to check buffer sizes
+        // console.log(`📊 WebGL buffer actual size: ${bufferSize} bytes, numTris: ${this.numTris}`);
 
         // upload shader binding data
         this.gl.useProgram(this.programInfo.program);
@@ -284,15 +266,41 @@ export class Model extends GameObject {
         gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
         gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
 
-        // prepare draw: enable vertex data
+        // prepare draw: enable vertex data and set up attribute pointers
         gl.enableVertexAttribArray(
             programInfo.attributeLocations.aVertexPosition,
         );
+        gl.vertexAttribPointer(
+            programInfo.attributeLocations.aVertexPosition,
+            3,
+            GL.FLOAT,
+            false,
+            VertexData.size,
+            VertexData.fields.position.offset!,
+        );
+        
         gl.enableVertexAttribArray(
             programInfo.attributeLocations.aVertexNormal,
         );
+        gl.vertexAttribPointer(
+            programInfo.attributeLocations.aVertexNormal,
+            3,
+            GL.FLOAT,
+            false,
+            VertexData.size,
+            VertexData.fields.normal.offset!,
+        );
+        
         gl.enableVertexAttribArray(
             programInfo.attributeLocations.aVertexTexCoord,
+        );
+        gl.vertexAttribPointer(
+            programInfo.attributeLocations.aVertexTexCoord,
+            2,
+            GL.FLOAT,
+            false,
+            VertexData.size,
+            VertexData.fields.texCoord.offset!,
         );
 
         // bind texture buffer
@@ -300,7 +308,9 @@ export class Model extends GameObject {
         gl.bindTexture(gl.TEXTURE_2D, this.buffers.texture);
 
         // draw mesh
-        gl.drawElements(GL.TRIANGLES, this.numTris * 3, GL.UNSIGNED_INT, 0);
+        const elementCount = this.numTris * 3;
+        
+        gl.drawElements(GL.TRIANGLES, elementCount, GL.UNSIGNED_INT, 0);
     }
 
     override toJSON(): MeshObject {
@@ -493,6 +503,10 @@ export class Model extends GameObject {
         // Convert arrays to typed arrays if needed
         const typedVertexData = vertexData instanceof Float32Array ? vertexData : new Float32Array(vertexData);
         const typedIndices = indices instanceof Uint32Array ? indices : new Uint32Array(indices);
+
+        // Debug: uncomment to check buffer upload sizes
+        // console.log(`📊 Buffer upload - Vertex data: ${typedVertexData.length} floats (${typedVertexData.byteLength} bytes), Index data: ${typedIndices.length} indices`);
+        // console.log(`📊 Buffer upload - Expected vertices: ${typedVertexData.length / 8}, Max index should be: ${(typedVertexData.length / 8) - 1}`);
 
         // Create buffers
         buffers.vertexData = gl.createBuffer();

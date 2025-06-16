@@ -41,8 +41,6 @@ def get_repo_url():
 # from https://medium.com/@aadibajpai/deploying-to-pythonanywhere-via-github-6f967956e664
 @app.post("/update_server")
 def update_server(request:Request):
-    repo=git.Repo(PROJROOTDIR)
-
     # pull
     subprocess.run(['git', 'pull'], cwd=PROJROOTDIR, check=True)
 
@@ -93,7 +91,8 @@ async def serve(full_path: str):
 # implement routes regardless, but only start server here if this is the main entry point
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description="")
-    parser.add_argument("--port","-p",type=int,default=8000,help=f"Port to serve on. defaults to None.")
+    default_port=8000
+    parser.add_argument("--port","-p",type=int,default=default_port,help=f"Port to serve on. defaults to {default_port}.")
     args=parser.parse_args()
 
     PORT=args.port

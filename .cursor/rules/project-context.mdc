@@ -1,0 +1,42 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Waggle Project Context
+
+## Overview
+Waggle is a rendering framework based on WebGL2. This project follows a specific build and deployment pattern that combines modern JavaScript tooling with a Python server setup using uv.
+
+## Build System & Runtime
+- **Use Bun, not npm/Node.js**: This project uses the Bun JavaScript runtime exclusively
+- **Main build command**: `bun run build` or `bun run bundle`
+- **Entry point**: [static/src/main.ts](mdc:static/src/main.ts) gets bundled to `static/src/bundle.js`
+- **Build target**: Browser-optimized with minification and sourcemaps
+- **Package management**: Use `bun install`, `bun add`, `bun remove` instead of npm equivalents
+
+## Architecture
+- **Frontend**: WebGL2-based rendering application written in TypeScript
+- **Backend**: Python server (run via uv) that serves static files from the `static/` directory
+- **Build Process**: 
+  1. TypeScript/AssemblyScript code is bundled with Bun
+  2. Generated bundle.js and other static assets are served by Python server (via uv)
+  3. No complex backend logic - pure static file serving
+
+## Key Technologies
+- **WebGL2**: Core rendering technology
+- **TypeScript**: Main application language  
+- **AssemblyScript**: Used for performance-critical components (compiled to WebAssembly)
+- **gl-matrix**: 3D math library for WebGL operations
+- **Bun**: Build tool and JavaScript runtime
+
+## Development Workflow
+1. Edit TypeScript source files in `static/src/`
+2. Run `bun run build` to bundle for browser
+3. Start Python static file server (via uv) to serve the application
+4. For AssemblyScript: use `asc:build` commands to compile to WebAssembly
+
+## File Structure
+- `static/src/`: Source TypeScript/AssemblyScript files
+- `static/src/bundle.js`: Generated bundle (do not edit directly)
+- [package.json](mdc:package.json): Project configuration and build scripts

@@ -38,6 +38,19 @@ const mockGL = {
     uniform4f: vi.fn(),
     uniform1i: vi.fn(),
     activeTexture: vi.fn(),
+    getBufferParameter: vi.fn(() => 1024), // Mock buffer size
+    enableVertexAttribArray: vi.fn(),
+    drawElements: vi.fn(),
+    enable: vi.fn(),
+    depthFunc: vi.fn(),
+    cullFace: vi.fn(),
+    frontFace: vi.fn(),
+    clearColor: vi.fn(),
+    clearDepth: vi.fn(),
+    viewport: vi.fn(),
+    clear: vi.fn(),
+    bindFramebuffer: vi.fn(),
+    drawBuffers: vi.fn(),
 } as unknown as WebGL2RenderingContext;
 
 let sceneMakeSpy: any;

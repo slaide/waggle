@@ -3,6 +3,7 @@
     "typescript.inlayHints.parameterNames.enabled": "all",
     "python.defaultInterpreterPath": ".venv/bin/python3",
     "files.associations": {
-        "*.as.ts": "assemblyscript"
+        /* assemblyscript, posing as typescript */
+        "*.as.ts": "typescript"
     }
 }
