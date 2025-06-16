@@ -71,4 +71,39 @@ export class Camera{
             this.zfar
         );
     }
+
+    toJSON() {
+        return {
+            fov: this.fov,
+            aspect: this.aspect,
+            znear: this.znear,
+            zfar: this.zfar,
+            position: Array.from(this.position) as [number, number, number],
+            rotation: Array.from(this.rotation) as [number, number, number, number]
+        };
+    }
+
+    static fromJSON(data: any): Camera {
+        // Type guard inline
+        if (typeof data !== 'object' || data === null) {
+            throw new Error("Invalid camera data format");
+        }
+        
+        if (!Array.isArray(data.position) || data.position.length !== 3) {
+            throw new Error("Camera must have valid position array");
+        }
+        
+        if (!Array.isArray(data.rotation) || data.rotation.length !== 4) {
+            throw new Error("Camera must have valid rotation quaternion");
+        }
+
+        return new Camera(
+            data.fov ?? 45,
+            data.aspect ?? 800/600,
+            data.znear ?? 0.1,
+            data.zfar ?? 100,
+            vec3.fromValues(data.position[0], data.position[1], data.position[2]),
+            quat.fromValues(data.rotation[0], data.rotation[1], data.rotation[2], data.rotation[3])
+        );
+    }
 }

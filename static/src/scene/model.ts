@@ -5,7 +5,6 @@ import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct } from "../struct";
 import { GameObject } from "./gameobject";
-import { MeshObject, SceneMaterial } from "./scene_format";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
@@ -151,7 +150,7 @@ export class Model extends GameObject {
         return this._rawShaderSources;
     }
 
-    get material(): SceneMaterial | undefined {
+    get material() {
         if (!this._material) return undefined;
         return {
             diffuse: this._material.diffuse ? new Float32Array([
@@ -181,7 +180,7 @@ export class Model extends GameObject {
         this._rawShaderSources = sources;
     }
 
-    set material(mat: SceneMaterial | undefined) {
+    set material(mat: any) {
         if (!mat) {
             this._material = undefined;
             return;
@@ -190,7 +189,7 @@ export class Model extends GameObject {
         if (mat.diffuse) {
             this._material.diffuse = vec3.fromValues(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
         }
-        this._material.specularExponent = mat.specularExponent;
+        this._material.specularExponent = mat.specularExponent ?? 1.0;
         if (mat.diffuseTexture) {
             this._material.map_diffuse = { source: mat.diffuseTexture };
         }
@@ -201,48 +200,78 @@ export class Model extends GameObject {
     }
 
     override upload() {
+        // All buffers are created during construction
+        // This method is for compatibility with the GameObject interface
+    }
+
+    // sets up uniforms for lighting
+    setUniforms(
+        viewMatrix: Float32Array,
+        projectionMatrix: Float32Array,
+        lightData: {
+            pointLights?: Array<{
+                position: Float32Array;
+                color: Float32Array;
+                intensity: number;
+                radius: number;
+            }>;
+            directionalLights?: Array<{
+                direction: Float32Array;
+                color: Float32Array;
+                intensity: number;
+            }>;
+        } = {}
+    ) {
         if (!this.programInfo) return;
 
-        this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
-        
-        // Debug: uncomment to check vertex attribute setup
-        // console.log(`📊 Upload debug - VertexData.size: ${VertexData.size}, position offset: ${VertexData.fields.position.offset}, normal offset: ${VertexData.fields.normal.offset}, texCoord offset: ${VertexData.fields.texCoord.offset}`);
-        
-        // Check buffer size in WebGL context
-        this.gl.bindBuffer(GL.ARRAY_BUFFER, this.buffers.vertexData);
-        const bufferSize = this.gl.getBufferParameter(GL.ARRAY_BUFFER, GL.BUFFER_SIZE);
-        // Debug: uncomment to check buffer sizes
-        // console.log(`📊 WebGL buffer actual size: ${bufferSize} bytes, numTris: ${this.numTris}`);
+        const gl = this.gl;
+        const modelMatrix = this.transform.matrix;
 
-        // upload shader binding data
-        this.gl.useProgram(this.programInfo.program);
-        this.gl.uniformMatrix4fv(
+        // Activate the shader program first
+        gl.useProgram(this.programInfo.program);
+
+        // Set transformation matrices
+        gl.uniformMatrix4fv(
             this.programInfo.uniformLocations.uModelMatrix,
             false,
-            this.transform.matrix,
+            modelMatrix,
+        );
+        gl.uniformMatrix4fv(
+            this.programInfo.uniformLocations.uViewMatrix,
+            false,
+            viewMatrix,
+        );
+        gl.uniformMatrix4fv(
+            this.programInfo.uniformLocations.uProjectionMatrix,
+            false,
+            projectionMatrix,
         );
 
-        // Set specular exponent uniform
-        const specularExponent = this.material?.specularExponent ?? 64.0;
-        this.gl.uniform1f(
-            this.programInfo.uniformLocations.uSpecularExponent,
-            specularExponent
-        );
+        // Set material properties
+        if (this._material) {
+            if (this._material.diffuse) {
+                gl.uniform4fv(
+                    this.programInfo.uniformLocations.uDiffuseColor,
+                    new Float32Array([this._material.diffuse[0], this._material.diffuse[1], this._material.diffuse[2], 1.0]),
+                );
+            } else {
+                gl.uniform4fv(
+                    this.programInfo.uniformLocations.uDiffuseColor,
+                    new Float32Array([1, 1, 1, 1])
+                );
+            }
 
-        // Set diffuse color uniform
-        if (this.material?.diffuse) {
-            this.gl.uniform4f(
-                this.programInfo.uniformLocations.uDiffuseColor,
-                this.material.diffuse[0],
-                this.material.diffuse[1],
-                this.material.diffuse[2],
-                1.0
+            gl.uniform1f(
+                this.programInfo.uniformLocations.uSpecularExponent,
+                this._material.specularExponent || 32,
             );
         }
 
-        const gl = this.gl;
-        // Set texture usage flag and bind texture if needed
-        const useTexture = this.material?.diffuseTexture !== undefined;
+        // Note: Lighting is handled in the deferred rendering pass, not here
+        // This shader just outputs to G-buffer (position, normal, albedo+specular)
+
+        // Set texture usage flag
+        const useTexture = !!(this._material?.map_diffuse);
         gl.uniform1i(this.programInfo.uniformLocations.uUseDiffuseTexture, useTexture ? 1 : 0);
         
         if (useTexture) {
@@ -313,10 +342,11 @@ export class Model extends GameObject {
         gl.drawElements(GL.TRIANGLES, elementCount, GL.UNSIGNED_INT, 0);
     }
 
-    override toJSON(): MeshObject {
-        const base = super.toJSON() as MeshObject;
+    override toJSON() {
+        const base = super.toJSON();
         return {
             ...base,
+            type: "mesh" as const,
             material: this.material,
             numTris: this.numTris,
             rawVertexData: this.rawVertexData,
@@ -326,7 +356,12 @@ export class Model extends GameObject {
         };
     }
 
-    static async fromJSON(gl: GLC, data: MeshObject): Promise<Model> {
+    static async fromJSON(gl: GLC, data: any): Promise<Model> {
+        // Type guard inline
+        if (typeof data !== 'object' || data === null || data.type !== "mesh") {
+            throw new Error("Invalid mesh object data format");
+        }
+
         const transform = Transform.fromJSON(data.transform);
         
         // Always convert to typed arrays before passing to makeBuffers
@@ -339,10 +374,13 @@ export class Model extends GameObject {
             if (data.material.diffuse) {
                 material.diffuse = vec3.fromValues(data.material.diffuse[0], data.material.diffuse[1], data.material.diffuse[2]);
             }
-            material.specularExponent = data.material.specularExponent;
+            material.specularExponent = data.material.specularExponent ?? 1.0;
             if (data.material.diffuseTexture) {
                 material.map_diffuse = { source: data.material.diffuseTexture };
             }
+        } else {
+            // Set default material properties when no material data is provided
+            material.specularExponent = 1.0;
         }
         
         const buffers = await Model.makeBuffers(
@@ -390,6 +428,9 @@ export class Model extends GameObject {
         const shaderMaterial = group.material ?? new MtlMaterial();
         if (!shaderMaterial.diffuse) {
             shaderMaterial.diffuse = vec3.fromValues(1, 1, 1);
+        }
+        if (shaderMaterial.specularExponent === undefined) {
+            shaderMaterial.specularExponent = 1.0;
         }
 
         const diffuse_map_source = shaderMaterial?.map_diffuse?.source ?? "";
@@ -445,39 +486,31 @@ export class Model extends GameObject {
 
         const shaderProgram = await createShaderProgram(gl, {
             vs: vsSource,
-            fs: fsSource
+            fs: fsSource,
         });
 
-        const numAttributes = gl.getProgramParameter(
-            shaderProgram,
-            gl.ACTIVE_ATTRIBUTES,
-        );
         const attributeLocations: { [name: string]: GLint } = {};
+        const uniformLocations: { [name: string]: WebGLUniformLocation } = {};
+
+        // Get attribute locations
+        const numAttributes = gl.getProgramParameter(shaderProgram, GL.ACTIVE_ATTRIBUTES);
         for (let i = 0; i < numAttributes; i++) {
-            const attribute = gl.getActiveAttrib(shaderProgram, i);
-            if (attribute == null) continue;
-            const { name } = attribute;
-            const loc = gl.getAttribLocation(shaderProgram, name);
-            attributeLocations[name] = loc;
+            const info = gl.getActiveAttrib(shaderProgram, i);
+            if (info) {
+                attributeLocations[info.name] = gl.getAttribLocation(shaderProgram, info.name);
+            }
         }
 
-        const numUniforms = gl.getProgramParameter(
-            shaderProgram,
-            gl.ACTIVE_UNIFORMS,
-        );
-        const uniformLocations: { [name: string]: WebGLUniformLocation } = {};
+        // Get uniform locations
+        const numUniforms = gl.getProgramParameter(shaderProgram, GL.ACTIVE_UNIFORMS);
         for (let i = 0; i < numUniforms; i++) {
-            const uniform = gl.getActiveUniform(shaderProgram, i);
-            if (uniform == null) continue;
-
-            const loc = gl.getUniformLocation(shaderProgram, uniform.name);
-            if (!loc) {
-                const error = `getUniformLocation failed ${uniform.name}`;
-                console.error(error);
-                throw error;
+            const info = gl.getActiveUniform(shaderProgram, i);
+            if (info) {
+                const location = gl.getUniformLocation(shaderProgram, info.name);
+                if (location) {
+                    uniformLocations[info.name] = location;
+                }
             }
-
-            uniformLocations[uniform.name] = loc;
         }
 
         return {
@@ -494,63 +527,57 @@ export class Model extends GameObject {
         vertexData: Float32Array | number[],
         indices: Uint32Array | number[],
     ): Promise<Buffer> {
-        const buffers: Buffer = {
-            vertexData: 0,
-            indices: 0,
-            texture: 0,
-        };
+        // Create vertex buffer
+        const vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(GL.ARRAY_BUFFER, vertexBuffer);
+        
+        // Convert to Float32Array if needed
+        const vertexArray = vertexData instanceof Float32Array ? vertexData : new Float32Array(vertexData);
+        gl.bufferData(GL.ARRAY_BUFFER, vertexArray, GL.STATIC_DRAW);
 
-        // Convert arrays to typed arrays if needed
-        const typedVertexData = vertexData instanceof Float32Array ? vertexData : new Float32Array(vertexData);
-        const typedIndices = indices instanceof Uint32Array ? indices : new Uint32Array(indices);
+        // Create index buffer
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        
+        // Convert to Uint32Array if needed
+        const indexArray = indices instanceof Uint32Array ? indices : new Uint32Array(indices);
+        gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, indexArray, GL.STATIC_DRAW);
 
-        // Debug: uncomment to check buffer upload sizes
-        // console.log(`📊 Buffer upload - Vertex data: ${typedVertexData.length} floats (${typedVertexData.byteLength} bytes), Index data: ${typedIndices.length} indices`);
-        // console.log(`📊 Buffer upload - Expected vertices: ${typedVertexData.length / 8}, Max index should be: ${(typedVertexData.length / 8) - 1}`);
+        // Create texture
+        const texture = gl.createTexture();
+        gl.bindTexture(GL.TEXTURE_2D, texture);
 
-        // Create buffers
-        buffers.vertexData = gl.createBuffer();
-        gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
-        gl.bufferData(GL.ARRAY_BUFFER, typedVertexData, GL.STATIC_DRAW);
-
-        buffers.indices = gl.createBuffer();
-        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
-        gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, typedIndices, GL.STATIC_DRAW);
-
-        buffers.texture = gl.createTexture();
-        gl.bindTexture(GL.TEXTURE_2D, buffers.texture);
-
-        let imageres = {
-            width: 1,
-            height: 1,
-            data: new Uint8Array([0.5, 0.5, 0.5, 1]),
-        };
-        if (diffuseTexturePath) {
-            // @ts-ignore
-            imageres = await parsePng(diffuseTexturePath);
+        // Load texture or create default
+        if (diffuseTexturePath && diffuseTexturePath.length > 0) {
+            try {
+                const response = await fetch(diffuseTexturePath);
+                if (!response.ok) {
+                    throw new Error(`Failed to load texture: ${response.statusText}`);
+                }
+                const buffer = await response.arrayBuffer();
+                const imageData = await parsePng(diffuseTexturePath);
+                
+                gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
+            } catch (error) {
+                console.warn('Failed to load texture, using default:', error);
+                // Create a 1x1 white texture as fallback
+                gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+            }
+        } else {
+            // Create a 1x1 white texture
+            gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
         }
-        const { width, height, data } = imageres;
 
-        // Flip image pixels into the bottom-to-top order that WebGL expects.
-        gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
-
-        gl.texImage2D(
-            GL.TEXTURE_2D,
-            0,
-            GL.RGBA,
-            width,
-            height,
-            0,
-            GL.RGBA,
-            GL.UNSIGNED_BYTE,
-            data,
-        );
-
+        // Set texture parameters
         gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
         gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
-        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
-        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
+        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
 
-        return buffers;
+        return {
+            vertexData: vertexBuffer,
+            indices: indexBuffer,
+            texture: texture,
+        };
     }
 } 

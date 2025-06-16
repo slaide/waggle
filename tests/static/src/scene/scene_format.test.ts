@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
-import { SceneDescription, loadScene } from '../../../../static/src/scene/scene_format';
+import { SceneDescription, loadScene } from '../../../../static/src/scene/scene';
 import { Scene } from '../../../../static/src/scene/scene';
 import { GameObject } from '../../../../static/src/scene/gameobject';
 import * as ObjModule from '../../../../static/src/bits/obj';
@@ -92,7 +92,7 @@ beforeEach(() => {
     );
     // Save the original constructor
     OriginalMtlMaterial = ObjModule.MtlMaterial;
-    mtlMaterialSpy = spyOn(ObjModule, 'MtlMaterial').mockImplementation(() => {
+    mtlMaterialSpy = (spyOn(ObjModule, 'MtlMaterial') as any).mockImplementation(() => {
         const mat = new OriginalMtlMaterial();
         mat.diffuse = vec3.fromValues(1, 0, 0);  // Set default diffuse color to red
         mat.specularExponent = 64;

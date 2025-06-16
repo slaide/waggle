@@ -2,15 +2,6 @@
 
 import { GL, GLC } from "../gl";
 import { Transform } from "./transform";
-import { 
-    Serializable, 
-    SceneObject, 
-    isSceneObject,
-    BaseSceneObject,
-    MeshObject,
-    PointLightObject,
-    DirectionalLightObject
-} from "./scene_format";
 
 type ProgramInfo = {
     program: WebGLProgram;
@@ -88,7 +79,7 @@ export async function createShaderProgram(
 }
 
 // Base class for all game objects
-export class GameObject implements Serializable<GameObject> {
+export class GameObject {
     public type: "mesh" | "point_light" | "directional_light";
     public programInfo?: ProgramInfo;
     
@@ -122,24 +113,29 @@ export class GameObject implements Serializable<GameObject> {
     }
 
     // Base serialization
-    toJSON(): SceneObject {
+    toJSON() {
         return {
             type: this.type,
             name: this.name,
             enabled: this.enabled,
             visible: this.visible,
-            transform: {
-                position: Array.from(this.transform.position) as [number, number, number],
-                rotation: Array.from(this.transform.rotation) as [number, number, number, number],
-                scale: Array.from(this.transform.scale) as [number, number, number]
-            }
-        } as SceneObject;
+            transform: this.transform.toJSON()
+        };
     }
 
     // Base deserialization
-    static async fromJSON(gl: GLC, data: SceneObject): Promise<GameObject> {
-        if (!isSceneObject(data)) {
+    static async fromJSON(gl: GLC, data: any): Promise<GameObject> {
+        // Type guard inline
+        if (typeof data !== 'object' || data === null) {
             throw new Error("Invalid game object data format");
+        }
+        
+        if (!data.type || typeof data.type !== 'string') {
+            throw new Error("Game object must have a type field");
+        }
+        
+        if (!["mesh", "point_light", "directional_light"].includes(data.type)) {
+            throw new Error(`Unknown object type: ${data.type}`);
         }
 
         const transform = Transform.fromJSON(data.transform);
@@ -148,14 +144,14 @@ export class GameObject implements Serializable<GameObject> {
         const { Model } = await import("./model");
         const { PointLight, DirectionalLight } = await import("./light");
         
-        const type = (data as BaseSceneObject).type;
+        const type = data.type;
         switch (type) {
             case "mesh":
-                return Model.fromJSON(gl, data as MeshObject);
+                return Model.fromJSON(gl, data);
             case "point_light":
-                return PointLight.fromJSON(gl, data as PointLightObject);
+                return PointLight.fromJSON(gl, data);
             case "directional_light":
-                return DirectionalLight.fromJSON(gl, data as DirectionalLightObject);
+                return DirectionalLight.fromJSON(gl, data);
             default:
                 throw new Error(`Unknown object type: ${type}`);
         }

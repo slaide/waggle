@@ -2,7 +2,6 @@ import { GLC } from "../gl";
 import { vec3 } from "gl-matrix";
 import { Transform } from "./transform";
 import { GameObject } from "./gameobject";
-import { PointLightObject, DirectionalLightObject } from "./scene_format";
 
 // Base class for lights
 export class Light extends GameObject {
@@ -18,7 +17,7 @@ export class Light extends GameObject {
         super(gl, transform, enabled, visible, name);
     }
 
-    override toJSON(): any {
+    override toJSON() {
         return {
             ...super.toJSON(),
             color: Array.from(this.color),
@@ -29,6 +28,8 @@ export class Light extends GameObject {
 
 // Point light class
 export class PointLight extends Light {
+    public type = "point_light" as const;
+
     constructor(
         gl: GLC,
         transform: Transform,
@@ -42,15 +43,28 @@ export class PointLight extends Light {
         super(gl, transform, color, intensity, enabled, visible, name);
     }
 
-    override toJSON(): any {
+    override toJSON() {
         return {
             ...super.toJSON(),
-            type: "point_light",
+            type: "point_light" as const,
             radius: this.radius,
         };
     }
 
-    static async fromJSON(gl: GLC, data: PointLightObject): Promise<PointLight> {
+    static async fromJSON(gl: GLC, data: any): Promise<PointLight> {
+        // Type guard inline
+        if (typeof data !== 'object' || data === null || data.type !== "point_light") {
+            throw new Error("Invalid point light data format");
+        }
+        
+        if (!Array.isArray(data.color) || data.color.length !== 3) {
+            throw new Error("Point light must have valid color array");
+        }
+        
+        if (typeof data.intensity !== 'number' || typeof data.radius !== 'number') {
+            throw new Error("Point light must have valid intensity and radius");
+        }
+
         const transform = Transform.fromJSON(data.transform);
         return new PointLight(
             gl,
@@ -67,6 +81,8 @@ export class PointLight extends Light {
 
 // Directional light class
 export class DirectionalLight extends Light {
+    public type = "directional_light" as const;
+
     constructor(
         gl: GLC,
         transform: Transform,
@@ -80,15 +96,32 @@ export class DirectionalLight extends Light {
         super(gl, transform, color, intensity, enabled, visible, name);
     }
 
-    override toJSON(): any {
+    override toJSON() {
         return {
             ...super.toJSON(),
-            type: "directional_light",
+            type: "directional_light" as const,
             direction: Array.from(this.direction),
         };
     }
 
-    static async fromJSON(gl: GLC, data: DirectionalLightObject): Promise<DirectionalLight> {
+    static async fromJSON(gl: GLC, data: any): Promise<DirectionalLight> {
+        // Type guard inline
+        if (typeof data !== 'object' || data === null || data.type !== "directional_light") {
+            throw new Error("Invalid directional light data format");
+        }
+        
+        if (!Array.isArray(data.color) || data.color.length !== 3) {
+            throw new Error("Directional light must have valid color array");
+        }
+        
+        if (typeof data.intensity !== 'number') {
+            throw new Error("Directional light must have valid intensity");
+        }
+        
+        if (!Array.isArray(data.direction) || data.direction.length !== 3) {
+            throw new Error("Directional light must have valid direction array");
+        }
+
         const transform = Transform.fromJSON(data.transform);
         return new DirectionalLight(
             gl,

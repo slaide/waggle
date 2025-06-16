@@ -1,7 +1,7 @@
 import { vec3, quat } from "gl-matrix";
 import { GBuffer } from "./gbuffer";
 import { GL } from "./gl";
-import { loadScene, SceneDescription } from "./scene/scene_format";
+import { loadScene, SceneDescription } from "./scene/scene";
 
 console.log(
     `running in strict mode? ${(function () {
@@ -301,25 +301,54 @@ export async function main() {
                 rotation,
             );
 
-            gl.useProgram(object.programInfo.program);
-            // ensure transform is up to date
-            gl.uniformMatrix4fv(
-                object.programInfo.uniformLocations.uModelMatrix,
-                false,
-                object.transform.matrix,
-            );
-            // ensure transform is up to date
-            gl.uniformMatrix4fv(
-                object.programInfo.uniformLocations.uViewMatrix,
-                false,
-                camera.viewMatrix,
-            );
-            // also update camera projection matrix (TODO optimize to share this between draws)
-            gl.uniformMatrix4fv(
-                object.programInfo.uniformLocations.uProjectionMatrix,
-                false,
-                projectionMatrix,
-            );
+            // Set up all uniforms including lighting for Model objects
+            if (object.type === "mesh") {
+                // Collect light data from scene
+                const lightData = {
+                    pointLights: scene.objects
+                        .filter(obj => obj.type === "point_light")
+                        .map(light => {
+                            const pointLight = light as any; // Cast to access light-specific properties
+                            return {
+                                position: new Float32Array(light.transform.position),
+                                color: new Float32Array(pointLight.color || [1, 1, 1]),
+                                intensity: pointLight.intensity || 1.0,
+                                radius: pointLight.radius || 10.0
+                            };
+                        }),
+                    directionalLights: scene.objects
+                        .filter(obj => obj.type === "directional_light")
+                        .map(light => {
+                            const dirLight = light as any; // Cast to access light-specific properties
+                            return {
+                                direction: new Float32Array(dirLight.direction || [0, -1, 0]),
+                                color: new Float32Array(dirLight.color || [1, 1, 1]),
+                                intensity: dirLight.intensity || 1.0
+                            };
+                        })
+                };
+
+                // Call setUniforms which handles all uniform setup including lighting
+                (object as any).setUniforms(camera.viewMatrix, projectionMatrix, lightData);
+            } else {
+                // Fallback for non-mesh objects - just set transformation matrices
+                gl.useProgram(object.programInfo.program);
+                gl.uniformMatrix4fv(
+                    object.programInfo.uniformLocations.uModelMatrix,
+                    false,
+                    object.transform.matrix,
+                );
+                gl.uniformMatrix4fv(
+                    object.programInfo.uniformLocations.uViewMatrix,
+                    false,
+                    camera.viewMatrix,
+                );
+                gl.uniformMatrix4fv(
+                    object.programInfo.uniformLocations.uProjectionMatrix,
+                    false,
+                    projectionMatrix,
+                );
+            }
         }
     };
 
