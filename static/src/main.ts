@@ -2,13 +2,9 @@ import { vec3, quat } from "gl-matrix";
 import { GBuffer } from "./gbuffer";
 import { GL } from "./gl";
 import { loadScene, SceneDescription } from "./scene/scene";
-
-console.log(
-    `running in strict mode? ${(function () {
-        /// @ts-ignore
-        return !this;
-    })()}`,
-);
+// Import these to ensure GameObject types are registered
+import "./scene/model";
+import "./scene/light";
 
 export async function main() {
     // import wasm like this (instead of top level import!)
@@ -380,7 +376,7 @@ export async function main() {
         gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
 
         // draw scene into gbuffer
-        scene.draw();
+        scene.draw(camera.viewMatrix as Float32Array, camera.projectionMatrix as Float32Array);
 
         // process gbuffer + lights into screen output
         gbuffer.draw();

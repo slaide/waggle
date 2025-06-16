@@ -6,7 +6,7 @@ import { Transform } from "./transform";
 import { Camera } from "./camera";
 import { parseObj } from "../bits/obj";
 import { Model } from "./model";
-import { vec3, quat } from "gl-matrix";
+import { vec3, quat, mat4 } from "gl-matrix";
 
 // Type definitions for scene serialization
 export interface SceneDescription {
@@ -46,13 +46,10 @@ export class Scene {
         for (const object of this.objects) {
             if (!object.enabled) continue;
             
-            callback(object, parentTransform);
-            
-            // If this object has children, traverse them with this object's transform
-            if ('children' in object && Array.isArray((object as any).children)) {
-                const childScene = new Scene(this.gl, (object as any).children);
-                childScene.traverse(callback, object.transform);
-            }
+            // Use the new GameObject traverse method which handles children automatically
+            object.traverse((obj, depth) => {
+                callback(obj, obj.parent?.transform);
+            });
         }
     }
 
@@ -64,21 +61,47 @@ export class Scene {
         this.traverse((obj) => {
             if (obj instanceof PointLight) {
                 pointLights.push(obj);
-                obj.visible = false; // Don't draw the light object
             } else if (obj instanceof DirectionalLight) {
                 directionalLights.push(obj);
-                obj.visible = false; // Don't draw the light object
             }
         });
 
         return { pointLights, directionalLights };
     }
 
-    draw() {
-        // draw (into gbuffer)
+    draw(viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
+        // draw (into gbuffer) - traverse all objects including children
         for (const object of this.objects) {
-            if (!object.visible) continue;
-            object.draw();
+            // Skip entirely disabled objects and their children
+            if (!object.enabled) continue;
+            
+            // Draw with identity matrix as the root parent transform
+            const identityMatrix = new Float32Array(16);
+            mat4.identity(identityMatrix as any);
+            this.drawObjectHierarchy(object, identityMatrix, viewMatrix, projectionMatrix);
+        }
+    }
+
+    private drawObjectHierarchy(obj: GameObject, parentWorldMatrix: Float32Array, viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
+        if (!obj.enabled) return;
+
+        // Get this object's local transform matrix
+        const localMatrix = obj.transform.matrix;
+        
+        // Calculate this object's world matrix by multiplying parent world matrix with local matrix
+        const worldMatrix = new Float32Array(16);
+        mat4.multiply(worldMatrix as any, parentWorldMatrix as any, localMatrix as any);
+
+
+
+        // Draw this object if it should be drawn, passing the accumulated world matrix
+        if (obj.shouldDraw) {
+            obj.drawWithMatrix(worldMatrix, viewMatrix, projectionMatrix);
+        }
+
+        // Recursively draw children with this object's world matrix as their parent matrix
+        for (const child of obj.children) {
+            this.drawObjectHierarchy(child, worldMatrix, viewMatrix, projectionMatrix);
         }
     }
 
@@ -126,68 +149,10 @@ export class Scene {
     static async loadScene(gl: GLC, description: SceneDescription): Promise<Scene> {
         const scene = await Scene.make(gl);
         
-        // Load all objects recursively
-        async function loadObject(obj: any, parentTransform?: Transform): Promise<GameObject> {
-            const transform = Scene.createTransform(obj.transform);
-            if (parentTransform) {
-                // Apply parent transform
-                vec3.add(transform.position, transform.position, parentTransform.position);
-                quat.multiply(transform.rotation, transform.rotation, parentTransform.rotation);
-                vec3.multiply(transform.scale, transform.scale, parentTransform.scale);
-            }
-
-            let gameObject: GameObject;
-
-            if (obj.type === "point_light" || obj.type === "directional_light") {
-                if (obj.type === "point_light") {
-                    gameObject = await PointLight.fromJSON(gl, obj);
-                } else {
-                    gameObject = await DirectionalLight.fromJSON(gl, obj);
-                }
-            } else {
-                // Create regular mesh object
-                if (!obj.model && !obj.meshData) {
-                    throw new Error("Mesh object must have either a model property or meshData");
-                }
-
-                if (obj.model) {
-                    // Load from OBJ file
-                    const modelData = await parseObj(obj.model, { normalizeSize: true });
-                    
-                    // Create model object
-                    gameObject = await Model.make(gl, {
-                        objects: { temp: { groups: { temp: modelData.objects[Object.keys(modelData.objects)[0]].groups[Object.keys(modelData.objects[Object.keys(modelData.objects)[0]].groups)[0]] } } },
-                        boundingBox: modelData.boundingBox
-                    }, transform);
-                } else {
-                    // Create from serialized data
-                    gameObject = await Model.fromJSON(gl, {
-                        ...obj,
-                        material: obj.material ? {
-                            diffuse: obj.material.diffuse,
-                            specularExponent: obj.material.specularExponent,
-                            diffuseTexture: obj.material.diffuseTexture
-                        } : undefined
-                    });
-                }
-
-                // Load children recursively (only for mesh objects)
-                if (obj.type === "mesh" && obj.children) {
-                    for (const child of obj.children) {
-                        await loadObject(child, transform);
-                    }
-                }
-            }
-
-            gameObject.upload();
+        // Load all objects using the GameObjectRegistry system
+        for (const objData of description.objects) {
+            const gameObject = await GameObject.fromJSON(gl, objData);
             scene.objects.push(gameObject);
-
-            return gameObject;
-        }
-
-        // Load all objects
-        for (const obj of description.objects) {
-            await loadObject(obj);
         }
 
         return scene;

@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:te
 import { SceneDescription, loadScene } from '../../../../static/src/scene/scene';
 import { Scene } from '../../../../static/src/scene/scene';
 import { GameObject } from '../../../../static/src/scene/gameobject';
+// Import these to ensure registration happens
+import '../../../../static/src/scene/model';
+import '../../../../static/src/scene/light';
+import { Model } from '../../../../static/src/scene/model';
 import * as ObjModule from '../../../../static/src/bits/obj';
 import { vec3 } from 'gl-matrix';
 import * as PngModule from '../../../../static/src/bits/png';
@@ -82,7 +86,7 @@ beforeEach(() => {
     // Mock alert to a no-op
     globalThis.alert = () => {};
     sceneMakeSpy = spyOn(Scene, 'make').mockImplementation((gl) => Promise.resolve(new Scene(gl, [])));
-    gameObjectMakeSpy = spyOn(GameObject, 'fromJSON').mockResolvedValue(Object.create(GameObject.prototype));
+    // Remove the GameObject.fromJSON mock to allow actual loading
     // Provide a realistic mock structure for ObjFile using constructors
     const group = new ObjModule.ObjGroup(new Float32Array(), new Uint32Array(), null);
     const obj = new ObjModule.ObjObject({ temp: group });
@@ -102,7 +106,6 @@ beforeEach(() => {
 });
 afterEach(() => {
     sceneMakeSpy.mockRestore();
-    gameObjectMakeSpy.mockRestore();
     parseObjSpy.mockRestore();
     mtlMaterialSpy.mockRestore();
     // Restore fetch
@@ -170,7 +173,8 @@ describe('Scene Format', () => {
 
         const scene = await loadScene(mockGL, description);
         expect(scene).toBeDefined();
-        expect(scene.objects.length).toBe(2);
+        expect(scene.objects.length).toBe(1); // Only parent object is in top-level
+        expect(scene.objects[0].children.length).toBe(1); // Child is nested
     });
 
     it('should load a scene with materials', async () => {
@@ -201,7 +205,7 @@ describe('Scene Format', () => {
         expect(scene).toBeDefined();
         expect(scene.objects[0].material).toBeDefined();
         const material = scene.objects[0].material!;
-        expect(material.diffuse).toEqual(vec3.fromValues(1, 0, 0));
+        expect(Array.from(material.diffuse!)).toEqual([1, 0, 0]);
         expect(material.specularExponent).toBe(64);
         expect(material.diffuseTexture).toBeDefined();
     });

@@ -36,7 +36,17 @@ export class GameObjectRegistry {
             throw new Error(`Unknown or unregistered object type: ${data.type}`);
         }
         
-        return factory(gl, data);
+        const gameObject = await factory(gl, data);
+        
+        // Handle children if they exist
+        if (data.children && Array.isArray(data.children)) {
+            for (const childData of data.children) {
+                const child = await this.create(gl, childData);
+                gameObject.addChild(child);
+            }
+        }
+        
+        return gameObject;
     }
     
     // Get all registered types (useful for debugging)
@@ -117,6 +127,8 @@ export async function createShaderProgram(
 export class GameObject {
     public type: "mesh" | "point_light" | "directional_light";
     public programInfo?: ProgramInfo;
+    public children: GameObject[] = [];
+    private _parent?: GameObject;
     
     get material(): any { return undefined; }
     set material(_: any) {}
@@ -132,6 +144,49 @@ export class GameObject {
         this.type = "mesh" as const;
     }
 
+    // Parent-child relationship management
+    get parent(): GameObject | undefined {
+        return this._parent;
+    }
+
+    addChild(child: GameObject) {
+        if (child._parent) {
+            child._parent.removeChild(child);
+        }
+        
+        this.children.push(child);
+        child._parent = this;
+        child.updateWorldTransforms();
+    }
+
+    removeChild(child: GameObject) {
+        const index = this.children.indexOf(child);
+        if (index !== -1) {
+            this.children.splice(index, 1);
+            child._parent = undefined;
+            child.updateWorldTransforms();
+        }
+    }
+
+    // Update world transforms for this object and all children recursively
+    updateWorldTransforms() {
+        this.transform.markDirty();
+        
+        for (const child of this.children) {
+            child.transform.markDirty();
+            child.updateWorldTransforms();
+        }
+    }
+
+    // Traverse this object and all its children
+    traverse(callback: (obj: GameObject, depth: number) => void, depth: number = 0) {
+        callback(this, depth);
+        
+        for (const child of this.children) {
+            child.traverse(callback, depth + 1);
+        }
+    }
+
     // Getter to determine if object should be drawn
     get shouldDraw(): boolean {
         return this.visible && this.enabled;
@@ -140,6 +195,13 @@ export class GameObject {
     // Base draw method - to be overridden by subclasses
     draw() {
         // Base implementation does nothing
+        // Children are drawn by the scene traversal system
+    }
+
+    // Draw method with explicit world matrix - to be overridden by subclasses
+    drawWithMatrix(worldMatrix: Float32Array, viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
+        // Default implementation just calls regular draw
+        this.draw();
     }
 
     // Base upload method - to be overridden by subclasses
@@ -149,13 +211,19 @@ export class GameObject {
 
     // Base serialization
     toJSON() {
-        return {
+        const result: any = {
             type: this.type,
             name: this.name,
             enabled: this.enabled,
             visible: this.visible,
             transform: this.transform.toJSON()
         };
+
+        if (this.children.length > 0) {
+            result.children = this.children.map(child => child.toJSON());
+        }
+
+        return result;
     }
 
     // Simplified deserialization using the registry

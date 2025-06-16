@@ -17,6 +17,11 @@ export class Light extends GameObject {
         super(gl, transform, enabled, visible, name);
     }
 
+    // Light objects themselves should not be drawn (they're not visual)
+    override get shouldDraw(): boolean {
+        return false;
+    }
+
     override toJSON() {
         return {
             ...super.toJSON(),
