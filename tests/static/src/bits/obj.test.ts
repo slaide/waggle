@@ -1,4 +1,4 @@
-import { parseObj } from './obj';
+import { parseObj } from '../../../../static/src/bits/obj';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('OBJ Parser', () => {

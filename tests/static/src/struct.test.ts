@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { makeStruct, makeUnion, TYPE_REGISTRY, asObj, StructInstance, isPrimitiveInstance, makeArrayType, toPlainObject, ArrayInstance, UnionInstance } from "./struct";
+import { makeStruct, makeUnion, TYPE_REGISTRY, asObj, StructInstance, isPrimitiveInstance, makeArrayType, toPlainObject, ArrayInstance, UnionInstance } from "../../../static/src/struct";
 
 describe('Struct', () => {
     describe('primitive types', () => {

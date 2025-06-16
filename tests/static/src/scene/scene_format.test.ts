@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { SceneDescription, loadScene } from './scene_format';
-import { Scene } from './scene';
-import { GameObject } from './gameobject';
-import * as ObjModule from '../bits/obj';
+import { SceneDescription, loadScene } from '../../../../static/src/scene/scene_format';
+import { Scene } from '../../../../static/src/scene/scene';
+import { GameObject } from '../../../../static/src/scene/gameobject';
+import * as ObjModule from '../../../../static/src/bits/obj';
 import { vec3 } from 'gl-matrix';
-import * as PngModule from '../bits/png';
-import { PointLight, DirectionalLight } from './light';
+import * as PngModule from '../../../../static/src/bits/png';
+import { PointLight, DirectionalLight } from '../../../../static/src/scene/light';
 
 // Mock WebGL context
 const mockGL = {
