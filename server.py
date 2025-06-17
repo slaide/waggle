@@ -41,15 +41,25 @@ def get_repo_url():
 # from https://medium.com/@aadibajpai/deploying-to-pythonanywhere-via-github-6f967956e664
 @app.post("/update_server")
 def update_server(request:Request):
-    # pull
-    subprocess.run(['git', 'pull'], cwd=PROJROOTDIR, check=True)
+    try:
+        # pull
+        subprocess.run(['git', 'pull'], cwd=PROJROOTDIR, check=True)
 
-    # manually execute post-merge commands to keep them tracked in the repo
-    subprocess.run(['bash', '/home/padraig/waggle/server/build.sh'], check=True)
-    subprocess.run(['touch', '/var/www/padraig_eu_pythonanywhere_com_wsgi.py'], check=True)
-    subprocess.run(['bash', '/home/padraig/waggle/server/reload.sh'], check=True)
+        # manually execute post-merge commands to keep them tracked in the repo
+        subprocess.run(['bash', '/home/padraig/waggle/server/build.sh'], check=True)
+        subprocess.run(['touch', '/var/www/padraig_eu_pythonanywhere_com_wsgi.py'], check=True)
+        subprocess.run(['bash', '/home/padraig/waggle/server/reload.sh'], check=True)
 
-    return "Updated successfully", 200
+        return "Updated successfully", 200
+    
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Command failed: {' '.join(e.cmd)} (exit code {e.returncode})"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg) from e
+    except Exception as e:
+        error_msg = f"Update failed: {str(e)}"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg) from e
 
 
 
