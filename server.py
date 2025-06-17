@@ -1,10 +1,5 @@
 #!/usr/bin/env uv run python3
 
-# register filetypes that may not be known to the system
-# (for the purposes of network transfer as raw data, they are all text)
-import mimetypes
-mimetypes.add_type("text/plain", ".mtl", strict=True)
-
 import argparse
 import git
 import uvicorn
@@ -13,6 +8,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
 from email.utils import formatdate
+import mimetypes
 
 PROJROOTDIR=Path(__file__).resolve().parent
 
@@ -65,7 +61,7 @@ def update_server(request:Request):
 
 # this matches all requests, so any other path that should be registered must be registered before!
 @app.get("/{full_path:path}")
-async def serve(full_path: str):
+def serve(full_path: str) -> FileResponse:
     file_path = PROJROOTDIR / full_path
     if file_path.is_file():
         media_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
@@ -93,7 +89,7 @@ async def serve(full_path: str):
         )
 
     if full_path=="" or full_path=="/":
-        return await serve("static/index.html")
+        return serve("static/index.html")
 
     # 3) Neither found → 404
     raise HTTPException(status_code=404, detail="Not Found")
