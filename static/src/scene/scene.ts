@@ -68,6 +68,37 @@ export class Scene {
         return { pointLights, directionalLights };
     }
 
+    // Find a GameObject by its unique ID
+    findObjectById(id: number): GameObject | null {
+        let foundObject: GameObject | null = null;
+        
+        this.traverse((obj) => {
+            if (obj.id === id) {
+                foundObject = obj;
+            }
+        });
+        
+        return foundObject;
+    }
+
+    // Get all objects in the scene including children (for raycast picking)
+    getAllObjects(): GameObject[] {
+        const allObjects: GameObject[] = [];
+        
+        this.traverse((obj) => {
+            allObjects.push(obj);
+        });
+        
+        return allObjects;
+    }
+
+    // Ensure all transforms in the scene are up to date
+    updateAllTransforms() {
+        for (const object of this.objects) {
+            object.ensureTransformsUpdated();
+        }
+    }
+
     draw(viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
         // draw (into gbuffer) - traverse all objects including children
         // Only draw non-forward rendered objects in this pass

@@ -353,6 +353,11 @@ export class Model extends GameObject {
             gl.uniform1i(programInfo.uniformLocations.uDiffuseSampler, 0);
         }
 
+        // Set object ID for picking (only if uniform exists)
+        if (programInfo.uniformLocations.uObjectId) {
+            gl.uniform1ui(programInfo.uniformLocations.uObjectId, this.id);
+        }
+
         // bind vertex and index buffers
         gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
         gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
@@ -528,9 +533,27 @@ export class Model extends GameObject {
             );
         }
 
-        // Draw mesh
-        const elementCount = this.numTris * 3;
-        gl.drawElements(GL.TRIANGLES, elementCount, GL.UNSIGNED_INT, 0);
+        // Set line width if drawing lines
+        if (this.drawMode === "lines") {
+            gl.lineWidth(this.lineWidth);
+        }
+        
+        // Set line color override if specified
+        if (this.lineColor && forwardProgramInfo.uniformLocations.uDiffuseColor) {
+            gl.uniform4fv(
+                forwardProgramInfo.uniformLocations.uDiffuseColor,
+                new Float32Array([this.lineColor[0], this.lineColor[1], this.lineColor[2], 1.0])
+            );
+        }
+
+        // Draw mesh with appropriate primitive type
+        if (this.drawMode === "lines") {
+            const elementCount = this._indices.length; // For lines, use all indices
+            gl.drawElements(GL.LINES, elementCount, GL.UNSIGNED_INT, 0);
+        } else {
+            const elementCount = this.numTris * 3;
+            gl.drawElements(GL.TRIANGLES, elementCount, GL.UNSIGNED_INT, 0);
+        }
     }
 
     override toJSON() {
@@ -1017,6 +1040,146 @@ export class Model extends GameObject {
             indices: indexBuffer,
             texture: texture,
         };
+    }
+
+    /**
+     * Calculate the axis-aligned bounding box of this mesh in local space
+     * @returns The bounding box as min/max coordinates
+     */
+    calculateBoundingBox(): { min: vec3, max: vec3 } {
+        if (!this._rawVertexData || this._rawVertexData.length === 0) {
+            // Return default bounding box if no vertex data
+            return {
+                min: vec3.fromValues(-0.5, -0.5, -0.5),
+                max: vec3.fromValues(0.5, 0.5, 0.5)
+            };
+        }
+
+        const vertexData = this._rawVertexData;
+        const NUM_VERT_COMPONENTS = 8; // position(3) + normal(3) + texcoord(2)
+        
+        // Initialize with first vertex position
+        const min = vec3.fromValues(vertexData[0], vertexData[1], vertexData[2]);
+        const max = vec3.fromValues(vertexData[0], vertexData[1], vertexData[2]);
+        
+        // Iterate through all vertices to find min/max
+        for (let i = 0; i < vertexData.length; i += NUM_VERT_COMPONENTS) {
+            const x = vertexData[i];
+            const y = vertexData[i + 1];
+            const z = vertexData[i + 2];
+            
+            min[0] = Math.min(min[0], x);
+            min[1] = Math.min(min[1], y);
+            min[2] = Math.min(min[2], z);
+            
+            max[0] = Math.max(max[0], x);
+            max[1] = Math.max(max[1], y);
+            max[2] = Math.max(max[2], z);
+        }
+        
+        return { min, max };
+    }
+
+    /**
+     * Create a wireframe bounding box child object for this model
+     * @returns A new Model representing the wireframe cube
+     */
+    async createBoundingBoxWireframe(): Promise<Model> {
+        const bbox = this.calculateBoundingBox();
+        
+        // Create cube vertices for the bounding box
+        const cubeVertices = [
+            // Bottom face
+            bbox.min[0], bbox.min[1], bbox.min[2],  // 0
+            bbox.max[0], bbox.min[1], bbox.min[2],  // 1
+            bbox.max[0], bbox.min[1], bbox.max[2],  // 2
+            bbox.min[0], bbox.min[1], bbox.max[2],  // 3
+            // Top face
+            bbox.min[0], bbox.max[1], bbox.min[2],  // 4
+            bbox.max[0], bbox.max[1], bbox.min[2],  // 5
+            bbox.max[0], bbox.max[1], bbox.max[2],  // 6
+            bbox.min[0], bbox.max[1], bbox.max[2],  // 7
+        ];
+        
+        // Create wireframe edges (lines)
+        const wireframeIndices = [
+            // Bottom face edges
+            0, 1,  1, 2,  2, 3,  3, 0,
+            // Top face edges  
+            4, 5,  5, 6,  6, 7,  7, 4,
+            // Vertical edges
+            0, 4,  1, 5,  2, 6,  3, 7
+        ];
+        
+        // Create vertex data in the expected format (8 components per vertex)
+        const vertexData: number[] = [];
+        for (let i = 0; i < cubeVertices.length; i += 3) {
+            vertexData.push(
+                cubeVertices[i],     cubeVertices[i + 1], cubeVertices[i + 2], // position
+                0, 1, 0,                                                       // normal (up)
+                0, 0                                                           // texture coordinates
+            );
+        }
+        
+        // Create material for wireframe
+        const wireframeMaterial = new MtlMaterial();
+        wireframeMaterial.diffuse = vec3.fromValues(0.0, 1.0, 0.0); // Green
+        wireframeMaterial.specularExponent = 1;
+        
+        // Create buffers
+        const buffers = await Model.makeBuffers(
+            this.gl,
+            "", // No texture
+            new Float32Array(vertexData),
+            new Uint32Array(wireframeIndices)
+        );
+        
+        // Create forward program for wireframe rendering
+        const forwardProgramInfo = await Model.makeForwardProgram(
+            this.gl, 
+            wireframeMaterial,
+            {
+                vs: "/static/src/shaders/wireframe_forward.vert",
+                fs: "/static/src/shaders/wireframe_forward.frag"
+            }
+        );
+        
+        // Create identity transform (wireframe is in parent's local space)
+        const wireframeTransform = new Transform();
+        
+        // Create the wireframe model
+        const wireframeModel = new Model(
+            this.gl,
+            wireframeTransform,
+            buffers,
+            forwardProgramInfo, // Use forward program as main program 
+            wireframeIndices.length / 3, // Number of triangles (though we're drawing lines)
+            wireframeMaterial,
+            true,  // enabled
+            true,  // visible
+            "Dynamic Wireframe Bounding Box"
+        );
+        
+        // Set forward rendering properties
+        wireframeModel.forwardRendered = true;
+        wireframeModel.forwardProgramInfo = forwardProgramInfo;
+        wireframeModel.forwardShaderPaths = {
+            vs: "/static/src/shaders/wireframe_forward.vert",
+            fs: "/static/src/shaders/wireframe_forward.frag"
+        };
+        
+        // Set line drawing properties
+        wireframeModel.drawMode = "lines";
+        wireframeModel.lineWidth = 2.0;
+        wireframeModel.lineColor = vec3.fromValues(0.0, 1.0, 0.0); // Green lines
+        
+        // Store raw data for the wireframe
+        wireframeModel._rawVertexData = vertexData;
+        wireframeModel._rawIndices = Array.from(wireframeIndices);
+        wireframeModel._vertexData = new Float32Array(vertexData);
+        wireframeModel._indices = new Uint32Array(wireframeIndices);
+        
+        return wireframeModel;
     }
 }
 

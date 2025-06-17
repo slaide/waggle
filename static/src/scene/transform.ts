@@ -4,6 +4,7 @@ export class Transform {
     private _worldMatrix?: mat4;
     private _isDirty: boolean = true;
     private _parent?: Transform;
+    private _children: Transform[] = [];
 
     constructor(
         public position: vec3 = vec3.create(),
@@ -26,36 +27,69 @@ export class Transform {
     // Get the world transform matrix (includes parent transforms)
     get worldMatrix(): mat4 {
         if (this._isDirty || !this._worldMatrix) {
-            this._worldMatrix = mat4.create();
-            
-            if (this._parent) {
-                // Multiply parent's world matrix with our local matrix
-                mat4.multiply(this._worldMatrix, this._parent.worldMatrix, this.matrix);
-            } else {
-                // No parent, world matrix is same as local matrix
-                mat4.copy(this._worldMatrix, this.matrix);
-            }
-            
-            this._isDirty = false;
+            this._updateWorldMatrix();
         }
         
-        return this._worldMatrix;
+        return this._worldMatrix!;
+    }
+    
+    // Private method to update world matrix
+    private _updateWorldMatrix() {
+        this._worldMatrix = mat4.create();
+        
+        if (this._parent) {
+            // Multiply parent's world matrix with our local matrix
+            mat4.multiply(this._worldMatrix, this._parent.worldMatrix, this.matrix);
+        } else {
+            // No parent, world matrix is same as local matrix
+            mat4.copy(this._worldMatrix, this.matrix);
+        }
+        
+        this._isDirty = false;
     }
 
     // Set parent transform (for relative transforms)
     set parent(parent: Transform | undefined) {
+        // Remove from old parent's children list
+        if (this._parent) {
+            const index = this._parent._children.indexOf(this);
+            if (index !== -1) {
+                this._parent._children.splice(index, 1);
+            }
+        }
+        
         this._parent = parent;
-        this._isDirty = true;
+        
+        // Add to new parent's children list
+        if (parent) {
+            parent._children.push(this);
+        }
+        
+        // Mark dirty and propagate to children
+        this._markDirtyAndPropagate();
     }
 
     get parent(): Transform | undefined {
         return this._parent;
     }
+    
+    get children(): readonly Transform[] {
+        return this._children;
+    }
 
     // Mark this transform and all its children as dirty
-    markDirty() {
+    private _markDirtyAndPropagate() {
         this._isDirty = true;
-        // Note: Children will be marked dirty through their GameObject's updateWorldTransforms method
+        
+        // Recursively mark all children as dirty
+        for (const child of this._children) {
+            child._markDirtyAndPropagate();
+        }
+    }
+
+    // Public method to mark dirty (called when transform properties change)
+    markDirty() {
+        this._markDirtyAndPropagate();
     }
 
     // Methods to update transforms and mark dirty
@@ -72,6 +106,18 @@ export class Transform {
     setScale(value: vec3) {
         vec3.copy(this.scale, value);
         this.markDirty();
+    }
+    
+    // Force update of world matrix and all children (useful for ensuring consistency)
+    updateWorldMatrix() {
+        if (this._isDirty) {
+            this._updateWorldMatrix();
+        }
+        
+        // Update all children
+        for (const child of this._children) {
+            child.updateWorldMatrix();
+        }
     }
 
     // Get world position (extracted from world matrix)

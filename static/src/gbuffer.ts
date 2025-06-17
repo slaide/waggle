@@ -2,6 +2,7 @@ import { GL, GLC } from "./gl";
 import { Camera } from "./scene/camera";
 import { createShaderProgram } from "./scene/gameobject";
 import { PointLight, DirectionalLight } from "./scene/light";
+import { vec3, mat4 } from "gl-matrix";
 
 const POINTLIGHTBLOCKBINDING = 1;
 const DIRECTIONALLIGHTBLOCKBINDING = 2;
@@ -69,6 +70,11 @@ export class GBuffer {
                 name: "diffuse",
                 format: GL.RGBA8,
                 attachmentid: 2,
+            },
+            {
+                name: "objectId",
+                format: GL.R32UI,
+                attachmentid: 3,
             },
         ];
 
@@ -306,6 +312,35 @@ export class GBuffer {
         this.directionalLightUBO = ubo;
     }
 
+    /**
+     * Bind framebuffer for drawing and clear all layers properly, including integer buffers
+     */
+    clearAndBind() {
+        const { gl } = this;
+        
+        // Bind the GBuffer for clearing
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gbuffer);
+        gl.drawBuffers(this.layerAttachments);
+        
+        // Clear each buffer individually using the appropriate clear function
+        for (let i = 0; i < this.layers.length; i++) {
+            const layer = this.layers[i];
+            
+            if (layer.name === "objectId") {
+                // Integer buffer needs special clearing
+                const clearValue = new Uint32Array([0, 0, 0, 0]); // Clear to 0 (no object), WebGL expects 4 values
+                gl.clearBufferuiv(gl.COLOR, layer.attachmentid, clearValue);
+            } else {
+                // Float buffers: clear each one individually
+                const clearValue = new Float32Array([0.0, 0.0, 0.0, 0.0]);
+                gl.clearBufferfv(gl.COLOR, layer.attachmentid, clearValue);
+            }
+        }
+        
+        // Clear depth buffer
+        gl.clearBufferfv(gl.DEPTH, 0, new Float32Array([1.0]));
+    }
+
     draw() {
         const { gl, fsq } = this;
 
@@ -388,5 +423,205 @@ export class GBuffer {
 
         // Draw 3 vertices (covering the whole screen)
         gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    /**
+     * Get the object ID at the specified screen coordinates
+     * @param x Screen x coordinate (0 to canvas width)
+     * @param y Screen y coordinate (0 to canvas height) 
+     * @returns GameObject ID or 0 if no object
+     */
+    pickObject(x: number, y: number, scene: any, camera: any): number {
+        // Ensure coordinates are within bounds
+        if (x < 0 || x >= this.size.width || y < 0 || y >= this.size.height) {
+            return 0;
+        }
+        
+        // Flip Y coordinate for WebGL
+        const flippedY = this.size.height - y - 1;
+        
+        // Bind the read framebuffer to read from textures
+        this.gl.bindFramebuffer(this.gl.READ_FRAMEBUFFER, this.readFbo);
+        
+        // Sample object ID from GBuffer
+        this.gl.readBuffer(this.gl.COLOR_ATTACHMENT0 + 3); // Object ID attachment
+        const objectIdPixel = new Uint32Array(1);
+        this.gl.readPixels(x, flippedY, 1, 1, this.gl.RED_INTEGER, this.gl.UNSIGNED_INT, objectIdPixel);
+        
+        // Sample depth from GBuffer position layer (depth stored in position.w)
+        this.gl.readBuffer(this.gl.COLOR_ATTACHMENT0 + 0); // Position attachment
+        const positionPixel = new Float32Array(4);
+        this.gl.readPixels(x, flippedY, 1, 1, this.gl.RGBA, this.gl.FLOAT, positionPixel);
+        
+        this.gl.bindFramebuffer(this.gl.READ_FRAMEBUFFER, null);
+        
+        const deferredObjectId = objectIdPixel[0];
+        const deferredDepth = positionPixel[3]; // Depth is stored in position.w
+        
+        // If we hit a deferred object, check if any forward-rendered objects are closer
+        if (deferredObjectId > 0) {
+            const forwardHit = this.raycastForwardObjects(x, y, scene, camera);
+            if (forwardHit && forwardHit.depth < deferredDepth) {
+                return forwardHit.objectId;
+            }
+            return deferredObjectId;
+        } else {
+            // No deferred object hit, check forward-rendered objects only
+            const forwardHit = this.raycastForwardObjects(x, y, scene, camera);
+            return forwardHit ? forwardHit.objectId : 0;
+        }
+    }
+    
+    // Raycast against forward-rendered objects
+    private raycastForwardObjects(x: number, y: number, scene: any, camera: any): { objectId: number, depth: number } | null {
+        // Convert screen coordinates to normalized device coordinates
+        const ndcX = (x / this.size.width) * 2 - 1;
+        const ndcY = ((this.size.height - y) / this.size.height) * 2 - 1; // Flip Y for NDC
+        
+        // Create ray from camera through the pixel
+        const ray = this.createCameraRay(ndcX, ndcY, camera);
+        
+        let closestHit: { objectId: number, depth: number } | null = null;
+        let closestDistance = Infinity;
+        
+        // Test all forward-rendered objects
+        const allObjects = scene.getAllObjects();
+        const forwardObjects = allObjects.filter((obj: any) => obj.forwardRendered && obj.shouldDraw);
+        
+        forwardObjects.forEach((obj: any) => {
+            const hit = this.rayBoxIntersect(ray, obj);
+            if (hit && hit.distance < closestDistance) {
+                closestDistance = hit.distance;
+                closestHit = {
+                    objectId: obj.id,
+                    depth: hit.distance
+                };
+            }
+        });
+        
+        return closestHit;
+    }
+    
+    // Create a ray from camera through screen pixel
+    private createCameraRay(ndcX: number, ndcY: number, camera: any): { origin: vec3, direction: vec3 } {
+        
+        // Get camera matrices
+        const viewMatrix = camera.viewMatrix;
+        const projMatrix = camera.projectionMatrix;
+        
+        // Create inverse matrices
+        const invView = mat4.create();
+        const invProj = mat4.create();
+        mat4.invert(invView, viewMatrix);
+        mat4.invert(invProj, projMatrix);
+        
+        // Ray in clip space
+        const clipNear = vec3.fromValues(ndcX, ndcY, -1);
+        const clipFar = vec3.fromValues(ndcX, ndcY, 1);
+        
+        // Transform to view space
+        const viewNear = vec3.create();
+        const viewFar = vec3.create();
+        vec3.transformMat4(viewNear, clipNear, invProj);
+        vec3.transformMat4(viewFar, clipFar, invProj);
+        
+        // Perspective divide
+        viewNear[0] /= viewNear[3] || 1;
+        viewNear[1] /= viewNear[3] || 1;
+        viewNear[2] /= viewNear[3] || 1;
+        viewFar[0] /= viewFar[3] || 1;
+        viewFar[1] /= viewFar[3] || 1;
+        viewFar[2] /= viewFar[3] || 1;
+        
+        // Transform to world space
+        const worldNear = vec3.create();
+        const worldFar = vec3.create();
+        vec3.transformMat4(worldNear, viewNear, invView);
+        vec3.transformMat4(worldFar, viewFar, invView);
+        
+        // Create ray
+        const origin = vec3.clone(worldNear);
+        const direction = vec3.create();
+        vec3.subtract(direction, worldFar, worldNear);
+        vec3.normalize(direction, direction);
+        
+        return { origin, direction };
+    }
+    
+    // Ray-box intersection test
+    private rayBoxIntersect(ray: { origin: vec3, direction: vec3 }, obj: any): { distance: number } | null {
+        // Get object's world matrix
+        const worldMatrix = obj.transform.worldMatrix;
+        
+        // Calculate bounding box in world space
+        let min = vec3.fromValues(-0.5, -0.5, -0.5);
+        let max = vec3.fromValues(0.5, 0.5, 0.5);
+        
+        // If object has a calculateBoundingBox method, use it
+        if (typeof obj.calculateBoundingBox === 'function') {
+            const bounds = obj.calculateBoundingBox();
+            min = bounds.min;
+            max = bounds.max;
+        }
+        
+        // Transform bounding box to world space
+        const worldMin = vec3.create();
+        const worldMax = vec3.create();
+        vec3.transformMat4(worldMin, min, worldMatrix);
+        vec3.transformMat4(worldMax, max, worldMatrix);
+        
+        // Ensure min/max are correct after transformation
+        const actualMin = vec3.fromValues(
+            Math.min(worldMin[0], worldMax[0]),
+            Math.min(worldMin[1], worldMax[1]),
+            Math.min(worldMin[2], worldMax[2])
+        );
+        const actualMax = vec3.fromValues(
+            Math.max(worldMin[0], worldMax[0]),
+            Math.max(worldMin[1], worldMax[1]),
+            Math.max(worldMin[2], worldMax[2])
+        );
+        
+        // Ray-AABB intersection
+        const invDir = vec3.fromValues(
+            1.0 / ray.direction[0],
+            1.0 / ray.direction[1],
+            1.0 / ray.direction[2]
+        );
+        
+        const t1 = vec3.fromValues(
+            (actualMin[0] - ray.origin[0]) * invDir[0],
+            (actualMin[1] - ray.origin[1]) * invDir[1],
+            (actualMin[2] - ray.origin[2]) * invDir[2]
+        );
+        
+        const t2 = vec3.fromValues(
+            (actualMax[0] - ray.origin[0]) * invDir[0],
+            (actualMax[1] - ray.origin[1]) * invDir[1],
+            (actualMax[2] - ray.origin[2]) * invDir[2]
+        );
+        
+        const tMin = vec3.fromValues(
+            Math.min(t1[0], t2[0]),
+            Math.min(t1[1], t2[1]),
+            Math.min(t1[2], t2[2])
+        );
+        
+        const tMax = vec3.fromValues(
+            Math.max(t1[0], t2[0]),
+            Math.max(t1[1], t2[1]),
+            Math.max(t1[2], t2[2])
+        );
+        
+        const tNear = Math.max(tMin[0], tMin[1], tMin[2]);
+        const tFar = Math.min(tMax[0], tMax[1], tMax[2]);
+        
+        // Check if ray intersects box
+        if (tNear <= tFar && tFar >= 0) {
+            const distance = tNear >= 0 ? tNear : tFar;
+            return { distance };
+        }
+        
+        return null;
     }
 }

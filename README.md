@@ -22,26 +22,138 @@ Waggle is a 3D rendering engine that combines the efficiency of deferred shading
 
 ## Key Features
 
-### 🎨 Hybrid Rendering Pipeline
+### Hybrid Rendering Pipeline
 - **Deferred Rendering**: Efficient G-buffer-based lighting for complex scenes
 - **Forward Rendering**: Flexible per-object custom shaders and transparency support
 - **Seamless Integration**: Mixed rendering modes in the same scene with proper depth testing
 
-### 🔧 Advanced Graphics Features
+### Advanced Graphics Features
 - **Dynamic Lighting**: Point lights and directional lights with real-time shadows
 - **Custom Shaders**: Per-object vertex and fragment shader customization
 - **Material System**: PBR-ready material properties with texture support
 - **Hierarchical Transforms**: Parent-child relationships with automatic matrix propagation
 
-### 📦 Custom File Loaders
+### Custom File Loaders
 - **OBJ Parser**: Complete Wavefront OBJ file support with material loading
 - **PNG Decoder**: Native TypeScript PNG image decoder with compression support
 - **Scene Serialization**: JSON-based scene format with hot-reloading
 
-### 🧪 Comprehensive Testing
+### Comprehensive Testing
 - **Unit Tests**: Complete test coverage for core systems
 - **Integration Tests**: Scene loading, rendering pipeline, and transform hierarchy tests
 - **Forward Rendering Tests**: Nested object hierarchies and custom shader validation
+
+### Hybrid Object Picking System
+The application features a sophisticated hybrid object picking system that can accurately select both deferred and forward-rendered objects using different techniques optimized for each rendering path.
+
+#### **Core Architecture**
+- **Deferred Objects**: Pixel-perfect selection using GBuffer object ID sampling
+- **Forward Objects**: Geometric ray-box intersection testing
+- **Depth Integration**: Automatic depth comparison to select the closest object
+- **Visual Feedback**: Dynamic wireframe generation with line-based rendering
+
+#### **Technical Implementation**
+
+**GBuffer-Based Picking (Deferred Objects)**
+- Dedicated `R32UI` texture layer stores unique object IDs during geometry pass
+- `pickObject(x, y)` samples both object ID and depth at screen coordinates
+- Provides pixel-perfect accuracy for complex mesh geometry
+- Handles irregular shapes, concave objects, and fine details automatically
+
+**Raycast-Based Picking (Forward Objects)**
+- Camera ray generation from screen coordinates through inverse projection
+- Ray-AABB (Axis-Aligned Bounding Box) intersection testing
+- Uses actual mesh bounding boxes when available, falls back to unit cube
+- Transforms bounding boxes to world space using object hierarchy matrices
+
+**Hybrid Depth Resolution**
+```typescript
+// Simplified picking logic
+const deferredHit = sampleGBuffer(x, y);  // Object ID + depth
+const forwardHit = raycastForwardObjects(x, y);  // Distance along ray
+
+// Select closest object between rendering passes
+if (deferredHit.objectId > 0 && forwardHit) {
+    return forwardHit.depth < deferredHit.depth ? forwardHit : deferredHit;
+}
+return deferredHit.objectId > 0 ? deferredHit : forwardHit;
+```
+
+#### **Transform Hierarchy System**
+- **Immediate Propagation**: Parent transforms automatically update all children
+- **World Matrix Caching**: Efficient matrix calculations with dirty flagging  
+- **Pre-Raycast Updates**: All transforms resolved before picking operations
+- **Bidirectional Relationships**: Parents and children maintain proper references
+
+#### **Dynamic Wireframe Generation**
+- **Mesh-Aware Bounds**: Calculates actual geometry bounding boxes from vertex data
+- **Line-Based Rendering**: Uses `GL.LINES` primitive with configurable width and color
+- **Forward Rendered**: Wireframes use forward rendering to avoid GBuffer conflicts
+- **Automatic Cleanup**: Dynamic creation/destruction based on selection state
+
+#### **Usage Examples**
+
+**Basic Object Selection**
+```typescript
+// Click handling (automatic in main.ts)
+canvas.addEventListener("click", (event) => {
+    const objectId = gbuffer.pickObject(x, y, scene, camera);
+    if (objectId > 0) {
+        const selectedObject = scene.findObjectById(objectId);
+        // Object selected - show wireframe, log details, etc.
+    }
+});
+```
+
+**Custom Forward Object Setup**
+```json
+{
+    "type": "mesh",
+    "name": "Forward Rendered Cube",
+    "forwardRendered": true,
+    "model": "./static/resources/cube.obj",
+    "transform": {
+        "position": [0, 2, -5],
+        "scale": [0.1, 0.1, 0.1]
+    }
+}
+```
+
+**Line Rendering Configuration**
+```typescript
+// Set object to use line rendering (for wireframes, etc.)
+object.drawMode = "lines";
+object.lineWidth = 2.0;
+object.lineColor = vec3.fromValues(0.0, 1.0, 0.0); // Green
+```
+
+#### **Performance Characteristics**
+- **Deferred Picking**: O(1) - Single texture sample per click
+- **Forward Picking**: O(n) - Linear with number of forward objects (typically very small)
+- **Memory Overhead**: One additional R32UI texture layer in GBuffer
+- **CPU Usage**: Minimal - raycast only runs on click events
+
+#### **Supported Object Types**
+- **Deferred Meshes**: Complex geometry with pixel-perfect accuracy
+- **Forward Meshes**: Custom shaders, transparency, special effects
+- **Child Objects**: Proper hierarchy support with parent transforms
+- **Scaled Objects**: Automatic bounding box transformation
+- **Light Indicators**: Small forward-rendered debug objects
+
+**How to Use:**
+1. **Click to Select**: Click on any rendered object (mesh, light indicator, etc.)
+2. **Visual Feedback**: Selected objects display green wireframe outlines
+3. **Console Information**: Object details logged to browser console
+4. **Deselection**: Click empty space to clear selection
+5. **Multiple Objects**: System automatically selects closest object to camera
+
+**Console Output Example:**
+```
+Selected object: Right Bunny (ID: 2)
+Object type: mesh
+Object position: Float32Array(3) [1.5, 0, -6]
+Created dynamic wireframe bounding box for selected object
+```
 
 ## Quick Start
 
@@ -304,8 +416,6 @@ Directional lights simulate distant light sources (like the sun) with parallel r
 
 The deferred rendering pipeline supports a maximum of 1 directional light (configurable in shaders).
 
-
-
 ## Testing
 
 The project includes comprehensive tests covering all major systems:
@@ -392,6 +502,7 @@ The server provides:
 3. **Deferred Shading** [#ef840e0](https://github.com/slaide/waggle/tree/ef840e0d8112817dd0bd7706f3ef9bb012d167f3): G-buffer implementation with lighting
 4. **Scene Serialization** [#cd95c5a](https://github.com/slaide/waggle/tree/cd95c5a39782056aa00b5df7d4fe2a8cf39c28c2): JSON-based scene format
 5. **Forward Rendering**: Hybrid pipeline with custom shader support
+6. **Object Picking** (Complete): Hybrid system supporting both deferred (GBuffer-based) and forward-rendered (raycast-based) object selection with dynamic wireframe feedback
 
 ## Contributing
 

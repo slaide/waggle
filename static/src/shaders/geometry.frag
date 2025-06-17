@@ -5,6 +5,7 @@ precision highp float;
 layout (location = 0) out vec3 gPosition;
 layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec4 gAlbedoSpec;
+layout (location = 3) out uint gObjectId;
 
 in vec2 vTextureCoord;
 in vec4 vGlobalPos;
@@ -14,6 +15,7 @@ uniform bool uUseDiffuseTexture;
 uniform sampler2D uDiffuseSampler;
 uniform vec4 uDiffuseColor;
 uniform float uSpecularExponent;
+uniform uint uObjectId;
 
 void main() {
     gPosition = vGlobalPos.xyz;
@@ -26,4 +28,7 @@ void main() {
         diffuseColor = uDiffuseColor.rgb;
     }
     gAlbedoSpec = vec4(diffuseColor, uSpecularExponent);
+    
+    // Output the object ID for picking
+    gObjectId = uObjectId;
 } 

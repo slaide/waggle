@@ -1,5 +1,6 @@
 import { GL, GLC } from "../gl";
 import { Transform } from "./transform";
+import { vec3 } from "gl-matrix";
 
 type ProgramInfo = {
     program: WebGLProgram;
@@ -139,6 +140,11 @@ export class GameObject {
     private _forwardRendered: boolean = false;  // New flag for forward rendering
     private _forwardShaderPaths?: { vs: string, fs: string };  // Custom forward shader paths
     
+    // Line drawing properties
+    private _drawMode: "triangles" | "lines" = "triangles";
+    private _lineWidth: number = 1.0;
+    private _lineColor?: vec3;  // Optional override for line color
+    
     get material(): any { return undefined; }
     set material(_: any) {}
     
@@ -158,6 +164,31 @@ export class GameObject {
     
     set forwardShaderPaths(paths: { vs: string, fs: string } | undefined) {
         this._forwardShaderPaths = paths;
+    }
+    
+    // Line drawing getters/setters
+    get drawMode(): "triangles" | "lines" {
+        return this._drawMode;
+    }
+    
+    set drawMode(mode: "triangles" | "lines") {
+        this._drawMode = mode;
+    }
+    
+    get lineWidth(): number {
+        return this._lineWidth;
+    }
+    
+    set lineWidth(width: number) {
+        this._lineWidth = Math.max(0.1, width); // Ensure minimum line width
+    }
+    
+    get lineColor(): vec3 | undefined {
+        return this._lineColor;
+    }
+    
+    set lineColor(color: vec3 | undefined) {
+        this._lineColor = color;
     }
     
     constructor(
@@ -191,6 +222,10 @@ export class GameObject {
         
         this.children.push(child);
         child._parent = this;
+        
+        // Set up transform parent relationship
+        child.transform.parent = this.transform;
+        
         child.updateWorldTransforms();
     }
 
@@ -199,17 +234,27 @@ export class GameObject {
         if (index !== -1) {
             this.children.splice(index, 1);
             child._parent = undefined;
+            
+            // Clear transform parent relationship
+            child.transform.parent = undefined;
+            
             child.updateWorldTransforms();
         }
     }
 
     // Update world transforms for this object and all children recursively
     updateWorldTransforms() {
-        this.transform.markDirty();
+        // Use the new transform system's updateWorldMatrix method
+        this.transform.updateWorldMatrix();
+    }
+    
+    // Method to ensure all transforms are up to date (useful after scene loading)
+    ensureTransformsUpdated() {
+        this.transform.updateWorldMatrix();
         
+        // Recursively ensure children are updated
         for (const child of this.children) {
-            child.transform.markDirty();
-            child.updateWorldTransforms();
+            child.ensureTransformsUpdated();
         }
     }
 

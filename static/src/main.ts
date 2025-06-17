@@ -57,6 +57,9 @@ export async function main() {
     const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
 
+    // Ensure all transforms are properly calculated after loading
+    scene.updateAllTransforms();
+
     // Collect and update lights
     const { pointLights, directionalLights } = scene.collectLights();
     gbuffer.updatePointlights(pointLights);
@@ -65,6 +68,64 @@ export async function main() {
     window.addEventListener("keydown", (ev) => {
         if (ev.key == "f") {
             el.requestFullscreen();
+        }
+    });
+
+    // Object picking on mouse click
+    let selectedObject: any = null;
+    let dynamicWireframe: any = null;
+    
+    el.addEventListener("click", async (ev) => {
+        const rect = el.getBoundingClientRect();
+        const x = (ev.clientX - rect.left) * dpr;
+        const y = (ev.clientY - rect.top) * dpr;
+        
+        const objectId = gbuffer.pickObject(x, y, scene, camera);
+        
+        if (objectId > 0) {
+            const clickedObject = scene.findObjectById(objectId);
+            if (clickedObject) {
+                // Deselect previous
+                if (selectedObject) {
+                    console.log(`Deselected: ${selectedObject.name || selectedObject.id}`);
+                    
+                    // Remove dynamic wireframe from previous selection
+                    if (dynamicWireframe) {
+                        selectedObject.removeChild(dynamicWireframe);
+                        dynamicWireframe = null;
+                    }
+                }
+                
+                // Select new object
+                selectedObject = clickedObject;
+                console.log(`Selected object: ${selectedObject.name || selectedObject.id} (ID: ${objectId})`);
+                console.log(`Object type: ${selectedObject.type}`);
+                console.log(`Object position:`, selectedObject.transform.position);
+                
+                // Create dynamic wireframe bounding box for mesh objects
+                if (selectedObject.type === "mesh" && selectedObject.createBoundingBoxWireframe) {
+                    try {
+                        dynamicWireframe = await selectedObject.createBoundingBoxWireframe();
+                        selectedObject.addChild(dynamicWireframe);
+                        console.log("Created dynamic wireframe bounding box for selected object");
+                    } catch (error) {
+                        console.warn("Failed to create wireframe bounding box:", error);
+                    }
+                }
+            }
+        } else {
+            // Clicked on empty space - deselect
+            if (selectedObject) {
+                console.log(`Deselected: ${selectedObject.name || selectedObject.id}`);
+                
+                // Remove dynamic wireframe
+                if (dynamicWireframe) {
+                    selectedObject.removeChild(dynamicWireframe);
+                    dynamicWireframe = null;
+                }
+                
+                selectedObject = null;
+            }
         }
     });
 
@@ -321,12 +382,8 @@ export async function main() {
         // run logic step
         onFrameLogic(deltatime_ms);
 
-        // bind gbuffer
-        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, gbuffer.gbuffer);
-        gl.drawBuffers(gbuffer.layerAttachments);
-
-        // clear gbuffer to draw over
-        gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+        // bind gbuffer and clear it properly (including integer buffers)
+        gbuffer.clearAndBind();
 
         // draw scene into gbuffer (deferred rendering pass - only non-forward objects)
         scene.draw(camera.viewMatrix as Float32Array, camera.projectionMatrix as Float32Array);
