@@ -127,11 +127,32 @@ export async function createShaderProgram(
 export class GameObject {
     public type: "mesh" | "point_light" | "directional_light";
     public programInfo?: ProgramInfo;
+    public forwardProgramInfo?: ProgramInfo;  // New program info for forward rendering
     public children: GameObject[] = [];
     private _parent?: GameObject;
+    private _forwardRendered: boolean = false;  // New flag for forward rendering
+    private _forwardShaderPaths?: { vs: string, fs: string };  // Custom forward shader paths
     
     get material(): any { return undefined; }
     set material(_: any) {}
+    
+    // New getter/setter for forward rendering flag
+    get forwardRendered(): boolean {
+        return this._forwardRendered;
+    }
+    
+    set forwardRendered(value: boolean) {
+        this._forwardRendered = value;
+    }
+    
+    // Getter/setter for custom forward shader paths
+    get forwardShaderPaths(): { vs: string, fs: string } | undefined {
+        return this._forwardShaderPaths;
+    }
+    
+    set forwardShaderPaths(paths: { vs: string, fs: string } | undefined) {
+        this._forwardShaderPaths = paths;
+    }
     
     constructor(
         public gl: GLC,
@@ -216,6 +237,8 @@ export class GameObject {
             name: this.name,
             enabled: this.enabled,
             visible: this.visible,
+            forwardRendered: this._forwardRendered,  // Include forward rendering flag
+            forwardShaderPaths: this._forwardShaderPaths,  // Include custom shader paths
             transform: this.transform.toJSON()
         };
 

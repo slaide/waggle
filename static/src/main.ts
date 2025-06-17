@@ -57,60 +57,13 @@ export async function main() {
     const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
 
-    // Print scene state and collect lights
-    console.log("Scene state before draw loop:");
-    console.log("Number of objects:", scene.objects.length);
-    
-    // Traverse scene and print object information
-    scene.traverse((obj, parentTransform) => {
-        console.log(`\nObject: ${obj.name || 'unnamed'}`);
-        console.log("- Position:", Array.from(obj.transform.position));
-        console.log("- Rotation:", Array.from(obj.transform.rotation));
-        console.log("- Scale:", Array.from(obj.transform.scale));
-        console.log("- Enabled:", obj.enabled);
-        console.log("- Visible:", obj.visible);
-        console.log("- Has material:", !!obj.material);
-        if (obj.material) {
-            console.log("  - Diffuse:", obj.material.diffuse ? Array.from(obj.material.diffuse) : "none");
-            console.log("  - Specular exponent:", obj.material.specularExponent);
-            console.log("  - Has diffuse texture:", !!obj.material.map_diffuse);
-        }
-        if (parentTransform) {
-            console.log("- Has parent transform");
-        }
-    });
-
     // Collect and update lights
     const { pointLights, directionalLights } = scene.collectLights();
     gbuffer.updatePointlights(pointLights);
     gbuffer.updateDirectionalLights(directionalLights);
 
-    console.log("\nCamera state:");
-    console.log("- Position:", Array.from(gbuffer.camera.position));
-    console.log("- Rotation:", Array.from(gbuffer.camera.rotation));
-    console.log("- FOV:", gbuffer.camera.fov);
-    console.log("- Aspect:", gbuffer.camera.aspect);
-    console.log("- Near/Far:", gbuffer.camera.znear, gbuffer.camera.zfar);
-    console.log("\nLights:");
-    console.log("- Point lights:", pointLights.length);
-    pointLights.forEach((light, i) => {
-        console.log(`  Point light ${i}:`);
-        console.log("  - Position:", Array.from(light.transform.position));
-        console.log("  - Color:", Array.from(light.color));
-        console.log("  - Intensity:", light.intensity);
-        console.log("  - Radius:", light.radius);
-    });
-    console.log("- Directional lights:", directionalLights.length);
-    directionalLights.forEach((light, i) => {
-        console.log(`  Directional light ${i}:`);
-        console.log("  - Direction:", Array.from(light.direction));
-        console.log("  - Color:", Array.from(light.color));
-        console.log("  - Intensity:", light.intensity);
-    });
-
     window.addEventListener("keydown", (ev) => {
         if (ev.key == "f") {
-            console.log("requesting fullscreen");
             el.requestFullscreen();
         }
     });
@@ -375,11 +328,54 @@ export async function main() {
         // clear gbuffer to draw over
         gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
 
-        // draw scene into gbuffer
+        // draw scene into gbuffer (deferred rendering pass - only non-forward objects)
         scene.draw(camera.viewMatrix as Float32Array, camera.projectionMatrix as Float32Array);
 
-        // process gbuffer + lights into screen output
+        // process gbuffer + lights into screen output (deferred lighting pass)
         gbuffer.draw();
+
+        // Forward rendering pass - draw forward rendered objects directly to screen after deferred lighting
+        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+        
+        // Enable depth testing for forward pass and read from depth buffer written during deferred pass
+        // We need to copy depth from gbuffer to default framebuffer first
+        gl.bindFramebuffer(GL.READ_FRAMEBUFFER, gbuffer.gbuffer);
+        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, null);
+        gl.blitFramebuffer(
+            0, 0, canvas_size.width, canvas_size.height,
+            0, 0, canvas_size.width, canvas_size.height,
+            GL.DEPTH_BUFFER_BIT,
+            GL.NEAREST
+        );
+
+        // Now bind default framebuffer for forward rendering
+        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+        gl.viewport(0, 0, canvas_size.width, canvas_size.height);
+        
+        // Enable blending for forward rendering (to blend with deferred result)
+        gl.enable(GL.BLEND);
+        gl.blendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA);
+        
+        // Keep depth testing enabled but set to LEQUAL to use existing depth
+        gl.depthFunc(GL.LEQUAL);
+        gl.depthMask(false); // Don't write to depth buffer in forward pass
+
+        // Draw forward rendered objects
+        const lightUBOs = {
+            pointLightUBO: gbuffer.pointLightUBO,
+            directionalLightUBO: gbuffer.directionalLightUBO
+        };
+        scene.drawForward(
+            camera.viewMatrix as Float32Array, 
+            camera.projectionMatrix as Float32Array,
+            lightUBOs,
+            new Float32Array(camera.position)
+        );
+
+        // Restore rendering state
+        gl.disable(GL.BLEND);
+        gl.depthFunc(GL.LEQUAL);
+        gl.depthMask(true);
     };
 
     const drawLoop = () => {

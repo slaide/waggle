@@ -1,4 +1,3 @@
-
 import { GLC } from "../gl";
 import { GameObject } from "./gameobject";
 import { PointLight, DirectionalLight } from "./light";
@@ -71,6 +70,7 @@ export class Scene {
 
     draw(viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
         // draw (into gbuffer) - traverse all objects including children
+        // Only draw non-forward rendered objects in this pass
         for (const object of this.objects) {
             // Skip entirely disabled objects and their children
             if (!object.enabled) continue;
@@ -78,11 +78,25 @@ export class Scene {
             // Draw with identity matrix as the root parent transform
             const identityMatrix = new Float32Array(16);
             mat4.identity(identityMatrix as any);
-            this.drawObjectHierarchy(object, identityMatrix, viewMatrix, projectionMatrix);
+            this.drawObjectHierarchy(object, identityMatrix, viewMatrix!, projectionMatrix!);
         }
     }
 
-    private drawObjectHierarchy(obj: GameObject, parentWorldMatrix: Float32Array, viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
+    // New method to draw forward rendered objects
+    drawForward(viewMatrix: Float32Array, projectionMatrix: Float32Array, lightUBOs: {pointLightUBO: WebGLBuffer, directionalLightUBO: WebGLBuffer}, cameraPos: Float32Array) {
+        // Draw only forward rendered objects after deferred lighting pass
+        for (const object of this.objects) {
+            // Skip entirely disabled objects and their children
+            if (!object.enabled) continue;
+            
+            // Draw with identity matrix as the root parent transform
+            const identityMatrix = new Float32Array(16);
+            mat4.identity(identityMatrix as any);
+            this.drawForwardObjectHierarchy(object, identityMatrix, viewMatrix, projectionMatrix, lightUBOs, cameraPos);
+        }
+    }
+
+    private drawObjectHierarchy(obj: GameObject, parentWorldMatrix: Float32Array, viewMatrix: Float32Array, projectionMatrix: Float32Array) {
         if (!obj.enabled) return;
 
         // Get this object's local transform matrix
@@ -92,16 +106,39 @@ export class Scene {
         const worldMatrix = new Float32Array(16);
         mat4.multiply(worldMatrix as any, parentWorldMatrix as any, localMatrix as any);
 
-
-
-        // Draw this object if it should be drawn, passing the accumulated world matrix
-        if (obj.shouldDraw) {
+        // Draw this object if it should draw and it's not forward rendered (deferred only)
+        if (obj.shouldDraw && !obj.forwardRendered) {
             obj.drawWithMatrix(worldMatrix, viewMatrix, projectionMatrix);
         }
 
         // Recursively draw children with this object's world matrix as their parent matrix
         for (const child of obj.children) {
             this.drawObjectHierarchy(child, worldMatrix, viewMatrix, projectionMatrix);
+        }
+    }
+
+    private drawForwardObjectHierarchy(obj: GameObject, parentWorldMatrix: Float32Array, viewMatrix: Float32Array, projectionMatrix: Float32Array, lightUBOs: {pointLightUBO: WebGLBuffer, directionalLightUBO: WebGLBuffer}, cameraPos: Float32Array) {
+        if (!obj.enabled) return;
+
+        // Get this object's local transform matrix
+        const localMatrix = obj.transform.matrix;
+        
+        // Calculate this object's world matrix by multiplying parent world matrix with local matrix
+        const worldMatrix = new Float32Array(16);
+        mat4.multiply(worldMatrix as any, parentWorldMatrix as any, localMatrix as any);
+
+        // Draw this object if it's forward rendered
+        if (obj.shouldDraw && obj.forwardRendered && obj.type === "mesh") {
+            // Cast to Model to access drawForward method
+            const model = obj as any;
+            if (model.drawForward) {
+                model.drawForward(worldMatrix, viewMatrix, projectionMatrix, lightUBOs, cameraPos);
+            }
+        }
+
+        // Recursively draw children with this object's world matrix as their parent matrix
+        for (const child of obj.children) {
+            this.drawForwardObjectHierarchy(child, worldMatrix, viewMatrix, projectionMatrix, lightUBOs, cameraPos);
         }
     }
 

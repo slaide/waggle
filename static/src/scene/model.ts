@@ -404,6 +404,135 @@ export class Model extends GameObject {
         gl.drawElements(GL.TRIANGLES, elementCount, GL.UNSIGNED_INT, 0);
     }
 
+    // New method for forward rendering
+    drawForward(worldMatrix: Float32Array, viewMatrix: Float32Array, projectionMatrix: Float32Array, lightUBOs: {pointLightUBO: WebGLBuffer, directionalLightUBO: WebGLBuffer}, cameraPos: Float32Array) {
+        if (!this.shouldDraw || !this.forwardRendered || !this.forwardProgramInfo) return;
+
+        const { buffers, forwardProgramInfo } = this;
+        const gl = this.gl;
+
+        // Use forward rendering program
+        gl.useProgram(forwardProgramInfo.program);
+
+        // Set transformation matrices (check if uniforms exist)
+        if (forwardProgramInfo.uniformLocations.uModelMatrix) {
+            gl.uniformMatrix4fv(
+                forwardProgramInfo.uniformLocations.uModelMatrix,
+                false,
+                worldMatrix,
+            );
+        }
+        if (forwardProgramInfo.uniformLocations.uViewMatrix) {
+            gl.uniformMatrix4fv(
+                forwardProgramInfo.uniformLocations.uViewMatrix,
+                false,
+                viewMatrix,
+            );
+        }
+        if (forwardProgramInfo.uniformLocations.uProjectionMatrix) {
+            gl.uniformMatrix4fv(
+                forwardProgramInfo.uniformLocations.uProjectionMatrix,
+                false,
+                projectionMatrix,
+            );
+        }
+
+        // Set camera position for lighting calculations
+        if (forwardProgramInfo.uniformLocations.uCamPos) {
+            gl.uniform3fv(forwardProgramInfo.uniformLocations.uCamPos, cameraPos);
+        }
+
+        // Set material properties (check if uniforms exist)
+        if (this._material && forwardProgramInfo.uniformLocations.uDiffuseColor) {
+            if (this._material.diffuse) {
+                gl.uniform4fv(
+                    forwardProgramInfo.uniformLocations.uDiffuseColor,
+                    new Float32Array([this._material.diffuse[0], this._material.diffuse[1], this._material.diffuse[2], 1.0]),
+                );
+            } else {
+                gl.uniform4fv(
+                    forwardProgramInfo.uniformLocations.uDiffuseColor,
+                    new Float32Array([1, 1, 1, 1])
+                );
+            }
+        }
+
+        if (this._material && forwardProgramInfo.uniformLocations.uSpecularExponent) {
+            gl.uniform1f(
+                forwardProgramInfo.uniformLocations.uSpecularExponent,
+                this._material.specularExponent || 32,
+            );
+        }
+
+        // Set texture usage flag (check if uniform exists)
+        const useTexture = !!(this._material?.map_diffuse);
+        if (forwardProgramInfo.uniformLocations.uUseDiffuseTexture) {
+            gl.uniform1i(forwardProgramInfo.uniformLocations.uUseDiffuseTexture, useTexture ? 1 : 0);
+        }
+        
+        if (useTexture && forwardProgramInfo.uniformLocations.uDiffuseSampler) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, buffers.texture);
+            gl.uniform1i(forwardProgramInfo.uniformLocations.uDiffuseSampler, 0);
+        }
+
+        // Bind light uniform buffer objects only if the shader uses them
+        try {
+            const POINTLIGHTBLOCKBINDING = 1;
+            const DIRECTIONALLIGHTBLOCKBINDING = 2;
+            gl.bindBufferBase(gl.UNIFORM_BUFFER, POINTLIGHTBLOCKBINDING, lightUBOs.pointLightUBO);
+            gl.bindBufferBase(gl.UNIFORM_BUFFER, DIRECTIONALLIGHTBLOCKBINDING, lightUBOs.directionalLightUBO);
+        } catch (error) {
+            // Some shaders might not use uniform buffer objects
+            console.warn('Could not bind light UBOs (shader might not use them):', error);
+        }
+
+        // Bind vertex and index buffers
+        gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
+        gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, buffers.indices);
+
+        // Set up vertex attributes (check if attribute locations exist)
+        if (forwardProgramInfo.attributeLocations.aVertexPosition !== -1 && forwardProgramInfo.attributeLocations.aVertexPosition !== undefined) {
+            gl.enableVertexAttribArray(forwardProgramInfo.attributeLocations.aVertexPosition);
+            gl.vertexAttribPointer(
+                forwardProgramInfo.attributeLocations.aVertexPosition,
+                3,
+                GL.FLOAT,
+                false,
+                VertexData.size,
+                VertexData.fields.position.offset!,
+            );
+        }
+        
+        if (forwardProgramInfo.attributeLocations.aVertexNormal !== -1 && forwardProgramInfo.attributeLocations.aVertexNormal !== undefined) {
+            gl.enableVertexAttribArray(forwardProgramInfo.attributeLocations.aVertexNormal);
+            gl.vertexAttribPointer(
+                forwardProgramInfo.attributeLocations.aVertexNormal,
+                3,
+                GL.FLOAT,
+                false,
+                VertexData.size,
+                VertexData.fields.normal.offset!,
+            );
+        }
+        
+        if (forwardProgramInfo.attributeLocations.aVertexTexCoord !== -1 && forwardProgramInfo.attributeLocations.aVertexTexCoord !== undefined) {
+            gl.enableVertexAttribArray(forwardProgramInfo.attributeLocations.aVertexTexCoord);
+            gl.vertexAttribPointer(
+                forwardProgramInfo.attributeLocations.aVertexTexCoord,
+                2,
+                GL.FLOAT,
+                false,
+                VertexData.size,
+                VertexData.fields.texCoord.offset!,
+            );
+        }
+
+        // Draw mesh
+        const elementCount = this.numTris * 3;
+        gl.drawElements(GL.TRIANGLES, elementCount, GL.UNSIGNED_INT, 0);
+    }
+
     override toJSON() {
         const base = super.toJSON();
         return {
@@ -463,6 +592,37 @@ export class Model extends GameObject {
                 model.visible = data.visible;
             }
             
+            // Handle forward rendering properties for OBJ-loaded models
+            if (data.forwardRendered) {
+
+                
+                // Create material for forward rendering
+                const forwardMaterial = new MtlMaterial();
+                if (data.material) {
+                    if (data.material.diffuse) {
+                        forwardMaterial.diffuse = vec3.fromValues(data.material.diffuse[0], data.material.diffuse[1], data.material.diffuse[2]);
+                    }
+                    forwardMaterial.specularExponent = data.material.specularExponent ?? 1.0;
+                    if (data.material.diffuseTexture) {
+                        forwardMaterial.map_diffuse = { source: data.material.diffuseTexture };
+                    }
+                } else {
+                    // Set default material properties when no material data is provided
+                    forwardMaterial.diffuse = vec3.fromValues(1, 1, 1);
+                    forwardMaterial.specularExponent = 1.0;
+                }
+                
+                try {
+                    const forwardProgramInfo = await Model.makeForwardProgram(gl, forwardMaterial, data.forwardShaderPaths);
+                    model.forwardRendered = true;
+                    model.forwardProgramInfo = forwardProgramInfo;
+                    model.forwardShaderPaths = data.forwardShaderPaths;
+                    model._material = forwardMaterial; // Use the properly parsed material
+                } catch (error) {
+                    console.warn('Failed to create forward rendering program for OBJ model:', error);
+                }
+            }
+            
             return model;
         }
         
@@ -520,6 +680,17 @@ export class Model extends GameObject {
             };
         }
 
+        // Create forward program if object is marked for forward rendering
+        let forwardProgramInfo;
+        if (data.forwardRendered) {
+            try {
+                forwardProgramInfo = await Model.makeForwardProgram(gl, material, data.forwardShaderPaths);
+            } catch (error) {
+                console.warn('Failed to create forward rendering program, using regular program:', error);
+                forwardProgramInfo = programInfo;
+            }
+        }
+
         // Calculate numTris from indices if not provided but rawIndices exist
         const numTris = data.numTris ?? (indices.length > 0 ? indices.length / 3 : 0);
 
@@ -542,6 +713,13 @@ export class Model extends GameObject {
         model._indices = new Uint32Array(indices);
         model._rawTexturePath = data.rawTexturePath;
         model._rawShaderSources = data.rawShaderSources;
+
+        // Set forward rendering properties
+        if (data.forwardRendered) {
+            model.forwardRendered = true;
+            model.forwardProgramInfo = forwardProgramInfo;
+            model.forwardShaderPaths = data.forwardShaderPaths;
+        }
 
         return model;
     }
@@ -647,6 +825,100 @@ export class Model extends GameObject {
                 out vec4 fragColor;
                 void main() {
                     fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                }`;
+        }
+
+        const shaderProgram = await createShaderProgram(gl, {
+            vs: vsSource,
+            fs: fsSource,
+        });
+
+        const attributeLocations: { [name: string]: GLint } = {};
+        const uniformLocations: { [name: string]: WebGLUniformLocation } = {};
+
+        // Get attribute locations
+        const numAttributes = gl.getProgramParameter(shaderProgram, GL.ACTIVE_ATTRIBUTES);
+        for (let i = 0; i < numAttributes; i++) {
+            const info = gl.getActiveAttrib(shaderProgram, i);
+            if (info) {
+                attributeLocations[info.name] = gl.getAttribLocation(shaderProgram, info.name);
+            }
+        }
+
+        // Get uniform locations
+        const numUniforms = gl.getProgramParameter(shaderProgram, GL.ACTIVE_UNIFORMS);
+        for (let i = 0; i < numUniforms; i++) {
+            const info = gl.getActiveUniform(shaderProgram, i);
+            if (info) {
+                const location = gl.getUniformLocation(shaderProgram, info.name);
+                if (location) {
+                    uniformLocations[info.name] = location;
+                }
+            }
+        }
+
+        return {
+            program: shaderProgram,
+            attributeLocations,
+            uniformLocations,
+            shaderSources: { vs: vsSource, fs: fsSource }
+        };
+    }
+
+    // New method to create forward rendering program
+    static async makeForwardProgram(
+        gl: GLC,
+        material: MtlMaterial,
+        customShaderPaths?: { vs: string, fs: string }
+    ): Promise<ProgramInfo> {
+        if (!material.map_diffuse && !material.diffuse) throw ``;
+
+        // Load forward rendering shader files
+        let vsSource = "";
+        let fsSource = "";
+        
+        // Use custom paths if provided, otherwise use defaults
+        // Fix paths to be relative to the web server root
+        const vsPath = customShaderPaths?.vs || 'static/src/shaders/forward.vert';
+        const fsPath = customShaderPaths?.fs || 'static/src/shaders/forward.frag';
+        
+        // Convert absolute paths to relative paths
+        const normalizedVsPath = vsPath.startsWith('/') ? vsPath.substring(1) : vsPath;
+        const normalizedFsPath = fsPath.startsWith('/') ? fsPath.substring(1) : fsPath;
+        
+        try {
+            const [vsResponse, fsResponse] = await Promise.all([
+                fetch(normalizedVsPath),
+                fetch(normalizedFsPath)
+            ]);
+            
+            if (vsResponse.ok && fsResponse.ok) {
+                vsSource = await vsResponse.text();
+                fsSource = await fsResponse.text();
+            } else {
+                throw new Error(`HTTP error: VS=${vsResponse.status}, FS=${fsResponse.status}`);
+            }
+        } catch (error) {
+            // Use minimal default shaders for testing
+            vsSource = `#version 300 es
+                in vec4 aVertexPosition;
+                in vec3 aVertexNormal;
+                in vec2 aVertexTexCoord;
+                uniform mat4 uModelMatrix;
+                uniform mat4 uViewMatrix;
+                uniform mat4 uProjectionMatrix;
+                out vec2 vTextureCoord;
+                void main() {
+                    gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
+                    vTextureCoord = aVertexTexCoord;
+                }`;
+            fsSource = `#version 300 es
+                precision mediump float;
+                uniform vec4 uDiffuseColor;
+                in vec2 vTextureCoord;
+                out vec4 fragColor;
+                void main() {
+                    fragColor = uDiffuseColor;
                 }`;
         }
 
