@@ -125,6 +125,12 @@ export async function createShaderProgram(
 
 // Base class for all game objects
 export class GameObject {
+    // Static counter for globally unique IDs
+    private static nextId: number = 1;
+    
+    // Globally unique identifier for this GameObject instance
+    public readonly id: number;
+    
     public type: "mesh" | "point_light" | "directional_light";
     public programInfo?: ProgramInfo;
     public forwardProgramInfo?: ProgramInfo;  // New program info for forward rendering
@@ -161,8 +167,16 @@ export class GameObject {
         public visible: boolean = true,
         public name?: string,
     ) {
+        // Assign globally unique ID
+        this.id = GameObject.nextId++;
+        
         // Type must be set by derived classes
         this.type = "mesh" as const;
+    }
+
+    // Static method to set the next ID (useful for deserialization)
+    static setNextId(id: number): void {
+        GameObject.nextId = Math.max(GameObject.nextId, id);
     }
 
     // Parent-child relationship management
