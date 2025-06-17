@@ -3,11 +3,10 @@
 import {
     uint8ArrayToString,
     arrayBeginsWith,
-    arrToUint32,
-    arrToUint8,
 } from "./bits";
 
 import { zlibDecode } from "./zlib";
+import { ByteReader } from "./bytereader";
 
 /** from png spec https://www.w3.org/TR/png-3/#9Filter-type-4-Paeth */
 function paethPredictor(a: number, b: number, c: number): number {
@@ -83,25 +82,23 @@ export async function parsePng(
     let IHDR: IHDR_chunk | null = null;
     let IDAT: Uint8Array | null = null;
 
-    const pngdata = new Uint8Array(responseData);
+    // Create ByteReader with big-endian format (PNG uses big-endian)
+    const reader = new ByteReader(responseData, false);
 
-    let pngslice = pngdata.subarray(0);
-
-    if (!arrayBeginsWith(pngslice, PNG_START)) {
+    // Check PNG signature
+    const pngSignature = reader.readBytes(PNG_START.length);
+    if (!arrayBeginsWith(pngSignature, PNG_START)) {
         const error = `png start invalid`;
         alert(error);
         throw error;
     }
-    pngslice = pngslice.subarray(PNG_START.length);
 
-    pngfiletotal: while (pngslice.length > 0) {
-        let chunklength = arrToUint32(pngslice.subarray(0, 4));
-        let header = uint8ArrayToString(pngslice.subarray(4, 8));
-        let chunkdata = pngslice.subarray(8, 8 + chunklength);
-        // ignored but required to be present
-        let crc = pngslice.subarray(8 + chunklength, 8 + chunklength + 4);
-
-        pngslice = pngslice.subarray(8 + chunklength + 4);
+    pngfiletotal: while (reader.getRemainingBytes() > 0) {
+        const chunklength = reader.readUint32();
+        const header = reader.readFixedString(4, 'ascii');
+        const chunkdata = reader.readBytes(chunklength);
+        // Important: read CRC even though we don't use it - maintains data alignment
+        const crc = reader.readBytes(4);
 
         switch (header) {
             case "IHDR": {
@@ -114,17 +111,15 @@ export async function parsePng(
                     Filter method	1 byte
                     Interlace method	1 byte
                 */
-                const width = arrToUint32(chunkdata.subarray(0, 4));
-                const height = arrToUint32(chunkdata.subarray(4, 8));
-                const bitdepth = arrToUint8(chunkdata.subarray(8, 9));
-                const colortype_raw = arrToUint8(chunkdata.subarray(9, 10));
-                const compressionmethod = arrToUint8(
-                    chunkdata.subarray(10, 11),
-                );
-                const filtermethod = arrToUint8(chunkdata.subarray(11, 12));
-                const interlacemethod_raw = arrToUint8(
-                    chunkdata.subarray(12, 13),
-                );
+                const chunkReader = new ByteReader(chunkdata.buffer.slice(chunkdata.byteOffset, chunkdata.byteOffset + chunkdata.byteLength) as ArrayBuffer, false);
+                
+                const width = chunkReader.readUint32();
+                const height = chunkReader.readUint32();
+                const bitdepth = chunkReader.readUint8();
+                const colortype_raw = chunkReader.readUint8();
+                const compressionmethod = chunkReader.readUint8();
+                const filtermethod = chunkReader.readUint8();
+                const interlacemethod_raw = chunkReader.readUint8();
 
                 const colortype = IHDR_COLORTYPE_ENUMS[colortype_raw];
                 if (compressionmethod != 0) {
@@ -202,7 +197,9 @@ export async function parsePng(
         Paeth: 4,
     });
 
-    const filteredData = zlibDecode(IDAT, (1 + width * bpp) * height);
+    // Create ByteReader for IDAT data (zlib uses big-endian)
+    const idatReader = new ByteReader(IDAT.buffer.slice(IDAT.byteOffset, IDAT.byteOffset + IDAT.byteLength) as ArrayBuffer, false);
+    const filteredData = zlibDecode(idatReader, (1 + width * bpp) * height);
 
     // this does modulo on copy into it, which is the desired behaviour
     const outdata = new Uint8Array(width * height * bpp);

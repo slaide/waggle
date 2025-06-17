@@ -108,6 +108,10 @@ async function createShaderProgram(
 // Note: We use typed arrays internally for performance, but convert to regular arrays for serialization
 export class Model extends GameObject {
     public type = "mesh" as const;
+    
+    /** Static flag to track if lineWidth warning has been shown (to avoid console spam) */
+    private static _lineWidthWarningShown = false;
+    
     // Internal storage using typed arrays for performance
     private _rawVertexData?: number[];
     private _rawIndices?: number[];
@@ -535,7 +539,16 @@ export class Model extends GameObject {
 
         // Set line width if drawing lines
         if (this.drawMode === "lines") {
-            gl.lineWidth(this.lineWidth);
+            // Check WebGL lineWidth support (most browsers only support 1.0)
+            const lineWidthRange = gl.getParameter(gl.ALIASED_LINE_WIDTH_RANGE);
+            if (this.lineWidth > lineWidthRange[1]) {
+                // Only warn once per session to avoid console spam
+                if (!Model._lineWidthWarningShown) {
+                    console.warn(`WebGL lineWidth ${this.lineWidth} exceeds maximum supported width ${lineWidthRange[1]}. Most browsers only support lineWidth = 1.0. Consider using geometry-based thick lines instead.`);
+                    Model._lineWidthWarningShown = true;
+                }
+            }
+            gl.lineWidth(Math.min(this.lineWidth, lineWidthRange[1]));
         }
         
         // Set line color override if specified
@@ -1016,7 +1029,11 @@ export class Model extends GameObject {
                     throw new Error(`Failed to load texture: ${response.statusText}`);
                 }
                 const buffer = await response.arrayBuffer();
+                // time the parsepng time
+                const start = performance.now();
                 const imageData = await parsePng(diffuseTexturePath);
+                const end = performance.now();
+                console.log(`parsePng took ${end - start}ms`);
                 
                 gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
             } catch (error) {

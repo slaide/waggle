@@ -1,6 +1,7 @@
 //# allFunctionsCalledOnLoad
 
-import { arrToUint32, arrToUint16, arrToUint8 } from "./bits";
+import { arrToUint16 } from "./bits";
+import { ByteReader } from "./bytereader";
 
 import { HuffmanTree } from "./huffman";
 import { BitBuffer } from "./bits";
@@ -246,14 +247,12 @@ function decode_deflate(i: Uint8Array, maxlen: number): Uint8Array {
 }
 
 export function zlibDecode(
-    zlibCompressedData: Uint8Array,
+    reader: ByteReader,
     maxlen: number,
 ): Uint8Array {
-    let d = zlibCompressedData;
-
-    const cmf = arrToUint8(d.subarray(0, 1));
-    const flg = arrToUint8(d.subarray(1, 2));
-    d = d.subarray(2);
+    // Parse zlib header using ByteReader (zlib uses big-endian)
+    const cmf = reader.readUint8();
+    const flg = reader.readUint8();
 
     const compression_method = cmf & 0xf;
     const compression_info = cmf >> 4;
@@ -268,12 +267,13 @@ export function zlibDecode(
 
     let dictid = 0;
     if (preset_dict) {
-        dictid = arrToUint32(d.subarray(0, 4));
-        d = d.subarray(4);
+        dictid = reader.readUint32();
         throw `zlib preset dict unimplemented`;
     }
 
-    const deflated = decode_deflate(d, maxlen);
+    // Get remaining deflate data as Uint8Array for decode_deflate
+    const deflateData = reader.readBytes(reader.getRemainingBytes());
+    const deflated = decode_deflate(deflateData, maxlen);
 
     return deflated;
 }

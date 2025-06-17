@@ -5,6 +5,7 @@ import { loadScene, SceneDescription } from "./scene/scene";
 // Import these to ensure GameObject types are registered
 import "./scene/model";
 import "./scene/light";
+import "./scene/textmesh";
 
 export async function main() {
     // import wasm like this (instead of top level import!)
@@ -56,6 +57,18 @@ export async function main() {
     // Load scene from description
     const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
+
+    // Add wireframe text 'ABC' to the scene using the TextRenderer API directly
+    const { TextRenderer, createTextModelFromRenderer } = await import("./scene/textmesh");
+    const textRenderer = await TextRenderer.fromFile("./static/resources/Raleway-Regular.ttf");
+    const textConfig = {
+        fontSize: 1.0,
+        lineWidth: 1.0, // Set to 1.0 - most browsers only support this value
+        lineColor: vec3.fromValues(0.0, 1.0, 0.0), // Green
+        position: vec3.fromValues(0, 0, -1)
+    };
+    const textABC = await createTextModelFromRenderer(gl, textRenderer, "ABCj", textConfig);
+    scene.objects.push(textABC);
 
     // Ensure all transforms are properly calculated after loading
     scene.updateAllTransforms();
@@ -302,14 +315,16 @@ export async function main() {
             // Skip objects without program info (like lights)
             if (!object.programInfo) continue;
 
-            // animate quad rotation
-            rotation += 40 * deltatime_ms;
-            object.transform.rotation = quat.fromEuler(
-                quat.create(),
-                rotation * 0.3,
-                rotation * 0.7,
-                rotation,
-            );
+            // animate rotation only for bunny objects
+            if (object.name && object.name.toLowerCase().includes("bunny")) {
+                rotation += 40 * deltatime_ms;
+                object.transform.rotation = quat.fromEuler(
+                    quat.create(),
+                    rotation * 0.3,
+                    rotation * 0.7,
+                    rotation,
+                );
+            }
 
             // Set up all uniforms including lighting for Model objects
             if (object.type === "mesh") {

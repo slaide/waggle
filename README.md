@@ -222,7 +222,9 @@ waggle/
 │   │   ├── bits/                # Custom file loaders
 │   │   │   ├── obj.ts           # Wavefront OBJ parser
 │   │   │   ├── png.ts           # PNG image decoder
+│   │   │   ├── ttf.ts           # TTF font parser
 │   │   │   └── ...              # Additional utilities
+│   │   ├── text.ts              # Text rendering system
 │   │   └── gbuffer.ts           # G-buffer management
 │   ├── resources/               # 3D models and textures
 │   └── index.html               # Application entry point
@@ -262,6 +264,65 @@ const imageData = await parsePng('./static/resources/texture.png');
 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, imageData.width, imageData.height, 
               0, gl.RGBA, gl.UNSIGNED_BYTE, imageData.data);
 ```
+
+## Text Rendering System
+
+Waggle includes a comprehensive text rendering system built on a custom TTF font parser, enabling 3D text rendering with wireframe visualization.
+
+### TTF Font Parser (`bits/ttf.ts`)
+- **Pure TypeScript**: Complete TTF font file parsing with no external dependencies
+- **Glyph Extraction**: Character-to-glyph mapping with Unicode support
+- **Outline Parsing**: Vector-based glyph contour extraction for precise geometry
+- **Font Metrics**: Proper scaling using font units per em (unitsPerEm)
+
+### Font Class Interface (`text.ts`)
+The Font class provides a clean, extensible API for text rendering:
+
+```typescript
+import { Font, FontOptions } from './text';
+import { vec3 } from 'gl-matrix';
+
+// Configure font rendering options
+const fontOptions: FontOptions = {
+    fontSize: 1.0,                              // Font size in world units
+    lineWidth: 1.0,                             // Line width (most browsers only support 1.0)
+    lineColor: vec3.fromValues(0.0, 1.0, 0.0)   // Green wireframe color
+};
+
+// Load font and generate text
+const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', fontOptions);
+const textMesh = font.generateTextMesh('ABC', vec3.fromValues(0, 0, -1));
+```
+
+### Features
+- **World-Space Positioning**: Text positioned using 3D coordinates with lower-left corner specification
+- **Automatic Character Spacing**: Intelligent character spacing based on font size (fontSize × 0.7)
+- **Wireframe Rendering**: Line-based text rendering integrated with WebGL2 pipeline
+- **Extensible Options**: FontOptions interface designed for future feature expansion
+- **Single Character Support**: Individual character mesh generation for custom layouts
+
+### Integration with Rendering Pipeline
+Text meshes integrate seamlessly with Waggle's forward rendering system:
+
+```typescript
+import { createTextModel } from './scene/textmesh';
+
+// Convert text mesh to renderable Model object
+const textModel = createTextModel(textMesh, fontOptions.lineColor, fontOptions.lineWidth);
+scene.addObject(textModel);
+```
+
+### Current Limitations & Future Enhancements
+**Note**: The current implementation supports wireframe-only text rendering. Future versions will include:
+- **Smooth Outline Rendering**: Anti-aliased text outlines for improved visual quality
+- **Filled Text Rendering**: Solid text appearance with proper triangulation
+- **Advanced Typography**: Kerning, ligatures, and multi-line text support
+
+### Performance Characteristics
+- **Font Loading**: O(1) - Fonts cached after initial parse
+- **Text Generation**: O(n) - Linear with character count
+- **Memory Usage**: Efficient typed arrays for vertex data
+- **Rendering**: Uses GL.LINES primitive with configurable line width
 
 ## Forward Rendering System
 

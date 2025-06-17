@@ -72,14 +72,15 @@ export function bitmask(n:number):number{
     return ((1<<n)-1);
 }
 
-const rtl=true;
-
 export class BitBuffer{
     constructor(
         public data:Uint8Array,
         public dataindex:number,
+
         public buffer:number,
         public bufferlen:number,
+
+        public readonly rtl:boolean=true,
     ){}
 
     #fillBuffer(){
@@ -99,7 +100,7 @@ export class BitBuffer{
             this.#fillBuffer();
         }
 
-        if(rtl){
+        if(this.rtl){
             const ret=this.buffer&1;
             if(alsoskip)this.next();
             return ret;
@@ -116,7 +117,7 @@ export class BitBuffer{
 
         let ret=0;
 
-        if(rtl){
+        if(this.rtl){
             for(let i=0;i<n;i++){
                 ret|=this.bit(true)<<i;
             }
@@ -133,7 +134,7 @@ export class BitBuffer{
         if(numbits<0)throw `cannot skip ${numbits}<0 bits`;
         if(this.bufferlen<numbits)throw `invalid bufferlength`;
 
-        if(rtl){
+        if(this.rtl){
             // shift out leading bit
             this.buffer>>=numbits;
             this.bufferlen--;
