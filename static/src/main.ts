@@ -58,14 +58,15 @@ export async function main() {
     const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
 
-    // Add wireframe text 'ABC' to the scene using the TextRenderer API directly
+    // Add wireframe text 'ABC' to the scene using the TextRenderer API directly with spline interpolation
     const { TextRenderer, createTextModelFromRenderer } = await import("./scene/textmesh");
     const textRenderer = await TextRenderer.fromFile("./static/resources/Raleway-Regular.ttf");
     const textConfig = {
         fontSize: 1.0,
         lineWidth: 1.0, // Set to 1.0 - most browsers only support this value
         lineColor: vec3.fromValues(0.0, 1.0, 0.0), // Green
-        position: vec3.fromValues(0, 0, -1)
+        position: vec3.fromValues(0, 0, -1),
+        splineSteps: 8 // 8 spline interpolation steps per curve segment for smooth outlines
     };
     const textABC = await createTextModelFromRenderer(gl, textRenderer, "ABCj", textConfig);
     scene.objects.push(textABC);

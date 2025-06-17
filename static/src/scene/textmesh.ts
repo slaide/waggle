@@ -51,6 +51,8 @@ export interface TextRenderConfig {
     lineColor: vec3;
     /** Position where text should start (lower-left corner of first character) */
     position: vec3;
+    /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
+    splineSteps: number;
 }
 
 /**
@@ -76,7 +78,8 @@ export class TextRenderer {
         const loadingOptions: FontOptions = {
             fontSize: 1.0,  // Will be overridden during rendering
             lineWidth: 1.0, // Will be overridden during rendering  
-            lineColor: vec3.fromValues(1.0, 1.0, 1.0) // Will be overridden during rendering
+            lineColor: vec3.fromValues(1.0, 1.0, 1.0), // Will be overridden during rendering
+            splineSteps: 0 // Will be overridden during rendering
         };
         
         const font = await Font.fromFile(fontPath, loadingOptions);
@@ -94,6 +97,7 @@ export class TextRenderer {
         this.font.options.fontSize = config.fontSize;
         this.font.options.lineWidth = config.lineWidth;
         this.font.options.lineColor = vec3.clone(config.lineColor);
+        this.font.options.splineSteps = config.splineSteps;
         
         return this.font.generateTextMesh(text, config.position);
     }

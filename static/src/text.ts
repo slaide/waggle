@@ -10,6 +10,7 @@
  * - `fontSize`: Font size in world units
  * - `lineWidth`: Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0
  * - `lineColor`: RGB color for lines (vec3)
+ * - `splineSteps`: Number of interpolation steps per curve segment (default: 0 = no interpolation, just control points)
  * 
  * ### Font Class
  * Main class for text rendering:
@@ -17,15 +18,16 @@
  * - `font.generateCharacterMesh(char, position)`: Generate single character
  * - `font.generateTextMesh(text, position)`: Generate multi-character text
  * 
- * **Note**: Current implementation only supports wireframe rendering. Future versions will include
- * smooth outline rendering and filled text rendering capabilities.
+ * **Note**: Current implementation supports both wireframe rendering with control points only (splineSteps=0)
+ * and smooth outline rendering with configurable spline interpolation (splineSteps>0).
  * 
  * ### Usage Example
  * ```typescript
  * const fontOptions: FontOptions = {
  *     fontSize: 1.0,
  *     lineWidth: 3.0,
- *     lineColor: vec3.fromValues(1.0, 0.0, 0.0) // Red
+ *     lineColor: vec3.fromValues(1.0, 0.0, 0.0), // Red
+ *     splineSteps: 8 // 8 steps per curve segment for smooth outlines
  * };
  * 
  * const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', fontOptions);
@@ -90,6 +92,195 @@ export interface FontOptions {
     lineWidth: number;
     /** RGB color for lines */
     lineColor: vec3;
+    /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
+    splineSteps: number;
+}
+
+/**
+ * Interpolate a quadratic Bézier curve point
+ * @param p0 - Start point (x, y)
+ * @param p1 - Control point (x, y)
+ * @param p2 - End point (x, y)
+ * @param t - Parameter from 0 to 1
+ * @returns Interpolated point [x, y]
+ */
+function quadraticBezier(p0: [number, number], p1: [number, number], p2: [number, number], t: number): [number, number] {
+    const oneMinusT = 1 - t;
+    const x = oneMinusT * oneMinusT * p0[0] + 2 * oneMinusT * t * p1[0] + t * t * p2[0];
+    const y = oneMinusT * oneMinusT * p0[1] + 2 * oneMinusT * t * p1[1] + t * t * p2[1];
+    return [x, y];
+}
+
+/**
+ * Generate smooth curve points from TrueType glyph contour following TrueType specification
+ * @param contour - Glyph contour with on-curve and off-curve points
+ * @param splineSteps - Number of interpolation steps per curve segment (0 = no interpolation)
+ * @returns Array of interpolated points as [x, y] coordinates
+ */
+function generateSmoothContour(contour: GlyphContour, splineSteps: number): [number, number][] {
+    if (splineSteps === 0 || contour.points.length === 0) {
+        // No interpolation - just return original points
+        return contour.points.map(p => [p.x, p.y] as [number, number]);
+    }
+
+    const smoothPoints: [number, number][] = [];
+    const points = contour.points;
+    
+    if (points.length === 0) {
+        return smoothPoints;
+    }
+
+    // TrueType specification implementation:
+    // 1. Create a list of curve segments where each segment has exactly one off-curve control point
+    // 2. Implied on-curve points are created between consecutive off-curve points
+    // 3. Each segment is interpolated as a quadratic Bézier curve
+    
+    const segments: Array<{
+        start: { x: number, y: number },
+        control: { x: number, y: number } | null,
+        end: { x: number, y: number }
+    }> = [];
+    
+    // Process points to create segments following TrueType rules
+    let i = 0;
+    while (i < points.length) {
+        const currentPoint = points[i];
+        
+        if (currentPoint.onCurve) {
+            // Start a new segment from this on-curve point
+            const nextIndex = (i + 1) % points.length;
+            const nextPoint = points[nextIndex];
+            
+            if (nextPoint.onCurve) {
+                // Straight line segment: on-curve -> on-curve
+                segments.push({
+                    start: { x: currentPoint.x, y: currentPoint.y },
+                    control: null,
+                    end: { x: nextPoint.x, y: nextPoint.y }
+                });
+                i++;
+            } else {
+                // Curve segment: on-curve -> off-curve -> ...
+                const controlPoint = nextPoint;
+                
+                // Find the end point for this curve
+                let endIndex = (i + 2) % points.length;
+                let endPoint;
+                
+                if (points[endIndex].onCurve) {
+                    // Simple case: on-curve -> off-curve -> on-curve
+                    endPoint = points[endIndex];
+                    i += 2; // Skip the control point and move to end point
+                } else {
+                    // Implied on-curve point between consecutive off-curve points
+                    const nextOffCurve = points[endIndex];
+                    endPoint = {
+                        x: (controlPoint.x + nextOffCurve.x) / 2,
+                        y: (controlPoint.y + nextOffCurve.y) / 2,
+                        onCurve: true
+                    };
+                    i++; // Move to the control point (next iteration will process the off-curve point)
+                }
+                
+                segments.push({
+                    start: { x: currentPoint.x, y: currentPoint.y },
+                    control: { x: controlPoint.x, y: controlPoint.y },
+                    end: { x: endPoint.x, y: endPoint.y }
+                });
+            }
+        } else {
+            // This off-curve point should have been handled in the previous iteration
+            // or it's the start of a sequence of off-curve points
+            
+            // If we start with an off-curve point, we need to find the first on-curve point
+            // and create an implied start point
+            let firstOnCurveIndex = -1;
+            for (let j = 0; j < points.length; j++) {
+                if (points[j].onCurve) {
+                    firstOnCurveIndex = j;
+                    break;
+                }
+            }
+            
+            if (firstOnCurveIndex === -1) {
+                // No on-curve points at all - just return original points
+                return points.map(p => [p.x, p.y] as [number, number]);
+            }
+            
+            // Find previous off-curve point to create implied start
+            const prevIndex = (i - 1 + points.length) % points.length;
+            const prevPoint = points[prevIndex];
+            
+            if (!prevPoint.onCurve) {
+                // Create implied on-curve point
+                const impliedStart = {
+                    x: (prevPoint.x + currentPoint.x) / 2,
+                    y: (prevPoint.y + currentPoint.y) / 2,
+                    onCurve: true
+                };
+                
+                // Find end point
+                const nextIndex = (i + 1) % points.length;
+                const nextPoint = points[nextIndex];
+                let endPoint;
+                
+                if (nextPoint.onCurve) {
+                    endPoint = nextPoint;
+                } else {
+                    // Another implied point
+                    endPoint = {
+                        x: (currentPoint.x + nextPoint.x) / 2,
+                        y: (currentPoint.y + nextPoint.y) / 2,
+                        onCurve: true
+                    };
+                }
+                
+                segments.push({
+                    start: impliedStart,
+                    control: { x: currentPoint.x, y: currentPoint.y },
+                    end: endPoint
+                });
+            }
+            
+            i++;
+        }
+    }
+    
+    // Now interpolate all segments
+    for (let segIndex = 0; segIndex < segments.length; segIndex++) {
+        const segment = segments[segIndex];
+        
+        // Add start point (avoid duplicates by checking if it's already the last added point)
+        const lastPoint = smoothPoints[smoothPoints.length - 1];
+        if (!lastPoint || lastPoint[0] !== segment.start.x || lastPoint[1] !== segment.start.y) {
+            smoothPoints.push([segment.start.x, segment.start.y]);
+        }
+        
+        if (segment.control) {
+            // Curve segment - interpolate
+            const p0: [number, number] = [segment.start.x, segment.start.y];
+            const p1: [number, number] = [segment.control.x, segment.control.y];
+            const p2: [number, number] = [segment.end.x, segment.end.y];
+            
+            // Generate interpolated points (skip t=0 and t=1 to avoid duplicates)
+            for (let step = 1; step < splineSteps; step++) {
+                const t = step / splineSteps;
+                const interpolated = quadraticBezier(p0, p1, p2, t);
+                smoothPoints.push(interpolated);
+            }
+        }
+        
+        // Add end point for the last segment or if it's not the start of the next segment
+        if (segIndex === segments.length - 1) {
+            const endPoint = [segment.end.x, segment.end.y] as [number, number];
+            const lastAdded = smoothPoints[smoothPoints.length - 1];
+            if (!lastAdded || lastAdded[0] !== endPoint[0] || lastAdded[1] !== endPoint[1]) {
+                smoothPoints.push(endPoint);
+            }
+        }
+    }
+
+    return smoothPoints;
 }
 
 /**
@@ -205,10 +396,10 @@ export class Font {
                 bounds.max[0] = Math.max(bounds.max[0], charMesh.bounds.max[0]);
                 bounds.max[1] = Math.max(bounds.max[1], charMesh.bounds.max[1]);
                 bounds.max[2] = Math.max(bounds.max[2], charMesh.bounds.max[2]);
-                
-                // Advance cursor (simple character spacing - could be improved with proper metrics)
-                currentX += this.options.fontSize * 0.7; // Rough character spacing
             }
+            
+            // Advance position for next character (simple spacing)
+            currentX += this.options.fontSize * 0.7;
         }
 
         return {
@@ -219,7 +410,7 @@ export class Font {
     }
 
     /**
-     * Generate a wireframe mesh from a glyph outline by connecting control points
+     * Generate a wireframe mesh from a glyph outline with optional spline interpolation
      * @param outline - Glyph outline data
      * @param position - Base position for the glyph
      * @returns Text mesh with vertices and line indices
@@ -238,11 +429,14 @@ export class Font {
         for (const contour of outline.contours) {
             const contourStartIndex = vertexIndex;
             
-            // Add all points in the contour as vertices
-            for (const point of contour.points) {
+            // Generate smooth contour points based on splineSteps setting
+            const smoothPoints = generateSmoothContour(contour, this.options.splineSteps);
+            
+            // Add all points in the smooth contour as vertices
+            for (const [pointX, pointY] of smoothPoints) {
                 // Convert font units to world coordinates
-                const worldX = this.fontUnitsToWorld(point.x);
-                const worldY = this.fontUnitsToWorld(point.y);
+                const worldX = this.fontUnitsToWorld(pointX);
+                const worldY = this.fontUnitsToWorld(pointY);
                 
                 // Apply position
                 const finalX = position[0] + worldX;
@@ -263,9 +457,9 @@ export class Font {
             }
             
             // Connect consecutive points in the contour with lines
-            for (let i = 0; i < contour.points.length; i++) {
+            for (let i = 0; i < smoothPoints.length; i++) {
                 const currentIndex = contourStartIndex + i;
-                const nextIndex = contourStartIndex + ((i + 1) % contour.points.length); // Wrap around to close contour
+                const nextIndex = contourStartIndex + ((i + 1) % smoothPoints.length); // Wrap around to close contour
                 
                 // Add line segment
                 indices.push(currentIndex, nextIndex);
