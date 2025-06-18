@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeAll } from 'bun:test';
 import { 
     parseTTF, 
-    debugTTFFont, 
+    TTFFont,
     parseHeadTable, 
     parseHheaTable, 
     parseMaxpTable, 
@@ -14,8 +14,38 @@ import {
     TTFCmapTable
 } from '../../../../static/src/bits/ttf';
 
+/**
+ * Debug function to print font information
+ * @param font - TTF font structure
+ */
+function debugTTFFont(font: TTFFont): void {
+    console.log("=== TTF Font Debug Info ===");
+    console.log(`SFNT Version: 0x${font.header.sfntVersion.toString(16).padStart(8, '0')}`);
+    console.log(`Number of Tables: ${font.header.numTables}`);
+    console.log(`Search Range: ${font.header.searchRange}`);
+    console.log(`Entry Selector: ${font.header.entrySelector}`);
+    console.log(`Range Shift: ${font.header.rangeShift}`);
+    console.log(`Total File Size: ${font.rawData.length} bytes`);
+    
+    console.log("\n=== Table Directory ===");
+    const sortedTables = Array.from(font.tables.entries()).sort(([a], [b]) => a.localeCompare(b));
+    
+    for (const [tag, entry] of sortedTables) {
+        console.log(`${tag}: offset=${entry.offset}, length=${entry.length}, checksum=0x${entry.checkSum.toString(16).padStart(8, '0')}`);
+    }
+    
+    // List common/important tables
+    const importantTables = ['head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post', 'cmap', 'glyf', 'loca'];
+    console.log("\n=== Important Tables Present ===");
+    
+    for (const table of importantTables) {
+        const present = font.tables.has(table);
+        console.log(`${table}: ${present ? '✓' : '✗'}`);
+    }
+}
+
 describe('TTF Parser', () => {
-    let font: any;
+    let font: TTFFont;
     
     beforeAll(async () => {
         // Parse the font once for all tests

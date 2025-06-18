@@ -8,14 +8,14 @@ export function stringToUint8Array(str:string):Uint8Array {
     return uint8Array;
 }
 export function uint8ArrayToString(arr:Uint8Array):string{
-    let ret=""
+    let ret="";
     for(let i=0;i<arr.length;i++){
-        ret+=String.fromCharCode(arr[i])
+        ret+=String.fromCharCode(arr[i]);
     }
-    return ret
+    return ret;
 }
 export function arrayBeginsWith(a:Uint8Array,b:Uint8Array):boolean{
-    const len=Math.min(a.length,b.length)
+    const len=Math.min(a.length,b.length);
     for(let i=0;i<len;i++){
         if(a[i]!=b[i])return false;
     }
@@ -49,7 +49,7 @@ export function arrToUint(
         }
 
         return ret;
-    }
+    };
 }
 
 export function reverseBits(
@@ -66,7 +66,7 @@ export function reverseBits(
     return ret;
 }
 export function binstr(b:number,n:number):string{
-    return b.toString(2).padStart(n,'0');
+    return b.toString(2).padStart(n,"0");
 }
 export function bitmask(n:number):number{
     return ((1<<n)-1);
@@ -132,7 +132,7 @@ export class BitBuffer{
     /** skip numbits bits */
     next(numbits:number=1){
         if(numbits<0)throw `cannot skip ${numbits}<0 bits`;
-        if(this.bufferlen<numbits)throw `invalid bufferlength`;
+        if(this.bufferlen<numbits)throw "invalid bufferlength";
 
         if(this.rtl){
             // shift out leading bit

@@ -171,7 +171,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
     let responseData: ArrayBuffer;
     
     // Check if we're in a browser environment or Node.js/Bun environment
-    if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+    if (typeof window !== "undefined" && typeof fetch !== "undefined") {
         // Browser environment - use fetch
         responseData = await fetch(src, { method: "GET" })
             .then(async (response) => {
@@ -188,7 +188,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
     } else {
         // Node.js/Bun environment - use file system
         try {
-            const fs = await import('fs/promises');
+            const fs = await import("fs/promises");
             const buffer = await fs.readFile(src);
             responseData = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
         } catch (error) {
@@ -214,7 +214,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
 
     // Validate magic number
     if (sfntVersion !== 0x00010000) {
-        throw new Error(`Invalid TTF magic number: 0x${sfntVersion.toString(16).padStart(8, '0')} (expected 0x00010000)`);
+        throw new Error(`Invalid TTF magic number: 0x${sfntVersion.toString(16).padStart(8, "0")} (expected 0x00010000)`);
     }
 
     // Check if we have enough data for all table entries
@@ -228,7 +228,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
         numTables,
         searchRange,
         entrySelector,
-        rangeShift
+        rangeShift,
     };
 
     // Parse table directory entries - 16 bytes each
@@ -236,7 +236,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
     
     for (let i = 0; i < numTables; i++) {
         // Read table tag (4 bytes as string)
-        const tag = reader.readFixedString(4, 'ascii');
+        const tag = reader.readFixedString(4, "ascii");
         
         // Read checksum (4 bytes)
         const checkSum = reader.readUint32();
@@ -251,7 +251,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
             tag,
             checkSum,
             offset: tableOffset,
-            length
+            length,
         };
 
         tables.set(tag, tableEntry);
@@ -261,7 +261,7 @@ export async function parseTTF(src: string): Promise<TTFFont> {
         header,
         tables,
         rawData: new Uint8Array(responseData),
-        tableAccess: null as any // Will be set below
+        tableAccess: null as any, // Will be set below
     };
     
     // Create table access interface
@@ -291,7 +291,7 @@ export function getTableData(font: TTFFont, tableTag: string): Uint8Array | null
  * @returns Parsed head table or null if not found
  */
 export function parseHeadTable(font: TTFFont): TTFHeadTable | null {
-    const tableData = getTableData(font, 'head');
+    const tableData = getTableData(font, "head");
     if (!tableData) {
         return null;
     }
@@ -345,7 +345,7 @@ export function parseHeadTable(font: TTFFont): TTFHeadTable | null {
         lowestRecPPEM,
         fontDirectionHint,
         indexToLocFormat,
-        glyphDataFormat
+        glyphDataFormat,
     };
 }
 
@@ -355,7 +355,7 @@ export function parseHeadTable(font: TTFFont): TTFHeadTable | null {
  * @returns Parsed hhea table or null if not found
  */
 export function parseHheaTable(font: TTFFont): TTFHheaTable | null {
-    const tableData = getTableData(font, 'hhea');
+    const tableData = getTableData(font, "hhea");
     if (!tableData) {
         return null;
     }
@@ -392,7 +392,7 @@ export function parseHheaTable(font: TTFFont): TTFHheaTable | null {
         caretSlopeRun,
         caretOffset,
         metricDataFormat,
-        numberOfHMetrics
+        numberOfHMetrics,
     };
 }
 
@@ -402,7 +402,7 @@ export function parseHheaTable(font: TTFFont): TTFHheaTable | null {
  * @returns Parsed maxp table or null if not found
  */
 export function parseMaxpTable(font: TTFFont): TTFMaxpTable | null {
-    const tableData = getTableData(font, 'maxp');
+    const tableData = getTableData(font, "maxp");
     if (!tableData) {
         return null;
     }
@@ -414,7 +414,7 @@ export function parseMaxpTable(font: TTFFont): TTFMaxpTable | null {
 
     const result: TTFMaxpTable = {
         version,
-        numGlyphs
+        numGlyphs,
     };
 
     // If version 1.0, read additional fields
@@ -443,7 +443,7 @@ export function parseMaxpTable(font: TTFFont): TTFMaxpTable | null {
  * @returns Parsed name table or null if not found
  */
 export function parseNameTable(font: TTFFont): TTFNameTable | null {
-    const tableData = getTableData(font, 'name');
+    const tableData = getTableData(font, "name");
     if (!tableData) {
         return null;
     }
@@ -471,7 +471,7 @@ export function parseNameTable(font: TTFFont): TTFNameTable | null {
             languageID,
             nameID,
             length,
-            offset
+            offset,
         });
     }
 
@@ -486,20 +486,20 @@ export function parseNameTable(font: TTFFont): TTFNameTable | null {
         try {
             if (record.platformID === 0 || (record.platformID === 3 && record.encodingID === 1)) {
                 // Unicode platform or Windows Unicode BMP
-                const decoder = new TextDecoder('utf-16be');
+                const decoder = new TextDecoder("utf-16be");
                 record.value = decoder.decode(stringBytes);
             } else if (record.platformID === 1) {
                 // Macintosh platform
-                const decoder = new TextDecoder('macintosh');
+                const decoder = new TextDecoder("macintosh");
                 record.value = decoder.decode(stringBytes);
             } else {
                 // Default to ASCII
-                const decoder = new TextDecoder('ascii');
+                const decoder = new TextDecoder("ascii");
                 record.value = decoder.decode(stringBytes);
             }
-        } catch (error) {
+        } catch {
             // Fallback to ASCII if decoding fails
-            const decoder = new TextDecoder('ascii');
+            const decoder = new TextDecoder("ascii");
             record.value = decoder.decode(stringBytes);
         }
     }
@@ -508,7 +508,7 @@ export function parseNameTable(font: TTFFont): TTFNameTable | null {
         format,
         count,
         stringOffset,
-        nameRecords
+        nameRecords,
     };
 }
 
@@ -518,7 +518,7 @@ export function parseNameTable(font: TTFFont): TTFNameTable | null {
  * @returns Parsed cmap table or null if not found
  */
 export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
-    const tableData = getTableData(font, 'cmap');
+    const tableData = getTableData(font, "cmap");
     if (!tableData) {
         return null;
     }
@@ -539,7 +539,7 @@ export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
         subtables.push({
             platformID,
             encodingID,
-            offset
+            offset,
         });
     }
 
@@ -603,7 +603,7 @@ export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
                     startCode,
                     idDelta,
                     idRangeOffset,
-                    glyphIdArray
+                    glyphIdArray,
                 };
             }
         } catch (error) {
@@ -615,7 +615,7 @@ export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
     return {
         version,
         numTables,
-        subtables
+        subtables,
     };
 }
 
@@ -626,14 +626,14 @@ export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
  * @returns Glyph ID or 0 if not found
  */
 export function getGlyphId(font: TTFFont, charCode: number): number {
-    const cmapTable = font.tableAccess.getParsedTable<TTFCmapTable>('cmap');
+    const cmapTable = font.tableAccess.getParsedTable<TTFCmapTable>("cmap");
     if (!cmapTable) {
         return 0;
     }
 
     // Find a Unicode subtable (platform 0 or platform 3, encoding 1)
     const unicodeSubtable = cmapTable.subtables.find(s => 
-        s.platformID === 0 || (s.platformID === 3 && s.encodingID === 1)
+        s.platformID === 0 || (s.platformID === 3 && s.encodingID === 1),
     );
     
     if (!unicodeSubtable || unicodeSubtable.format !== 4 || !unicodeSubtable.data) {
@@ -718,14 +718,14 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
         return cached;
     }
 
-    const maxpTable = font.tableAccess.getParsedTable<TTFMaxpTable>('maxp');
+    const maxpTable = font.tableAccess.getParsedTable<TTFMaxpTable>("maxp");
     if (!maxpTable || glyphId >= maxpTable.numGlyphs) {
         return null;
     }
 
     // Parse loca table to find glyph location
-    const locaData = font.tableAccess.getRawTable('loca');
-    const headTable = font.tableAccess.getParsedTable<TTFHeadTable>('head');
+    const locaData = font.tableAccess.getRawTable("loca");
+    const headTable = font.tableAccess.getParsedTable<TTFHeadTable>("head");
     if (!locaData || !headTable) {
         return null;
     }
@@ -751,8 +751,8 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
         // Empty glyph (legitimate case like space character)
         // Get proper advance width from hmtx table
         let advanceWidth = 1000; // Default
-        const hmtxData = font.tableAccess.getRawTable('hmtx');
-        const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
+        const hmtxData = font.tableAccess.getRawTable("hmtx");
+        const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>("hhea");
         if (hmtxData && hheaTable) {
             const hmtxReader = new ByteReader(hmtxData.buffer.slice(hmtxData.byteOffset, hmtxData.byteOffset + hmtxData.byteLength) as ArrayBuffer, false);
             if (glyphId < hheaTable.numberOfHMetrics) {
@@ -768,7 +768,7 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
         const result = {
             contours: [],
             xMin: 0, yMin: 0, xMax: 0, yMax: 0,
-            advanceWidth
+            advanceWidth,
         };
 
         // Cache the result
@@ -778,7 +778,7 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
     }
 
     // Parse glyph data
-    const glyfData = font.tableAccess.getRawTable('glyf');
+    const glyfData = font.tableAccess.getRawTable("glyf");
     if (!glyfData) {
         return null;
     }
@@ -805,8 +805,8 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
     if (numberOfContours === 0) {
         // No contours - get proper advance width
         let advanceWidth = 1000; // Default
-        const hmtxData = font.tableAccess.getRawTable('hmtx');
-        const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
+        const hmtxData = font.tableAccess.getRawTable("hmtx");
+        const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>("hhea");
         if (hmtxData && hheaTable) {
             const hmtxReader = new ByteReader(hmtxData.buffer.slice(hmtxData.byteOffset, hmtxData.byteOffset + hmtxData.byteLength) as ArrayBuffer, false);
             if (glyphId < hheaTable.numberOfHMetrics) {
@@ -822,7 +822,7 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
         const result = {
             contours: [],
             xMin, yMin, xMax, yMax,
-            advanceWidth
+            advanceWidth,
         };
 
         // Cache the result
@@ -900,7 +900,7 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
             points.push({
                 x: xCoords[pointIndex],
                 y: yCoords[pointIndex],
-                onCurve: (flags[pointIndex] & 0x01) !== 0 // ON_CURVE_POINT
+                onCurve: (flags[pointIndex] & 0x01) !== 0, // ON_CURVE_POINT
             });
             pointIndex++;
         }
@@ -910,8 +910,8 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
 
     // Get advance width from hmtx table
     let advanceWidth = 1000; // Default
-    const hmtxData = font.tableAccess.getRawTable('hmtx');
-    const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
+    const hmtxData = font.tableAccess.getRawTable("hmtx");
+    const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>("hhea");
     if (hmtxData && hheaTable) {
         const hmtxReader = new ByteReader(hmtxData.buffer.slice(hmtxData.byteOffset, hmtxData.byteOffset + hmtxData.byteLength) as ArrayBuffer, false);
         if (glyphId < hheaTable.numberOfHMetrics) {
@@ -927,43 +927,13 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
     const result = {
         contours,
         xMin, yMin, xMax, yMax,
-        advanceWidth
+        advanceWidth,
     };
 
     // Cache the result
     font.tableAccess.cacheGlyphOutline(glyphId, result);
     
     return result;
-}
-
-/**
- * Debug function to print font information
- * @param font - TTF font structure
- */
-export function debugTTFFont(font: TTFFont): void {
-    console.log("=== TTF Font Debug Info ===");
-    console.log(`SFNT Version: 0x${font.header.sfntVersion.toString(16).padStart(8, '0')}`);
-    console.log(`Number of Tables: ${font.header.numTables}`);
-    console.log(`Search Range: ${font.header.searchRange}`);
-    console.log(`Entry Selector: ${font.header.entrySelector}`);
-    console.log(`Range Shift: ${font.header.rangeShift}`);
-    console.log(`Total File Size: ${font.rawData.length} bytes`);
-    
-    console.log("\n=== Table Directory ===");
-    const sortedTables = Array.from(font.tables.entries()).sort(([a], [b]) => a.localeCompare(b));
-    
-    for (const [tag, entry] of sortedTables) {
-        console.log(`${tag}: offset=${entry.offset}, length=${entry.length}, checksum=0x${entry.checkSum.toString(16).padStart(8, '0')}`);
-    }
-    
-    // List common/important tables
-    const importantTables = ['head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post', 'cmap', 'glyf', 'loca'];
-    console.log("\n=== Important Tables Present ===");
-    
-    for (const table of importantTables) {
-        const present = font.tables.has(table);
-        console.log(`${table}: ${present ? '✓' : '✗'}`);
-    }
 }
 
 /**
@@ -1019,24 +989,24 @@ export class TTFTableAccess {
         let parsed: T | null = null;
 
         switch (tableTag) {
-            case 'head':
-                parsed = parseHeadTable(this.font) as T;
-                break;
-            case 'hhea':
-                parsed = parseHheaTable(this.font) as T;
-                break;
-            case 'maxp':
-                parsed = parseMaxpTable(this.font) as T;
-                break;
-            case 'name':
-                parsed = parseNameTable(this.font) as T;
-                break;
-            case 'cmap':
-                parsed = parseCmapTable(this.font) as T;
-                break;
-            default:
-                // For tables without dedicated parsers, return null
-                return null;
+        case "head":
+            parsed = parseHeadTable(this.font) as T;
+            break;
+        case "hhea":
+            parsed = parseHheaTable(this.font) as T;
+            break;
+        case "maxp":
+            parsed = parseMaxpTable(this.font) as T;
+            break;
+        case "name":
+            parsed = parseNameTable(this.font) as T;
+            break;
+        case "cmap":
+            parsed = parseCmapTable(this.font) as T;
+            break;
+        default:
+            // For tables without dedicated parsers, return null
+            return null;
         }
 
         // Cache the result
@@ -1107,7 +1077,7 @@ export class TTFTableAccess {
         return {
             parsedTables: this.parsedCache.size,
             rawTables: this.rawCache.size,
-            cachedGlyphs: this.glyphCache.size
+            cachedGlyphs: this.glyphCache.size,
         };
     }
 }

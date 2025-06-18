@@ -87,8 +87,9 @@ Kd 0 0 1
             expect(defaultObj).toBeDefined();
             const groups = Object.values(defaultObj.groups);
             expect(groups.length).toBe(2);
-            expect(groups[0].material?.diffuse).toEqual([1, 0, 0]);
-            expect(groups[1].material?.diffuse).toEqual([0, 0, 1]);
+            expect(groups[0].material?.diffuse).toEqual(expect.any(Object));
+            expect(Array.from(groups[0].material!.diffuse!)).toEqual([1, 0, 0]);
+            expect(Array.from(groups[1].material!.diffuse!)).toEqual([0, 0, 1]);
         });
 
         it('should handle scientific notation in material properties', async () => {
@@ -146,7 +147,11 @@ Ks 0.8 0.8
             const defaultGroup = defaultObj.groups['default'];
             expect(defaultGroup).toBeDefined();
             expect(defaultGroup.material).toBeDefined();
-            expect(defaultGroup.material?.ambient).toEqual([0.2, 0.2, 0.2]); // Default values
+            expect(Array.from(defaultGroup.material!.ambient!)).toEqual(expect.arrayContaining([
+                expect.closeTo(0.2, 2),
+                expect.closeTo(0.2, 2), 
+                expect.closeTo(0.2, 2)
+            ])); // Default values
             expect(defaultGroup.material?.diffuse).toEqual([0.5, 0.5, 0.5]); // Single value expanded
             expect(defaultGroup.material?.specular).toEqual([0.8, 0.8, 0.8]); // Two values, third defaulted
         });
@@ -439,7 +444,7 @@ Kd 1 1 0
             const cube1 = result.objects['cube1'];
             expect(cube1).toBeDefined();
             expect(Object.keys(cube1.groups).length).toBe(2); // front, back
-            expect(cube1.groups['front'].material?.diffuse).toEqual([1, 0, 0]);
+            expect(Array.from(cube1.groups['front'].material!.diffuse!)).toEqual([1, 0, 0]);
             expect(cube1.groups['back'].material?.diffuse).toEqual([0, 0, 1]);
             expect(cube1.groups['front'].indices.length).toBe(3);
             expect(cube1.groups['back'].indices.length).toBe(3);

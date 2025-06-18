@@ -3,16 +3,13 @@ import { GBuffer } from "./gbuffer";
 import { GL, GLC } from "./gl";
 import { loadScene } from "./scene/scene";
 import { OrthographicCamera } from "./scene/camera";
-import { UIPanel, UIContainer, UILayoutUtils, UITextConfig } from "./ui";
-import { Font, TextMesh } from "./text";
+import { UIPanel, UIContainer, UILayoutUtils } from "./ui";
+import { Font } from "./text";
 import { Model } from "./scene/model";
-import { Transform } from "./scene/transform";
 import { GameObject } from "./scene/gameobject";
 import { TextRenderConfig } from "./scene/textmesh";
 // Import these to ensure GameObject types are registered
-import "./scene/model";
 import "./scene/light";
-import "./scene/textmesh";
 
 /**
  * Manager class for dynamic UI text that only updates mesh when content changes
@@ -118,7 +115,7 @@ export async function main() {
         preserveDrawingBuffer: false,
     });
     if (!gl) {
-        const error = `could not create webgl2 context`;
+        const error = "could not create webgl2 context";
         alert(error);
         throw error;
     }
@@ -150,7 +147,7 @@ export async function main() {
     uiCamera.zfar = 10;
     
     // Load scene from description
-    const sceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
+    const sceneDescription = await fetch("./static/resources/current_scene.json").then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
 
     // Add text demonstrations to the 3D scene
@@ -163,15 +160,15 @@ export async function main() {
         8,        // smoothness - 8 steps for smooth curves
         false,    // filled - false for wireframe outline
         0.8,      // fontSize - medium size for 3D world
-        1.0       // lineWidth - 1.0 (browser limitation)
+        1.0,       // lineWidth - 1.0 (browser limitation)
     );
     
     // Create wireframe text in 3D space - left side
     const wireframeConfig = {
         color: vec3.fromValues(0.0, 1.0, 0.0), // Green outlines
-        position: vec3.fromValues(-4, 1, -1)
+        position: vec3.fromValues(-4, 1, -1),
     };
-            const wireframeMesh = outlineFont.generateText("Outline Text", wireframeConfig.position, wireframeConfig.color);
+    const wireframeMesh = outlineFont.generateText("Outline Text", wireframeConfig.position, wireframeConfig.color);
     const wireframeText = await createTextModel(gl, wireframeMesh, wireframeConfig, "Outline Text", outlineFont.config.filled, outlineFont.config.lineWidth);
     scene.objects.push(wireframeText);
     
@@ -181,13 +178,13 @@ export async function main() {
         8,        // smoothness - 8 steps for smooth curves
         true,     // filled - true for solid triangles
         0.8,      // fontSize - medium size for 3D world
-        1.0       // lineWidth - not used for filled text
+        1.0,       // lineWidth - not used for filled text
     );
     
     // Create filled text in 3D space - right side
     const filledConfig = {
         color: vec3.fromValues(1.0, 0.2, 0.2), // Red filled triangles  
-        position: vec3.fromValues(1, 1, -1)
+        position: vec3.fromValues(1, 1, -1),
     };
     const filledMesh = filledFont.generateText("Filled Text", filledConfig.position, filledConfig.color);
     const filledText = await createTextModel(gl, filledMesh, filledConfig, "Filled Text", filledFont.config.filled, filledFont.config.lineWidth);
@@ -196,7 +193,7 @@ export async function main() {
     // Add alphabet demonstration - filled text below
     const alphabetConfig = {
         color: vec3.fromValues(0.8, 0.4, 1.0), // Purple
-        position: vec3.fromValues(-4, -0.5, -1)
+        position: vec3.fromValues(-4, -0.5, -1),
     };
     const alphabetMesh = filledFont.generateText("ABCDEFGHIJKLM", alphabetConfig.position, alphabetConfig.color);
     const alphabetText = await createTextModel(gl, alphabetMesh, alphabetConfig, "ABCDEFGHIJKLM", filledFont.config.filled, filledFont.config.lineWidth);
@@ -204,7 +201,7 @@ export async function main() {
     
     const numbersConfig = {
         color: vec3.fromValues(1.0, 0.8, 0.2), // Orange
-        position: vec3.fromValues(-2, -1.5, -1)
+        position: vec3.fromValues(-2, -1.5, -1),
     };
     const numbersMesh = filledFont.generateText("0123456789", numbersConfig.position, numbersConfig.color);
     const numbersText = await createTextModel(gl, numbersMesh, numbersConfig, "0123456789", filledFont.config.filled, filledFont.config.lineWidth);
@@ -220,15 +217,15 @@ export async function main() {
         8,               // smoothness - 8 steps for smooth UI text
         true,            // filled - true for solid, readable UI text
         baseFontSize,    // fontSize - responsive to screen size
-        1.0              // lineWidth - not used for filled text
+        1.0,              // lineWidth - not used for filled text
     );
     
     // Create UI title
     const uiTitleConfig = {
         color: vec3.fromValues(1.0, 1.0, 0.0), // Yellow
-        position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
+        position: vec3.fromValues(0, 0, 0), // Start at origin, will position via transform
     };
-            const uiTitleMesh = uiFont.generateText("3D Text Demo - UI Layer", uiTitleConfig.position, uiTitleConfig.color);
+    const uiTitleMesh = uiFont.generateText("3D Text Demo - UI Layer", uiTitleConfig.position, uiTitleConfig.color);
     const uiTitle = await createTextModel(gl, uiTitleMesh, uiTitleConfig, "3D Text Demo - UI Layer", uiFont.config.filled, uiFont.config.lineWidth);
     // Position in top-left corner with margin
     uiTitle.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, canvas_size.height/2 - baseFontSize * 2, 0);
@@ -237,11 +234,11 @@ export async function main() {
     // Store config for UI info text so we can update it dynamically
     const uiInfoConfig = {
         color: vec3.fromValues(0.8, 0.8, 0.8), // Light gray
-        position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
+        position: vec3.fromValues(0, 0, 0), // Start at origin, will position via transform
     };
     
     const initialUIText = "FPS: 0.0 | Selected: None";
-            const uiInfoMesh = uiFont.generateText(initialUIText, uiInfoConfig.position, uiInfoConfig.color);
+    const uiInfoMesh = uiFont.generateText(initialUIText, uiInfoConfig.position, uiInfoConfig.color);
     const uiInfo = await createTextModel(gl, uiInfoMesh, uiInfoConfig, initialUIText, uiFont.config.filled, uiFont.config.lineWidth);
     // Position below title
     uiInfo.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, canvas_size.height/2 - baseFontSize * 4, 0);
@@ -256,14 +253,14 @@ export async function main() {
         6,                    // smoothness - slightly less for small text
         true,                 // filled - true for readable small text
         baseFontSize * 0.8,   // fontSize - smaller for help text
-        1.0                   // lineWidth - not used for filled text
+        1.0,                   // lineWidth - not used for filled text
     );
     
     const uiControlsConfig = {
         color: vec3.fromValues(0.6, 0.6, 0.6), // Gray
-        position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
+        position: vec3.fromValues(0, 0, 0), // Start at origin, will position via transform
     };
-            const uiControlsMesh = smallUIFont.generateText("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen, Click=Select Object", uiControlsConfig.position, uiControlsConfig.color);
+    const uiControlsMesh = smallUIFont.generateText("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen, Click=Select Object", uiControlsConfig.position, uiControlsConfig.color);
     const uiControls = await createTextModel(gl, uiControlsMesh, uiControlsConfig, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen, Click=Select Object", smallUIFont.config.filled, smallUIFont.config.lineWidth);
     // Position in bottom-left corner with margin
     uiControls.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, -canvas_size.height/2 + baseFontSize * 2, 0);
@@ -310,9 +307,9 @@ export async function main() {
         const transformData = UILayoutUtils.formatTransformData(object.transform);
         
         // Format additional object info
-        const objectType = object.type || 'Unknown';
-        const isVisible = object.visible ? 'Yes' : 'No';
-        const isEnabled = object.enabled ? 'Yes' : 'No';
+        const objectType = object.type || "Unknown";
+        const isVisible = object.visible ? "Yes" : "No";
+        const isEnabled = object.enabled ? "Yes" : "No";
         
         // Format text with better line breaks to prevent awkward wrapping
         const panelText = `${objectName}\nType: ${objectType}\nVisible: ${isVisible}\nEnabled: ${isEnabled}\n\n${transformData}`;
@@ -323,21 +320,12 @@ export async function main() {
         const panelWidth = Math.max(250, Math.ceil(textMeasurement.width) + padding * 2); // Minimum width of 250
         const panelHeight = Math.max(120, Math.ceil(textMeasurement.height) + padding * 2); // Minimum height of 120
         
-        // Debug logging
-        console.log('Panel sizing:', {
-            textWidth: textMeasurement.width,
-            textHeight: textMeasurement.height,
-            panelWidth,
-            panelHeight,
-            padding
-        });
-        
         // Calculate panel position based on measured size
         const panelPosition = UILayoutUtils.calculateSafePanelPosition(
             panelWidth, 
             panelHeight, 
             canvas_size.width, 
-            canvas_size.height
+            canvas_size.height,
         );
         
         // Create new panel with calculated size
@@ -347,9 +335,9 @@ export async function main() {
                 width: panelWidth,
                 height: panelHeight,
                 backgroundColor: vec3.fromValues(0.2, 0.2, 0.3), // Dark blue-gray
-                backgroundAlpha: 0.9
+                backgroundAlpha: 0.9,
             },
-            panelPosition
+            panelPosition,
         );
         
         await transformPanel.init();
@@ -359,7 +347,7 @@ export async function main() {
             text: panelText,
             color: vec3.fromValues(1.0, 1.0, 1.0), // White text
             maxWidth: panelWidth - padding, // Use measured width minus padding
-            lineSpacing: 1.1
+            lineSpacing: 1.1,
         }, padding / 2, padding / 2); // Position text with half padding as offset
         
         // Initialize container if not exists
@@ -396,7 +384,7 @@ export async function main() {
                 // Note: UI text will be updated by the main draw loop with current FPS
                 
                 // Create dynamic wireframe bounding box for mesh objects
-                if (selectedObject.type === "mesh" && 'createBoundingBoxWireframe' in selectedObject) {
+                if (selectedObject.type === "mesh" && "createBoundingBoxWireframe" in selectedObject) {
                     try {
                         const meshObject = selectedObject as Model;
                         dynamicWireframe = await meshObject.createBoundingBoxWireframe();
@@ -456,7 +444,7 @@ export async function main() {
                 panelBounds.width,
                 panelBounds.height,
                 width,
-                height
+                height,
             );
             transformPanel.setPosition(newPosition);
         }
@@ -517,7 +505,7 @@ export async function main() {
         if (ev.key == "ArrowDown") cameraSpeed.rotx = 0;
     });
 
-    const onFrameLogic = (deltatime_ms: number, fps: number) => {
+    const onFrameLogic = (deltatime_ms: number) => {
         // Camera movement
         const xStep = -cameraSpeed.x * deltatime_ms;
         vec3.add(camera.position, camera.position, vec3.multiply(vec3.create(), camera.right, vec3.fromValues(xStep, xStep, xStep)));
@@ -540,42 +528,20 @@ export async function main() {
             // Animate bunny objects
             if (object.name && object.name.toLowerCase().includes("bunny")) {
                 rotation += 40 * deltatime_ms;
-                object.transform.rotation = quat.fromEuler(quat.create(), rotation * 0.3, rotation * 0.7, rotation);
+                quat.copy(object.transform.rotation, quat.fromEuler(quat.create(), rotation * 0.3, rotation * 0.7, rotation));
             }
 
             // Set up uniforms for mesh objects
             if (object.type === "mesh") {
-                const lightData = {
-                    pointLights: scene.objects
-                        .filter(obj => obj.type === "point_light")
-                        .map(light => {
-                            return {
-                                position: new Float32Array(light.transform.position),
-                                color: new Float32Array([1, 1, 1]), // Default color
-                                intensity: 1.0, // Default intensity
-                                radius: 10.0 // Default radius
-                            };
-                        }),
-                    directionalLights: scene.objects
-                        .filter(obj => obj.type === "directional_light")
-                        .map(light => {
-                            return {
-                                direction: new Float32Array([0, -1, 0]), // Default direction
-                                color: new Float32Array([1, 1, 1]), // Default color
-                                intensity: 1.0 // Default intensity
-                            };
-                        })
-                };
-
-                if (object.type === "mesh" && 'setUniforms' in object) {
-                    (object as Model).setUniforms(new Float32Array(camera.viewMatrix), new Float32Array(projectionMatrix), lightData);
+                if (object.type === "mesh" && "setUniforms" in object) {
+                    (object as Model).setUniforms(new Float32Array(camera.viewMatrix), new Float32Array(projectionMatrix));
                 }
             } else {
                 // Fallback for non-mesh objects
                 gl.useProgram(object.programInfo.program);
-                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uModelMatrix, false, object.transform.matrix);
-                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, camera.viewMatrix);
-                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, projectionMatrix);
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uModelMatrix, false, new Float32Array(object.transform.matrix));
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uViewMatrix, false, new Float32Array(camera.viewMatrix));
+                gl.uniformMatrix4fv(object.programInfo.uniformLocations.uProjectionMatrix, false, new Float32Array(projectionMatrix));
             }
         }
         
@@ -607,7 +573,7 @@ export async function main() {
             lastUIUpdateFrame = framenum;
         }
 
-        onFrameLogic(deltatime_ms, average_fps);
+        onFrameLogic(deltatime_ms);
 
         // 1. Deferred rendering pass (3D scene to G-buffer)
         gbuffer.clearAndBind();
@@ -629,7 +595,7 @@ export async function main() {
 
         const lightUBOs = {
             pointLightUBO: gbuffer.pointLightUBO,
-            directionalLightUBO: gbuffer.directionalLightUBO
+            directionalLightUBO: gbuffer.directionalLightUBO,
         };
         scene.drawForward(camera.viewMatrix as Float32Array, camera.projectionMatrix as Float32Array, lightUBOs, new Float32Array(camera.position));
 
@@ -651,14 +617,14 @@ export async function main() {
                     uiCamera.viewMatrix as Float32Array,
                     uiCamera.projectionMatrix as Float32Array,
                     lightUBOs,
-                    new Float32Array([0, 0, 0]) // UI camera position (not relevant for UI)
+                    new Float32Array([0, 0, 0]), // UI camera position (not relevant for UI)
                 );
             } else {
                 // Fallback: use drawWithMatrix for other objects
                 uiObject.drawWithMatrix(
                     uiObject.transform.worldMatrix as Float32Array,
                     uiCamera.viewMatrix as Float32Array,
-                    uiCamera.projectionMatrix as Float32Array
+                    uiCamera.projectionMatrix as Float32Array,
                 );
             }
         }
@@ -678,13 +644,13 @@ export async function main() {
                         uiCamera.viewMatrix as Float32Array,
                         uiCamera.projectionMatrix as Float32Array,
                         lightUBOs,
-                        new Float32Array([0, 0, 0])
+                        new Float32Array([0, 0, 0]),
                     );
                 } else {
                     panelModel.drawWithMatrix(
                         panelModel.transform.worldMatrix as Float32Array,
                         uiCamera.viewMatrix as Float32Array,
-                        uiCamera.projectionMatrix as Float32Array
+                        uiCamera.projectionMatrix as Float32Array,
                     );
                 }
             }

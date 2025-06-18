@@ -1,4 +1,3 @@
-
 import { reverseBits, BitBuffer } from "./bits";
 
 const rtl = true;
@@ -26,8 +25,8 @@ export class HuffmanTree {
             next_code[length] = code;
         }
 
-        let codes = new Uint16Array(code_lengths.length);
-        let leafs: HuffmanLeaf[] = [];
+        const codes = new Uint16Array(code_lengths.length);
+        const leafs: HuffmanLeaf[] = [];
         for (let i = 0; i < code_lengths.length; i++) {
             const code_length = code_lengths[i];
 
@@ -45,7 +44,7 @@ export class HuffmanTree {
 
         const tree = HuffmanTree.sortLeafs(leafs, 1, 0);
         if (tree == null) {
-            const error = `huffman tree root is null`;
+            const error = "huffman tree root is null";
             console.error(error);
             throw error;
         }
@@ -132,10 +131,8 @@ export class HuffmanTree {
                 branch = branch.leaf1;
             }
         }
-
-        const error = `no valid leaf found when parsing huffman tree`;
-        console.error(error);
-        throw error;
+        // eslint-disable-next-line no-unreachable
+        throw new Error("Unreachable code in huffman tree parse");
     }
 }
 class HuffmanLeaf {

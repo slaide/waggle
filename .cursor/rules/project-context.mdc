@@ -15,6 +15,13 @@ Waggle is a rendering framework based on WebGL2. This project follows a specific
 - **Build target**: Browser-optimized with minification and sourcemaps
 - **Package management**: Use `bun install`, `bun add`, `bun remove` instead of npm equivalents
 
+## Code Quality & Validation
+- **Comprehensive checking**: Use `bun run check` to run both TypeScript compiler and ESLint
+- **TypeScript compiler**: `bun run typecheck` catches type errors and structural issues
+- **ESLint**: `bun run lint` enforces code style and quality rules
+- **Auto-fix**: `bun run check:fix` runs type checking + ESLint with automatic fixes
+- **Always run `bun run check` before committing** to catch both type and style issues
+
 ## Architecture
 - **Frontend**: WebGL2-based rendering application written in TypeScript
 - **Backend**: Python server (run via uv) that serves static files from the `static/` directory
@@ -30,11 +37,15 @@ Waggle is a rendering framework based on WebGL2. This project follows a specific
 - **gl-matrix**: 3D math library for WebGL operations
 - **Bun**: Build tool and JavaScript runtime
 
+## Type System Guidelines
+- **Prefer gl-matrix types**: Use gl-matrix classes like `Vec3`, `Vec3Like`, `Mat4Like`, etc. over generic `Float32Array` in places where a specific number and format of numeric values is expected. This provides better type safety and semantic meaning.
+
 ## Development Workflow
 1. Edit TypeScript source files in `static/src/`
-2. Run `bun run build` to bundle for browser
-3. Start Python static file server (via uv) to serve the application
-4. For AssemblyScript: use `asc:build` commands to compile to WebAssembly
+2. **Run `bun run check` to validate code** (TypeScript + ESLint)
+3. Run `bun run build` to bundle for browser
+4. Start Python static file server (via uv) to serve the application
+5. For AssemblyScript: use `asc:build` commands to compile to WebAssembly
 
 ## File Structure
 - `static/src/`: Source TypeScript/AssemblyScript files

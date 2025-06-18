@@ -8,7 +8,12 @@
         "bundle": "bun build static/src/main.ts --outfile static/src/bundle.js --target browser --minify --sourcemap",
         "build": "bun run bundle",
         "test": "bun test",
-        "test:coverage": "bun test --coverage"
+        "test:coverage": "bun test --coverage",
+        "lint": "bunx eslint static",
+        "lint:fix": "bunx eslint static --fix",
+        "typecheck": "bunx tsc --noEmit",
+        "check": "bun run typecheck && bun run lint && bun test",
+        "check:fix": "bun run typecheck && bun run lint:fix && bun test"
     },
     "repository": {
         "type": "git",
@@ -21,7 +26,7 @@
     },
     "homepage": "https://github.com/slaide/waggle#readme",
     "dependencies": {
-        "gl-matrix": "^3.4.3"
+        "gl-matrix": "4.0.0-beta.2"
     },
     "devDependencies": {
         "@eslint/js": "^9.28.0",

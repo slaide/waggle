@@ -1,7 +1,6 @@
 //# allFunctionsCalledOnLoad
 
 import {
-    uint8ArrayToString,
     arrayBeginsWith,
 } from "./bits";
 
@@ -75,7 +74,7 @@ export async function parsePng(
             return await e.arrayBuffer();
         })
         .catch((e) => {
-            alert(`failed to fetch png`);
+            alert("failed to fetch png");
             throw e;
         });
 
@@ -88,21 +87,22 @@ export async function parsePng(
     // Check PNG signature
     const pngSignature = reader.readBytes(PNG_START.length);
     if (!arrayBeginsWith(pngSignature, PNG_START)) {
-        const error = `png start invalid`;
+        const error = "png start invalid";
         alert(error);
         throw error;
     }
 
     pngfiletotal: while (reader.getRemainingBytes() > 0) {
         const chunklength = reader.readUint32();
-        const header = reader.readFixedString(4, 'ascii');
+        const header = reader.readFixedString(4, "ascii");
         const chunkdata = reader.readBytes(chunklength);
         // Important: read CRC even though we don't use it - maintains data alignment
         const crc = reader.readBytes(4);
+        void crc; // CRC is not used
 
         switch (header) {
-            case "IHDR": {
-                /*
+        case "IHDR": {
+            /*
                     Width	4 bytes
                     Height	4 bytes
                     Bit depth	1 byte
@@ -111,74 +111,74 @@ export async function parsePng(
                     Filter method	1 byte
                     Interlace method	1 byte
                 */
-                const chunkReader = new ByteReader(chunkdata.buffer.slice(chunkdata.byteOffset, chunkdata.byteOffset + chunkdata.byteLength) as ArrayBuffer, false);
+            const chunkReader = new ByteReader(chunkdata.buffer.slice(chunkdata.byteOffset, chunkdata.byteOffset + chunkdata.byteLength) as ArrayBuffer, false);
                 
-                const width = chunkReader.readUint32();
-                const height = chunkReader.readUint32();
-                const bitdepth = chunkReader.readUint8();
-                const colortype_raw = chunkReader.readUint8();
-                const compressionmethod = chunkReader.readUint8();
-                const filtermethod = chunkReader.readUint8();
-                const interlacemethod_raw = chunkReader.readUint8();
+            const width = chunkReader.readUint32();
+            const height = chunkReader.readUint32();
+            const bitdepth = chunkReader.readUint8();
+            const colortype_raw = chunkReader.readUint8();
+            const compressionmethod = chunkReader.readUint8();
+            const filtermethod = chunkReader.readUint8();
+            const interlacemethod_raw = chunkReader.readUint8();
 
-                const colortype = IHDR_COLORTYPE_ENUMS[colortype_raw];
-                if (compressionmethod != 0) {
-                    const error = `compressionmethod ${compressionmethod}!=0`;
-                    alert(error);
-                    throw error;
-                }
-                if (filtermethod != 0) {
-                    const error = `filtermethod ${filtermethod}!=0`;
-                    alert(error);
-                    throw error;
-                }
-                const interlacemethod =
+            const colortype = IHDR_COLORTYPE_ENUMS[colortype_raw];
+            if (compressionmethod != 0) {
+                const error = `compressionmethod ${compressionmethod}!=0`;
+                alert(error);
+                throw error;
+            }
+            if (filtermethod != 0) {
+                const error = `filtermethod ${filtermethod}!=0`;
+                alert(error);
+                throw error;
+            }
+            const interlacemethod =
                     IHDR_INTERLACEMETHOD_ENUMS[interlacemethod_raw];
 
-                IHDR = {
-                    width,
-                    height,
-                    bitdepth,
-                    colortype,
-                    compressionmethod,
-                    filtermethod,
-                    interlacemethod,
-                };
+            IHDR = {
+                width,
+                height,
+                bitdepth,
+                colortype,
+                compressionmethod,
+                filtermethod,
+                interlacemethod,
+            };
 
-                break;
-            }
-            case "IDAT": {
-                if (!IDAT) {
-                    IDAT = chunkdata;
-                } else {
-                    const newar: Uint8Array = new Uint8Array(
-                        IDAT.length + chunkdata.length,
-                    );
-                    newar.set(IDAT, 0);
-                    newar.set(chunkdata, IDAT.length);
-                    IDAT = newar;
-                }
-                break;
-            }
-            case "IEND": {
-                break pngfiletotal;
-            }
-            default: {
-                console.log(
-                    `png chunk: ${header} ( len ${chunklength} ) unimplemented.`,
+            break;
+        }
+        case "IDAT": {
+            if (!IDAT) {
+                IDAT = chunkdata;
+            } else {
+                const newar: Uint8Array = new Uint8Array(
+                    IDAT.length + chunkdata.length,
                 );
+                newar.set(IDAT, 0);
+                newar.set(chunkdata, IDAT.length);
+                IDAT = newar;
             }
+            break;
+        }
+        case "IEND": {
+            break pngfiletotal;
+        }
+        default: {
+            console.warn(
+                `png chunk: ${header} ( len ${chunklength} ) unimplemented.`,
+            );
+        }
         }
     }
 
     if (IDAT == null) {
-        const error = `IDAT is missing`;
+        const error = "IDAT is missing";
         console.error(error);
         throw error;
     }
     // idat is a zlib compressed stream. zlib only supports one compression method: deflate. (compression method 0 in the png ihdr)
 
-    if (!IHDR) throw `no IHDR in png file`;
+    if (!IHDR) throw "no IHDR in png file";
     const { width, height } = IHDR;
 
     const bpp = {

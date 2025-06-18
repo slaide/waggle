@@ -1,5 +1,5 @@
 import { GLC } from "../gl";
-import { vec3 } from "gl-matrix";
+import { vec3, type Vec3Like } from "gl-matrix";
 import { Transform } from "./transform";
 import { GameObject, GameObjectRegistry, BaseSerializedGameObject } from "./gameobject";
 
@@ -23,7 +23,7 @@ export class Light extends GameObject {
     constructor(
         gl: GLC,
         transform: Transform,
-        public color: vec3,
+        public color: Vec3Like,
         public intensity: number,
         enabled: boolean = true,
         visible: boolean = true,
@@ -53,7 +53,7 @@ export class PointLight extends Light {
     constructor(
         gl: GLC,
         transform: Transform,
-        color: vec3,
+        color: Vec3Like,
         intensity: number,
         public radius: number,
         enabled: boolean = true,
@@ -73,7 +73,7 @@ export class PointLight extends Light {
 
     static async fromJSON(gl: GLC, data: BaseSerializedGameObject): Promise<PointLight> {
         // Type guard inline
-        if (typeof data !== 'object' || data === null || data.type !== "point_light") {
+        if (typeof data !== "object" || data === null || data.type !== "point_light") {
             throw new Error("Invalid point light data format");
         }
         
@@ -84,7 +84,7 @@ export class PointLight extends Light {
             throw new Error("Point light must have valid color array");
         }
         
-        if (typeof lightData.intensity !== 'number' || typeof lightData.radius !== 'number') {
+        if (typeof lightData.intensity !== "number" || typeof lightData.radius !== "number") {
             throw new Error("Point light must have valid intensity and radius");
         }
 
@@ -97,7 +97,7 @@ export class PointLight extends Light {
             lightData.radius,
             lightData.enabled ?? true,
             lightData.visible ?? true,
-            lightData.name
+            lightData.name,
         );
     }
 }
@@ -109,9 +109,9 @@ export class DirectionalLight extends Light {
     constructor(
         gl: GLC,
         transform: Transform,
-        color: vec3,
+        color: Vec3Like,
         intensity: number,
-        public direction: vec3,
+        public direction: Vec3Like,
         enabled: boolean = true,
         visible: boolean = true,
         name?: string,
@@ -129,7 +129,7 @@ export class DirectionalLight extends Light {
 
     static async fromJSON(gl: GLC, data: BaseSerializedGameObject): Promise<DirectionalLight> {
         // Type guard inline
-        if (typeof data !== 'object' || data === null || data.type !== "directional_light") {
+        if (typeof data !== "object" || data === null || data.type !== "directional_light") {
             throw new Error("Invalid directional light data format");
         }
         
@@ -140,7 +140,7 @@ export class DirectionalLight extends Light {
             throw new Error("Directional light must have valid color array");
         }
         
-        if (typeof lightData.intensity !== 'number') {
+        if (typeof lightData.intensity !== "number") {
             throw new Error("Directional light must have valid intensity");
         }
         
@@ -157,7 +157,7 @@ export class DirectionalLight extends Light {
             vec3.fromValues(lightData.direction[0], lightData.direction[1], lightData.direction[2]),
             lightData.enabled ?? true,
             lightData.visible ?? true,
-            lightData.name
+            lightData.name,
         );
     }
 }

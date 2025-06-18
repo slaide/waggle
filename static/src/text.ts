@@ -61,7 +61,7 @@
  * Characters are spaced automatically using simple character spacing (fontSize * 0.7).
  */
 
-import { vec3 } from "gl-matrix";
+import { vec3, type Vec3Like } from "gl-matrix";
 import { 
     TTFFont, 
     parseTTF, 
@@ -69,7 +69,7 @@ import {
     parseGlyphOutline, 
     GlyphOutline, 
     GlyphContour,
-    TTFHeadTable
+    TTFHeadTable,
 } from "./bits/ttf";
 
 /**
@@ -77,7 +77,7 @@ import {
  */
 export interface TextPoint {
     /** 3D position vector */
-    position: vec3;
+    position: Vec3Like;
 }
 
 /**
@@ -85,9 +85,9 @@ export interface TextPoint {
  */
 export interface BoundingBox {
     /** Minimum corner of bounding box */
-    min: vec3;
+    min: Vec3Like;
     /** Maximum corner of bounding box */
-    max: vec3;
+    max: Vec3Like;
 }
 
 /**
@@ -237,7 +237,7 @@ class CurveGenerator {
                     segments.push({
                         start: { x: currentPoint.x, y: currentPoint.y },
                         control: null,
-                        end: { x: nextPoint.x, y: nextPoint.y }
+                        end: { x: nextPoint.x, y: nextPoint.y },
                     });
                     i++;
                 } else {
@@ -245,7 +245,7 @@ class CurveGenerator {
                     const controlPoint = nextPoint;
                     
                     // Find the end point for this curve
-                    let endIndex = (i + 2) % points.length;
+                    const endIndex = (i + 2) % points.length;
                     let endPoint;
                     
                     if (points[endIndex].onCurve) {
@@ -258,7 +258,7 @@ class CurveGenerator {
                         endPoint = {
                             x: (controlPoint.x + nextOffCurve.x) / 2,
                             y: (controlPoint.y + nextOffCurve.y) / 2,
-                            onCurve: true
+                            onCurve: true,
                         };
                         i++; // Move to the control point (next iteration will process the off-curve point)
                     }
@@ -266,7 +266,7 @@ class CurveGenerator {
                     segments.push({
                         start: { x: currentPoint.x, y: currentPoint.y },
                         control: { x: controlPoint.x, y: controlPoint.y },
-                        end: { x: endPoint.x, y: endPoint.y }
+                        end: { x: endPoint.x, y: endPoint.y },
                     });
                 }
             } else {
@@ -279,7 +279,7 @@ class CurveGenerator {
                     const impliedStart = {
                         x: (prevPoint.x + currentPoint.x) / 2,
                         y: (prevPoint.y + currentPoint.y) / 2,
-                        onCurve: true
+                        onCurve: true,
                     };
                     
                     // Find end point
@@ -294,14 +294,14 @@ class CurveGenerator {
                         endPoint = {
                             x: (currentPoint.x + nextPoint.x) / 2,
                             y: (currentPoint.y + nextPoint.y) / 2,
-                            onCurve: true
+                            onCurve: true,
                         };
                     }
                     
                     segments.push({
                         start: impliedStart,
                         control: { x: currentPoint.x, y: currentPoint.y },
-                        end: endPoint
+                        end: endPoint,
                     });
                 }
                 
@@ -357,7 +357,7 @@ class PolygonTriangulator {
     static triangleCentroid(a: [number, number], b: [number, number], c: [number, number]): [number, number] {
         return [
             (a[0] + b[0] + c[0]) / 3,
-            (a[1] + b[1] + c[1]) / 3
+            (a[1] + b[1] + c[1]) / 3,
         ];
     }
 
@@ -424,7 +424,7 @@ class PolygonTriangulator {
         }
 
         // Ensure counter-clockwise winding for proper triangle orientation
-        let vertices = [...cleaned];
+        const vertices = [...cleaned];
         if (this.signedArea(vertices) < 0) {
             vertices.reverse();
         }
@@ -526,7 +526,7 @@ class PolygonTriangulator {
         
         // Bridge each hole to the merged polygon
         for (let i = 0; i < holes.length; i++) {
-            let hole = [...holes[i]];
+            const hole = [...holes[i]];
             
             // Ensure hole has correct winding (CW for holes)
             if (this.signedArea(hole) > 0) {
@@ -588,23 +588,23 @@ class PolygonTriangulator {
      */
     static segmentsIntersect(
         a1: [number, number], a2: [number, number],
-        b1: [number, number], b2: [number, number]
+        b1: [number, number], b2: [number, number],
     ): boolean {
         const d1 = this.crossProduct2D(
             [b1[0] - a1[0], b1[1] - a1[1]],
-            [a2[0] - a1[0], a2[1] - a1[1]]
+            [a2[0] - a1[0], a2[1] - a1[1]],
         );
         const d2 = this.crossProduct2D(
             [b2[0] - a1[0], b2[1] - a1[1]],
-            [a2[0] - a1[0], a2[1] - a1[1]]
+            [a2[0] - a1[0], a2[1] - a1[1]],
         );
         const d3 = this.crossProduct2D(
             [a1[0] - b1[0], a1[1] - b1[1]],
-            [b2[0] - b1[0], b2[1] - b1[1]]
+            [b2[0] - b1[0], b2[1] - b1[1]],
         );
         const d4 = this.crossProduct2D(
             [a2[0] - b1[0], a2[1] - b1[1]],
-            [b2[0] - b1[0], b2[1] - b1[1]]
+            [b2[0] - b1[0], b2[1] - b1[1]],
         );
         
         return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
@@ -624,7 +624,7 @@ class PolygonTriangulator {
     static isVisible(
         point: [number, number],
         target: [number, number],
-        polygon: [number, number][]
+        polygon: [number, number][],
     ): boolean {
         for (let i = 0; i < polygon.length; i++) {
             const edgeStart = polygon[i];
@@ -650,7 +650,7 @@ class PolygonTriangulator {
      */
     static findBridgePoint(
         holeVertex: [number, number],
-        outerPolygon: [number, number][]
+        outerPolygon: [number, number][],
     ): { vertex: [number, number], index: number } | null {
         let bestPoint = null;
         let bestDistance = Infinity;
@@ -663,7 +663,7 @@ class PolygonTriangulator {
             if (this.isVisible(holeVertex, outerVertex, outerPolygon)) {
                 const distance = Math.sqrt(
                     Math.pow(outerVertex[0] - holeVertex[0], 2) +
-                    Math.pow(outerVertex[1] - holeVertex[1], 2)
+                    Math.pow(outerVertex[1] - holeVertex[1], 2),
                 );
                 
                 if (distance < bestDistance) {
@@ -682,7 +682,7 @@ class PolygonTriangulator {
                 if (outerVertex[0] >= holeVertex[0]) {
                     const distance = Math.sqrt(
                         Math.pow(outerVertex[0] - holeVertex[0], 2) +
-                        Math.pow(outerVertex[1] - holeVertex[1], 2)
+                        Math.pow(outerVertex[1] - holeVertex[1], 2),
                     );
                     
                     if (distance < bestDistance) {
@@ -701,7 +701,7 @@ class PolygonTriangulator {
      */
     static bridgeHoleToOuter(
         outerPolygon: [number, number][],
-        hole: [number, number][]
+        hole: [number, number][],
     ): [number, number][] {
         // Find the rightmost vertex of the hole
         const { vertex: holeVertex, index: holeIndex } = this.getRightmostVertex(hole);
@@ -771,7 +771,7 @@ class PolygonTriangulator {
             polygon: poly,
             area: this.signedArea(poly),
             absArea: Math.abs(this.signedArea(poly)),
-            index: index
+            index: index,
         }));
         
         // Sort by absolute area (largest first) - larger contours are more likely to be outer
@@ -799,12 +799,12 @@ class PolygonTriangulator {
                 holes.push({
                     polygon: current.polygon,
                     index: current.index,
-                    parentIndex: parentIndex
+                    parentIndex: parentIndex,
                 });
             } else {
                 outerContours.push({
                     polygon: current.polygon,
-                    index: current.index
+                    index: current.index,
                 });
             }
         }
@@ -833,9 +833,9 @@ export class Font {
         this.lineWidth = lineWidth;
         
         // Get font metrics
-        const headTable = ttfFont.tableAccess.getParsedTable<TTFHeadTable>('head');
+        const headTable = ttfFont.tableAccess.getParsedTable<TTFHeadTable>("head");
         if (!headTable) {
-            throw new Error('Could not parse font head table');
+            throw new Error("Could not parse font head table");
         }
         this.unitsPerEm = headTable.unitsPerEm;
     }
@@ -848,7 +848,7 @@ export class Font {
         smoothness: number = 0, 
         filled: boolean = false, 
         fontSize: number = 1.0, 
-        lineWidth: number = 1.0
+        lineWidth: number = 1.0,
     ): Promise<Font> {
         const ttfFont = await parseTTF(fontPath);
         return new Font(ttfFont, smoothness, filled, fontSize, lineWidth);
@@ -862,7 +862,7 @@ export class Font {
             smoothness: this.smoothness,
             filled: this.filled,
             fontSize: this.fontSize,
-            lineWidth: this.lineWidth
+            lineWidth: this.lineWidth,
         };
     }
 
@@ -1038,22 +1038,20 @@ export class Font {
             advanceWidth: outline.advanceWidth,
             bounds: { 
                 min: [isFinite(minX) ? minX : 0, isFinite(minY) ? minY : 0], 
-                max: [isFinite(maxX) ? maxX : 0, isFinite(maxY) ? maxY : 0] 
-            }
+                max: [isFinite(maxX) ? maxX : 0, isFinite(maxY) ? maxY : 0], 
+            },
         };
     }
-
-
 
     /**
      * Generate a mesh for a text string
      * Uses the font's configured rendering mode (wireframe/filled) and caching automatically
      * Handles newline characters by converting them to multiline rendering
      */
-    generateText(text: string, position: vec3, color: vec3): TextMesh {
+    generateText(text: string, position: Vec3Like, color: Vec3Like): TextMesh {
         // Check if text contains newlines - if so, use multiline rendering
-        if (text.includes('\n')) {
-            const lines = text.split('\n');
+        if (text.includes("\n")) {
+            const lines = text.split("\n");
             return this.generateMultilineText(lines, position, color, 1.2, false); // Default to bottom-left for backward compatibility
         }
         
@@ -1064,7 +1062,7 @@ export class Font {
         
         const bounds = {
             min: vec3.fromValues(Infinity, Infinity, Infinity),
-            max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
+            max: vec3.fromValues(-Infinity, -Infinity, -Infinity),
         };
 
         let currentX = 0; // Start at origin X - overall position handled by Transform
@@ -1077,7 +1075,7 @@ export class Font {
             const char = text[i];
             
             // Skip control characters that don't have visual representation
-            if (char === '\n' || char === '\r' || char === '\t') {
+            if (char === "\n" || char === "\r" || char === "\t") {
                 continue;
             }
             
@@ -1110,14 +1108,15 @@ export class Font {
             vertices: new Float32Array(allVertices),
             indices: new Uint32Array(allIndices),
             bounds,
-            advanceWidth: totalAdvanceWidth
+            advanceWidth: totalAdvanceWidth,
         };
     }
 
     /**
      * Create mesh from cached glyph data using the font's configured rendering mode
      */
-    private createMeshFromCache(cachedGlyph: CachedGlyph, position: vec3, color: vec3): TextMesh {
+    private createMeshFromCache(cachedGlyph: CachedGlyph, position: Vec3Like, _color: Vec3Like): TextMesh {
+        void _color; // Color is handled in the calling function, not used here
         const vertices: number[] = [];
         const bounds = this.createBounds();
 
@@ -1130,9 +1129,9 @@ export class Font {
                     indices: new Uint32Array([]),
                     bounds: {
                         min: vec3.fromValues(position[0], position[1], position[2]),
-                        max: vec3.fromValues(position[0], position[1], position[2])
+                        max: vec3.fromValues(position[0], position[1], position[2]),
                     },
-                    advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth)
+                    advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth),
                 };
             }
 
@@ -1147,7 +1146,7 @@ export class Font {
                 vertices: new Float32Array(vertices),
                 indices: new Uint32Array(cachedGlyph.filledIndices),
                 bounds,
-                advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth)
+                advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth),
             };
         } else {
             // Use wireframe mesh data
@@ -1161,7 +1160,7 @@ export class Font {
                 vertices: new Float32Array(vertices),
                 indices: new Uint32Array(cachedGlyph.wireframeIndices),
                 bounds,
-                advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth)
+                advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth),
             };
         }
     }
@@ -1180,18 +1179,18 @@ export class Font {
         }
 
         // If text contains newlines, measure as multiline
-        if (text.includes('\n')) {
-            const lines = text.split('\n');
+        if (text.includes("\n")) {
+            const lines = text.split("\n");
             let maxWidth = 0;
             
             for (const line of lines) {
-                if (line.trim() === '') continue; // Skip empty lines for width calculation
+                if (line.trim() === "") continue; // Skip empty lines for width calculation
                 
                 let lineWidth = 0;
                 for (let i = 0; i < line.length; i++) {
                     const char = line[i];
                     // Skip control characters
-                    if (char === '\r' || char === '\t') continue;
+                    if (char === "\r" || char === "\t") continue;
                     
                     const cachedGlyph = this.getCachedGlyph(char);
                     lineWidth += this.fontUnitsToWorld(cachedGlyph.advanceWidth);
@@ -1202,7 +1201,7 @@ export class Font {
             return {
                 width: maxWidth,
                 height: Math.max(1, lines.length) * this.fontSize * 1.2, // Ensure at least one line height
-                lineHeight: this.fontSize
+                lineHeight: this.fontSize,
             };
         }
 
@@ -1212,7 +1211,7 @@ export class Font {
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
             // Skip control characters
-            if (char === '\n' || char === '\r' || char === '\t') continue;
+            if (char === "\n" || char === "\r" || char === "\t") continue;
             
             const cachedGlyph = this.getCachedGlyph(char);
             totalWidth += this.fontUnitsToWorld(cachedGlyph.advanceWidth);
@@ -1221,7 +1220,7 @@ export class Font {
         return {
             width: totalWidth,
             height: this.fontSize,
-            lineHeight: this.fontSize
+            lineHeight: this.fontSize,
         };
     }
 
@@ -1240,18 +1239,18 @@ export class Font {
         const lines: string[] = [];
         
         // First split by explicit newlines
-        const paragraphs = text.split('\n');
+        const paragraphs = text.split("\n");
         
         for (const paragraph of paragraphs) {
-            if (paragraph.trim() === '') {
+            if (paragraph.trim() === "") {
                 // Empty line - preserve it
-                lines.push('');
+                lines.push("");
                 continue;
             }
             
             // Wrap each paragraph
-            const words = paragraph.split(' ');
-            let currentLine = '';
+            const words = paragraph.split(" ");
+            let currentLine = "";
 
             for (const word of words) {
                 const testLine = currentLine ? `${currentLine} ${word}` : word;
@@ -1275,7 +1274,7 @@ export class Font {
             }
         }
 
-        return lines.length > 0 ? lines : [''];
+        return lines.length > 0 ? lines : [""];
     }
 
     /**
@@ -1287,16 +1286,16 @@ export class Font {
      * @param topLeftAnchor If true, position is treated as top-left corner; if false, bottom-left (default false for backward compatibility)
      * @returns TextMesh for all lines combined
      */
-    generateMultilineText(lines: string[], position: vec3, color: vec3, lineSpacing: number = 1.2, topLeftAnchor: boolean = false): TextMesh {
+    generateMultilineText(lines: string[], position: Vec3Like, color: Vec3Like, lineSpacing: number = 1.2, topLeftAnchor: boolean = false): TextMesh {
         if (lines.length === 0) {
             return {
                 vertices: new Float32Array([]),
                 indices: new Uint32Array([]),
                 bounds: {
                     min: vec3.clone(position),
-                    max: vec3.clone(position)
+                    max: vec3.clone(position),
                 },
-                advanceWidth: 0
+                advanceWidth: 0,
             };
         }
 
@@ -1307,7 +1306,7 @@ export class Font {
         
         const bounds = {
             min: vec3.fromValues(Infinity, Infinity, Infinity),
-            max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
+            max: vec3.fromValues(-Infinity, -Infinity, -Infinity),
         };
 
         const lineHeight = this.fontSize * lineSpacing;
@@ -1339,7 +1338,7 @@ export class Font {
             const linePosition = vec3.fromValues(
                 0, // X position handled by Transform
                 lineY,
-                0  // Z position handled by Transform
+                0,  // Z position handled by Transform
             );
 
             const lineMesh = this.generateText(line, linePosition, color);
@@ -1367,7 +1366,7 @@ export class Font {
             vertices: new Float32Array(allVertices),
             indices: new Uint32Array(allIndices),
             bounds,
-            advanceWidth: maxWidth
+            advanceWidth: maxWidth,
         };
     }
 
@@ -1377,7 +1376,7 @@ export class Font {
     getCacheStats() {
         return {
             cachedGlyphs: this.glyphCache.size,
-            glyphs: Array.from(this.glyphCache.keys())
+            glyphs: Array.from(this.glyphCache.keys()),
         };
     }
 
@@ -1391,7 +1390,7 @@ export class Font {
     /**
      * Transform a point from font units to world coordinates (with character position but not text block position)
      */
-    private transformPoint(fontX: number, fontY: number, position: vec3): [number, number, number] {
+    private transformPoint(fontX: number, fontY: number, position: Vec3Like): [number, number, number] {
         const worldX = this.fontUnitsToWorld(fontX);
         const worldY = this.fontUnitsToWorld(fontY);
         
@@ -1400,7 +1399,7 @@ export class Font {
         return [
             position[0] + worldX,  // Character X offset (for advancement)
             position[1] + worldY,  // Character Y offset (for line positioning)
-            position[2]            // Character Z offset
+            position[2],            // Character Z offset
         ];
     }
 
@@ -1410,7 +1409,7 @@ export class Font {
     private createBounds(): BoundingBox {
         return {
             min: vec3.fromValues(Infinity, Infinity, Infinity),
-            max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
+            max: vec3.fromValues(-Infinity, -Infinity, -Infinity),
         };
     }
 

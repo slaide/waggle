@@ -1,6 +1,6 @@
 import { GL, GLC } from "../gl";
 import { Transform } from "./transform";
-import { vec3 } from "gl-matrix";
+import { Vec3Like } from "gl-matrix";
 
 type ProgramInfo = {
     program: WebGLProgram;
@@ -85,7 +85,7 @@ function createShaderStage(
         }[stage],
     );
     if (!shader) {
-        const error = `shader compilation failed`;
+        const error = "shader compilation failed";
         console.error(error);
         throw error;
     }
@@ -160,7 +160,7 @@ export class GameObject implements Serializable<BaseSerializedGameObject> {
     // Line drawing properties
     private _drawMode: "triangles" | "lines" = "triangles";
     private _lineWidth: number = 1.0;
-    private _lineColor?: vec3;
+    private _lineColor?: Vec3Like;
     
     get material(): any { return undefined; }
     set material(_: any) {}
@@ -200,11 +200,11 @@ export class GameObject implements Serializable<BaseSerializedGameObject> {
         this._lineWidth = Math.max(0.1, width); // Ensure minimum line width
     }
     
-    get lineColor(): vec3 | undefined {
+    get lineColor(): Vec3Like | undefined {
         return this._lineColor;
     }
     
-    set lineColor(color: vec3 | undefined) {
+    set lineColor(color: Vec3Like | undefined) {
         this._lineColor = color;
     }
     
@@ -295,6 +295,10 @@ export class GameObject implements Serializable<BaseSerializedGameObject> {
     // Draw method with explicit world matrix - to be overridden by subclasses
     drawWithMatrix(worldMatrix: Float32Array, viewMatrix?: Float32Array, projectionMatrix?: Float32Array) {
         // Default implementation just calls regular draw
+        // Parameters are intentionally unused in base class but required for subclass override compatibility
+        void worldMatrix; // Explicitly mark as unused
+        void viewMatrix;
+        void projectionMatrix;
         this.draw();
     }
 
@@ -312,7 +316,7 @@ export class GameObject implements Serializable<BaseSerializedGameObject> {
             visible: this.visible,
             forwardRendered: this._forwardRendered,
             forwardShaderPaths: this._forwardShaderPaths,
-            transform: this.transform.toJSON()
+            transform: this.transform.toJSON(),
         };
 
         if (this.children.length > 0) {

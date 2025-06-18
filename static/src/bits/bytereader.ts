@@ -30,7 +30,7 @@ export class ByteReader {
     constructor(
         buffer: ArrayBuffer, 
         dataLittleEndian: boolean = true,
-        startOffset: number = 0
+        startOffset: number = 0,
     ) {
         this.dataView = new DataView(buffer);
         this.dataLittleEndian = dataLittleEndian;
@@ -90,7 +90,7 @@ export class ByteReader {
         if (this.position + bytesNeeded > this.dataView.byteLength) {
             throw new Error(
                 `Not enough bytes: need ${bytesNeeded} at position ${this.position}, ` +
-                `but only ${this.getRemainingBytes()} bytes remaining`
+                `but only ${this.getRemainingBytes()} bytes remaining`,
             );
         }
     }
@@ -191,7 +191,7 @@ export class ByteReader {
      * @param maxLength - Maximum length to read (if null-terminated string is longer)
      * @param encoding - Text encoding (default: 'utf-8')
      */
-    readString(maxLength?: number, encoding: string = 'utf-8'): string {
+    readString(maxLength?: number, encoding: string = "utf-8"): string {
         let endPosition = this.position;
         const maxPos = maxLength ? Math.min(this.position + maxLength, this.dataView.byteLength) : this.dataView.byteLength;
         
@@ -216,7 +216,7 @@ export class ByteReader {
      * @param length - Exact number of bytes to read
      * @param encoding - Text encoding (default: 'ascii')
      */
-    readFixedString(length: number, encoding: string = 'ascii'): string {
+    readFixedString(length: number, encoding: string = "ascii"): string {
         this.checkBounds(length);
         const bytes = new Uint8Array(this.dataView.buffer, this.position, length);
         this.position += length;
@@ -230,19 +230,19 @@ export class ByteReader {
      * @param type - Data type to peek ('uint8', 'uint16', 'uint32', etc.)
      * @param offset - Optional offset from current position
      */
-    peek(type: 'uint8' | 'uint16' | 'uint32' | 'int8' | 'int16' | 'int32', offset: number = 0): number {
+    peek(type: "uint8" | "uint16" | "uint32" | "int8" | "int16" | "int32", offset: number = 0): number {
         const savedPosition = this.position;
         this.position += offset;
         
         let value: number;
         switch (type) {
-            case 'uint8': value = this.readUint8(); break;
-            case 'uint16': value = this.readUint16(); break;
-            case 'uint32': value = this.readUint32(); break;
-            case 'int8': value = this.readInt8(); break;
-            case 'int16': value = this.readInt16(); break;
-            case 'int32': value = this.readInt32(); break;
-            default: throw new Error(`Unknown peek type: ${type}`);
+        case "uint8": value = this.readUint8(); break;
+        case "uint16": value = this.readUint16(); break;
+        case "uint32": value = this.readUint32(); break;
+        case "int8": value = this.readInt8(); break;
+        case "int16": value = this.readInt16(); break;
+        case "int32": value = this.readInt32(); break;
+        default: throw new Error(`Unknown peek type: ${type}`);
         }
         
         this.position = savedPosition;

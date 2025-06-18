@@ -1,12 +1,9 @@
 //# allFunctionsCalledOnLoad
 
-import { arrToUint16 } from "./bits";
+import { arrToUint16, BitBuffer } from "./bits";
 import { ByteReader } from "./bytereader";
 
 import { HuffmanTree } from "./huffman";
-import { BitBuffer } from "./bits";
-
-const rtl = true;
 
 function parseNcodelengths(
     code_length_tree: HuffmanTree,
@@ -23,7 +20,7 @@ function parseNcodelengths(
             ret[i] = code;
         } else if (code == 16) {
             // copy the previous code 3-6 times
-            if (i == 0) throw ``;
+            if (i == 0) throw "";
             const last_code = ret[i - 1];
             const numreps = 3 + ibuffer.nbits(2);
             for (let r = 0; r < numreps; r++) {
@@ -45,7 +42,7 @@ function parseNcodelengths(
             }
             i += numreps - 1;
         } else {
-            throw ``;
+            throw "";
         }
     }
     return ret;
@@ -62,7 +59,7 @@ const code_lengths = new Uint8Array(288).map((v, i) => {
     } else if (i >= 280 && i <= 287) {
         return 8;
     } else {
-        throw ``;
+        throw "";
     }
 });
 const dist_lengths = new Uint8Array(30).map(() => 5);
@@ -166,8 +163,8 @@ function decode_deflate(i: Uint8Array, maxlen: number): Uint8Array {
         }
 
         // these cases can never happen, but TS does not know that.
-        if (litlen_tree == null) throw `bug: litlen_tree invalid`;
-        if (dist_tree == null) throw `bug: dist_tree invalid`;
+        if (litlen_tree == null) throw "bug: litlen_tree invalid";
+        if (dist_tree == null) throw "bug: dist_tree invalid";
 
         while (1) {
             const leaf = litlen_tree.parse(ibuffer);
@@ -201,7 +198,7 @@ function decode_deflate(i: Uint8Array, maxlen: number): Uint8Array {
                 } else if (code == 285) {
                     length = 258;
                 } else {
-                    throw `invalid length code`;
+                    throw "invalid length code";
                 }
             }
 
@@ -213,7 +210,7 @@ function decode_deflate(i: Uint8Array, maxlen: number): Uint8Array {
                 dist = dist_code + 1;
             } else {
                 const dist_level = Math.floor(dist_code / 2);
-                if (dist_level > 14) throw ``;
+                if (dist_level > 14) throw "";
 
                 const num_extra_bits = dist_level - 1;
                 const dist_code_offset = 2 * dist_level;
@@ -255,20 +252,16 @@ export function zlibDecode(
     const flg = reader.readUint8();
 
     const compression_method = cmf & 0xf;
-    const compression_info = cmf >> 4;
     if (compression_method != 8) {
         const error = `${compression_method}!=8`;
         alert(error);
         throw error;
     }
-    const window_size = 1 << (compression_info + 8);
-
     const preset_dict = flg & (1 << 5);
 
-    let dictid = 0;
     if (preset_dict) {
-        dictid = reader.readUint32();
-        throw `zlib preset dict unimplemented`;
+        reader.readUint32();
+        throw "zlib preset dict unimplemented";
     }
 
     // Get remaining deflate data as Uint8Array for decode_deflate

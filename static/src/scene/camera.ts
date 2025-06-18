@@ -1,4 +1,4 @@
-import {vec3,quat,mat4,glMatrix as glm} from "gl-matrix";
+import {vec3,quat,mat4,Vec3Like,QuatLike} from "gl-matrix";
 
 export class Camera{
     constructor(
@@ -6,8 +6,8 @@ export class Camera{
         public aspect:number=800/600,
         public znear:number=0.1,
         public zfar:number=100,
-        public position:vec3=vec3.fromValues(0,0,0),
-        public rotation:quat=quat.identity(quat.create()),
+        public position:Vec3Like=vec3.fromValues(0,0,0),
+        public rotation:QuatLike=quat.identity(quat.create()),
     ){}
 
     get #target(){
@@ -57,16 +57,16 @@ export class Camera{
             this.position,
         );
         const ret=mat4.invert(mat4.create(),camTransform);
-        if(ret==null)throw `unable to invert matrix`;
+        if(ret==null)throw "unable to invert matrix";
         return ret;
     }
     get projectionMatrix(){
         return mat4.perspective(
             mat4.create(),
-            glm.toRadian(this.fov),
+            this.fov * Math.PI / 180, // Convert degrees to radians
             this.aspect,
             this.znear,
-            this.zfar
+            this.zfar,
         );
     }
 
@@ -77,13 +77,13 @@ export class Camera{
             znear: this.znear,
             zfar: this.zfar,
             position: Array.from(this.position) as [number, number, number],
-            rotation: Array.from(this.rotation) as [number, number, number, number]
+            rotation: Array.from(this.rotation) as [number, number, number, number],
         };
     }
 
     static fromJSON(data: unknown): Camera {
         // Type guard inline
-        if (typeof data !== 'object' || data === null) {
+        if (typeof data !== "object" || data === null) {
             throw new Error("Invalid camera data format");
         }
         
@@ -103,7 +103,7 @@ export class Camera{
             cameraData.znear ?? 0.1,
             cameraData.zfar ?? 100,
             vec3.fromValues(cameraData.position[0], cameraData.position[1], cameraData.position[2]),
-            quat.fromValues(cameraData.rotation[0], cameraData.rotation[1], cameraData.rotation[2], cameraData.rotation[3])
+            quat.fromValues(cameraData.rotation[0], cameraData.rotation[1], cameraData.rotation[2], cameraData.rotation[3]),
         );
     }
 }
@@ -116,8 +116,8 @@ export class OrthographicCamera {
         public top: number = 1,
         public znear: number = 0.1,
         public zfar: number = 100,
-        public position: vec3 = vec3.fromValues(0, 0, 0),
-        public rotation: quat = quat.identity(quat.create()),
+        public position: Vec3Like = vec3.fromValues(0, 0, 0),
+        public rotation: QuatLike = quat.identity(quat.create()),
     ) {}
 
     get viewMatrix() {
@@ -127,7 +127,7 @@ export class OrthographicCamera {
             this.position,
         );
         const ret = mat4.invert(mat4.create(), camTransform);
-        if (ret == null) throw `unable to invert matrix`;
+        if (ret == null) throw "unable to invert matrix";
         return ret;
     }
 
@@ -139,7 +139,7 @@ export class OrthographicCamera {
             this.bottom,
             this.top,
             this.znear,
-            this.zfar
+            this.zfar,
         );
     }
 

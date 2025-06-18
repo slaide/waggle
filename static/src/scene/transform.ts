@@ -1,15 +1,15 @@
-import {vec3,quat,mat4} from "gl-matrix";
+import {vec3, quat, mat4, Vec3, Quat, Mat4} from "gl-matrix";
 
 export class Transform {
-    private _worldMatrix?: mat4;
+    private _worldMatrix?: Mat4;
     private _isDirty: boolean = true;
     private _parent?: Transform;
     private _children: Transform[] = [];
 
     constructor(
-        public position: vec3 = vec3.create(),
-        public rotation: quat = quat.identity(quat.create()),
-        public scale: vec3 = vec3.fromValues(1, 1, 1),
+        public position: Vec3 = vec3.create(),
+        public rotation: Quat = quat.create(),
+        public scale: Vec3 = vec3.fromValues(1, 1, 1),
     ) {}
 
     // Get the local transform matrix
@@ -25,7 +25,7 @@ export class Transform {
     }
 
     // Get the world transform matrix (includes parent transforms)
-    get worldMatrix(): mat4 {
+    get worldMatrix(): Mat4 {
         if (this._isDirty || !this._worldMatrix) {
             this._updateWorldMatrix();
         }
@@ -93,17 +93,17 @@ export class Transform {
     }
 
     // Methods to update transforms and mark dirty
-    setPosition(value: vec3) {
+    setPosition(value: Vec3) {
         vec3.copy(this.position, value);
         this.markDirty();
     }
 
-    setRotation(value: quat) {
+    setRotation(value: Quat) {
         quat.copy(this.rotation, value);
         this.markDirty();
     }
 
-    setScale(value: vec3) {
+    setScale(value: Vec3) {
         vec3.copy(this.scale, value);
         this.markDirty();
     }
@@ -121,21 +121,21 @@ export class Transform {
     }
 
     // Get world position (extracted from world matrix)
-    get worldPosition(): vec3 {
+    get worldPosition(): Vec3 {
         const worldPos = vec3.create();
         mat4.getTranslation(worldPos, this.worldMatrix);
         return worldPos;
     }
 
     // Get world rotation (extracted from world matrix)
-    get worldRotation(): quat {
+    get worldRotation(): Quat {
         const worldRot = quat.create();
         mat4.getRotation(worldRot, this.worldMatrix);
         return worldRot;
     }
 
     // Get world scale (extracted from world matrix)
-    get worldScale(): vec3 {
+    get worldScale(): Vec3 {
         const worldScale = vec3.create();
         mat4.getScaling(worldScale, this.worldMatrix);
         return worldScale;
@@ -145,13 +145,13 @@ export class Transform {
         return {
             position: Array.from(this.position) as [number, number, number],
             rotation: Array.from(this.rotation) as [number, number, number, number],
-            scale: Array.from(this.scale) as [number, number, number]
+            scale: Array.from(this.scale) as [number, number, number],
         };
     }
 
     static fromJSON(data: unknown): Transform {
         // Type guard inline
-        if (typeof data !== 'object' || data === null) {
+        if (typeof data !== "object" || data === null) {
             throw new Error("Invalid transform data format");
         }
 

@@ -3,13 +3,12 @@ import { GameObject, SerializedTransform, BaseSerializedGameObject } from "./gam
 import { PointLight, DirectionalLight } from "./light";
 import { Transform } from "./transform";
 import { Camera } from "./camera";
-import { parseObj } from "../bits/obj";
-import { Model } from "./model";
+
 import { vec3, quat, mat4 } from "gl-matrix";
 
 // Now we can use the proper types directly
 export type SerializedGameObject = BaseSerializedGameObject;
-export type SerializedCamera = ReturnType<Camera['toJSON']>;
+export type SerializedCamera = ReturnType<Camera["toJSON"]>;
 export type SerializedScene = {
     name?: string;
     camera: SerializedCamera;
@@ -27,13 +26,13 @@ export interface UnvalidatedSceneJson {
 // Type guard for validating JSON data loaded from files
 export function isValidSceneJson(data: unknown): data is SerializedScene {
     return (
-        typeof data === 'object' &&
+        typeof data === "object" &&
         data !== null &&
-        (!('name' in data) || typeof (data as any).name === 'string') &&
-        'camera' in data &&
-        typeof (data as any).camera === 'object' &&
+        (!("name" in data) || typeof (data as any).name === "string") &&
+        "camera" in data &&
+        typeof (data as any).camera === "object" &&
         (data as any).camera !== null &&
-        'objects' in data &&
+        "objects" in data &&
         Array.isArray((data as any).objects)
     );
 }
@@ -42,7 +41,7 @@ export class Scene {
     constructor(
         public gl: GLC,
         public objects: GameObject[] = [],
-        public name?: string
+        public name?: string,
     ) {}
 
     static async make(gl: GLC) {
@@ -50,12 +49,12 @@ export class Scene {
     }
 
     // Traverse the scene graph and collect information
-    traverse(callback: (obj: GameObject, parentTransform?: Transform) => void, parentTransform?: Transform) {
+    traverse(callback: (obj: GameObject, parentTransform?: Transform) => void) {
         for (const object of this.objects) {
             if (!object.enabled) continue;
             
             // Use the new GameObject traverse method which handles children automatically
-            object.traverse((obj, depth) => {
+            object.traverse((obj) => {
                 callback(obj, obj.parent?.transform);
             });
         }
@@ -187,7 +186,7 @@ export class Scene {
         return {
             name: this.name,
             camera: camera.toJSON(),
-            objects: this.objects.map(obj => obj.toJSON())
+            objects: this.objects.map(obj => obj.toJSON()),
         };
     }
 
@@ -227,8 +226,8 @@ export async function loadScene(gl: GLC, sceneData: unknown): Promise<Scene> {
         throw new Error("Invalid scene JSON format - missing required properties or wrong types");
     }
 
-    // Create camera from serialized data
-    const camera = Camera.fromJSON(sceneData.camera);
+    // Validate camera data structure (camera object is created but not returned)
+    Camera.fromJSON(sceneData.camera);
     
     // Create scene from validated data
     const scene = await Scene.fromJSON(gl, sceneData);

@@ -20,6 +20,45 @@ Waggle is a 3D rendering engine that combines the efficiency of deferred shading
 - **Backend**: Minimal Python static file server (via uv) for development
 - **File Formats**: Custom loaders for OBJ models and PNG textures
 
+## Development
+
+### Prerequisites
+- **Bun**: Install from [bun.sh](https://bun.sh)
+- **Python with uv**: For development server
+
+### Quick Start
+```bash
+# Install dependencies
+bun install
+
+# Build the project
+bun run build
+
+# Run comprehensive checks (TypeScript + ESLint + Tests)
+bun run check
+
+# Run checks with auto-fix (TypeScript + ESLint with fixes + Tests)
+bun run check:fix
+```
+
+### Available Scripts
+- **`bun run build`**: Bundle TypeScript to optimized JavaScript
+- **`bun run lint`**: Run ESLint for style and code quality checks
+- **`bun run lint:fix`**: Run ESLint with automatic fixes
+- **`bun run typecheck`**: Run TypeScript compiler for type checking
+- **`bun run test`**: Run test suite
+- **`bun run test:coverage`**: Run tests with coverage report
+- **`bun run check`**: Run comprehensive validation (TypeScript + ESLint + Tests) (**recommended for complete validation**)
+- **`bun run check:fix`**: Run TypeScript check + ESLint with auto-fixes + Tests
+
+### Code Quality
+The project uses **TypeScript compiler**, **ESLint**, and **comprehensive test suite** for complete code validation:
+- **TypeScript**: Catches type errors, unused variables, and structural issues
+- **ESLint**: Enforces code style, formatting, and additional code quality rules
+- **Tests**: Validates functionality across all modules with unit and integration tests
+
+**Always run `bun run check` before committing** to catch type errors, style issues, and ensure all tests pass.
+
 ## Key Features
 
 ### Hybrid Rendering Pipeline

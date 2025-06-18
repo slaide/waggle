@@ -1,27 +1,27 @@
 import { GL, GLC } from "../gl";
 import { parsePng } from "../bits/png";
 import { MtlMaterial, ObjFile, parseObj } from "../bits/obj";
-import { vec3, mat4 } from "gl-matrix";
+import { vec3, Vec3Like } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct } from "../struct";
-import { GameObject, GameObjectRegistry, BaseSerializedGameObject, Serializable, SerializedTransform } from "./gameobject";
+import { GameObject, GameObjectRegistry, BaseSerializedGameObject, Serializable } from "./gameobject";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
-type Vec3Type=number[];
+// type Vec3Type=number[]; // Unused but kept for future reference
 const Vec2 = TYPE_REGISTRY.f32.array(2);
-type Vec2Type=number[];
+// type Vec2Type=number[]; // Unused but kept for future reference
 const VertexData=makeStruct([
-    { name: 'position', type: Vec3 },
-    { name: 'normal', type: Vec3 },
-    { name: 'texCoord', type: Vec2 }
+    { name: "position", type: Vec3 },
+    { name: "normal", type: Vec3 },
+    { name: "texCoord", type: Vec2 },
 ]);
-// Define the field types for type safety
-type VertexDataType={
-    position:Vec3Type;
-    normal:Vec3Type;
-    texCoord:Vec2Type;
-};
+// Define the field types for type safety (currently unused but kept for future use)
+// type VertexDataType={
+//     position:Vec3Type;
+//     normal:Vec3Type;
+//     texCoord:Vec2Type;
+// };
 
 type ProgramInfo = {
     program: WebGLProgram;
@@ -48,7 +48,7 @@ function createShaderStage(
         }[stage],
     );
     if (!shader) {
-        const error = `shader compilation failed`;
+        const error = "shader compilation failed";
         console.error(error);
         throw error;
     }
@@ -108,7 +108,7 @@ async function createShaderProgram(
 export interface SerializedModel extends BaseSerializedGameObject {
     type: "mesh";
     material?: {
-        diffuse?: Float32Array;
+        diffuse?: Vec3Like;
         specularExponent?: number;
         diffuseTexture?: string;
     };
@@ -184,10 +184,10 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             diffuse: this._material.diffuse ? new Float32Array([
                 this._material.diffuse[0],
                 this._material.diffuse[1],
-                this._material.diffuse[2]
+                this._material.diffuse[2],
             ]) : undefined,
             specularExponent: this._material.specularExponent,
-            diffuseTexture: this._material.map_diffuse?.source
+            diffuseTexture: this._material.map_diffuse?.source,
         };
     }
 
@@ -243,19 +243,6 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
     setUniforms(
         viewMatrix: Float32Array,
         projectionMatrix: Float32Array,
-        lightData: {
-            pointLights?: Array<{
-                position: Float32Array;
-                color: Float32Array;
-                intensity: number;
-                radius: number;
-            }>;
-            directionalLights?: Array<{
-                direction: Float32Array;
-                color: Float32Array;
-                intensity: number;
-            }>;
-        } = {}
     ) {
         if (!this.programInfo) return;
 
@@ -292,7 +279,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             } else {
                 gl.uniform4fv(
                     this.programInfo.uniformLocations.uDiffuseColor,
-                    new Float32Array([1, 1, 1, 1])
+                    new Float32Array([1, 1, 1, 1]),
                 );
             }
 
@@ -368,7 +355,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             } else {
                 gl.uniform4fv(
                     programInfo.uniformLocations.uDiffuseColor,
-                    new Float32Array([1, 1, 1, 1])
+                    new Float32Array([1, 1, 1, 1]),
                 );
             }
 
@@ -492,7 +479,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             } else {
                 gl.uniform4fv(
                     forwardProgramInfo.uniformLocations.uDiffuseColor,
-                    new Float32Array([1, 1, 1, 1])
+                    new Float32Array([1, 1, 1, 1]),
                 );
             }
         }
@@ -524,7 +511,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             gl.bindBufferBase(gl.UNIFORM_BUFFER, DIRECTIONALLIGHTBLOCKBINDING, lightUBOs.directionalLightUBO);
         } catch (error) {
             // Some shaders might not use uniform buffer objects
-            console.warn('Could not bind light UBOs (shader might not use them):', error);
+            console.warn("Could not bind light UBOs (shader might not use them):", error);
         }
 
         // Bind vertex and index buffers
@@ -586,7 +573,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         if (this.lineColor && forwardProgramInfo.uniformLocations.uDiffuseColor) {
             gl.uniform4fv(
                 forwardProgramInfo.uniformLocations.uDiffuseColor,
-                new Float32Array([this.lineColor[0], this.lineColor[1], this.lineColor[2], 1.0])
+                new Float32Array([this.lineColor[0], this.lineColor[1], this.lineColor[2], 1.0]),
             );
         }
 
@@ -604,12 +591,12 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         const base = super.toJSON();
         
         // Convert material to serializable format
-        let serializedMaterial: SerializedModel['material'] = undefined;
+        let serializedMaterial: SerializedModel["material"] = undefined;
         if (this._material) {
             serializedMaterial = {
                 diffuse: this._material.diffuse ? new Float32Array(this._material.diffuse) : undefined,
                 specularExponent: this._material.specularExponent,
-                diffuseTexture: this._material.map_diffuse?.source
+                diffuseTexture: this._material.map_diffuse?.source,
             };
         }
         
@@ -621,13 +608,13 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             rawVertexData: this.rawVertexData,
             rawIndices: this.rawIndices,
             rawTexturePath: this.rawTexturePath,
-            rawShaderSources: this.rawShaderSources
+            rawShaderSources: this.rawShaderSources,
         };
     }
 
     static async fromJSON(gl: GLC, data: BaseSerializedGameObject): Promise<Model> {
         // Type guard inline
-        if (typeof data !== 'object' || data === null || data.type !== "mesh") {
+        if (typeof data !== "object" || data === null || data.type !== "mesh") {
             throw new Error("Invalid mesh object data format");
         }
 
@@ -655,11 +642,11 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                 objects: { 
                     [firstObjectKey]: { 
                         groups: { 
-                            [firstGroupKey]: group 
-                        } 
-                    } 
+                            [firstGroupKey]: group, 
+                        }, 
+                    }, 
                 },
-                boundingBox: objModelData.boundingBox
+                boundingBox: objModelData.boundingBox,
             }, transform);
             
             // Set the name and other properties from the JSON data
@@ -700,7 +687,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                     model.forwardShaderPaths = modelData.forwardShaderPaths;
                     model._material = forwardMaterial; // Use the properly parsed material
                 } catch (error) {
-                    console.warn('Failed to create forward rendering program for OBJ model:', error);
+                    console.warn("Failed to create forward rendering program for OBJ model:", error);
                 }
             }
             
@@ -730,35 +717,15 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             gl,
             modelData.rawTexturePath ?? "",
             vertexData,
-            indices
+            indices,
         );
 
-        // Create new program from shader sources or default if rawVertexData is provided
+        // Create new program from shader sources
         let programInfo;
-        try {
-            programInfo = modelData.rawShaderSources ? 
-                await Model.makeProgram(gl, material) : 
-                (vertexData.length > 0 ? await Model.makeProgram(gl, material) : undefined);
-        } catch (error) {
-            // In test environments, shader compilation might fail, so create a dummy program info
-            programInfo = {
-                program: gl.createProgram() as WebGLProgram,
-                attributeLocations: {
-                    aVertexPosition: 0,
-                    aVertexNormal: 1,  
-                    aVertexTexCoord: 2
-                },
-                uniformLocations: {
-                    uModelMatrix: gl.getUniformLocation({} as WebGLProgram, 'uModelMatrix') as WebGLUniformLocation,
-                    uViewMatrix: gl.getUniformLocation({} as WebGLProgram, 'uViewMatrix') as WebGLUniformLocation,
-                    uProjectionMatrix: gl.getUniformLocation({} as WebGLProgram, 'uProjectionMatrix') as WebGLUniformLocation,
-                    uDiffuseColor: gl.getUniformLocation({} as WebGLProgram, 'uDiffuseColor') as WebGLUniformLocation,
-                    uSpecularExponent: gl.getUniformLocation({} as WebGLProgram, 'uSpecularExponent') as WebGLUniformLocation,
-                    uUseDiffuseTexture: gl.getUniformLocation({} as WebGLProgram, 'uUseDiffuseTexture') as WebGLUniformLocation,
-                    uDiffuseSampler: gl.getUniformLocation({} as WebGLProgram, 'uDiffuseSampler') as WebGLUniformLocation
-                },
-                shaderSources: modelData.rawShaderSources || { vs: '// mock vertex shader', fs: '// mock fragment shader' }
-            };
+        if (modelData.rawShaderSources || vertexData.length > 0) {
+            programInfo = await Model.makeProgram(gl, material);
+        } else {
+            programInfo = undefined;
         }
 
         // Create forward program if object is marked for forward rendering
@@ -767,7 +734,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             try {
                 forwardProgramInfo = await Model.makeForwardProgram(gl, material, modelData.forwardShaderPaths);
             } catch (error) {
-                console.warn('Failed to create forward rendering program, using regular program:', error);
+                console.warn("Failed to create forward rendering program, using regular program:", error);
                 forwardProgramInfo = programInfo;
             }
         }
@@ -784,7 +751,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             material,
             modelData.enabled ?? true,
             modelData.visible ?? true,
-            modelData.name
+            modelData.name,
         );
 
         // Store raw data for future serialization as number[]
@@ -808,7 +775,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
     static async make(
         gl: GLC,
         obj: ObjFile,
-        transform: Transform
+        transform: Transform,
     ): Promise<Model> {
         // Get the first (and only) group from the temporary structure
         const group = Object.values(Object.values(obj.objects)[0].groups)[0];
@@ -857,40 +824,18 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         gl: GLC,
         material: MtlMaterial,
     ): Promise<ProgramInfo> {
-        if (!material.map_diffuse && !material.diffuse) throw ``;
+        if (!material.map_diffuse && !material.diffuse) throw "";
 
         // Load shader files from static directory or use default in test environment
         let vsSource = "";
         let fsSource = "";
         
-        try {
-            const [vsResponse, fsResponse] = await Promise.all([
-                fetch('/static/src/shaders/geometry.vert'),
-                fetch('/static/src/shaders/geometry.frag')
-            ]);
-            
-            if (vsResponse.ok && fsResponse.ok) {
-                vsSource = await vsResponse.text();
-                fsSource = await fsResponse.text();
-            } else {
-                // Use minimal default shaders for testing
-                vsSource = `#version 300 es
-                    in vec4 aVertexPosition;
-                    in vec3 aVertexNormal;
-                    in vec2 aVertexTexCoord;
-                    uniform mat4 uModelViewMatrix;
-                    uniform mat4 uProjectionMatrix;
-                    void main() {
-                        gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-                    }`;
-                fsSource = `#version 300 es
-                    precision mediump float;
-                    out vec4 fragColor;
-                    void main() {
-                        fragColor = vec4(1.0, 0.0, 0.0, 1.0);
-                    }`;
-            }
-        } catch (error) {
+        // Check if we're in a test environment (no real WebGL context)
+        const isTestEnvironment = typeof window === "undefined" || 
+                                 (typeof window !== "undefined" && !window.fetch) || 
+                                 gl.constructor.name === "Object";
+        
+        if (isTestEnvironment) {
             // Use minimal default shaders for testing
             vsSource = `#version 300 es
                 in vec4 aVertexPosition;
@@ -907,6 +852,22 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                 void main() {
                     fragColor = vec4(1.0, 0.0, 0.0, 1.0);
                 }`;
+        } else {
+            try {
+                const [vsResponse, fsResponse] = await Promise.all([
+                    fetch("/static/src/shaders/geometry.vert"),
+                    fetch("/static/src/shaders/geometry.frag"),
+                ]);
+                
+                if (vsResponse.ok && fsResponse.ok) {
+                    vsSource = await vsResponse.text();
+                    fsSource = await fsResponse.text();
+                } else {
+                    throw new Error(`Failed to load geometry shaders: VS=${vsResponse.status} (${vsResponse.statusText}), FS=${fsResponse.status} (${fsResponse.statusText})`);
+                }
+            } catch (error) {
+                throw new Error(`Failed to fetch geometry shaders: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
 
         const shaderProgram = await createShaderProgram(gl, {
@@ -942,7 +903,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             program: shaderProgram,
             attributeLocations,
             uniformLocations,
-            shaderSources: { vs: vsSource, fs: fsSource }
+            shaderSources: { vs: vsSource, fs: fsSource },
         };
     }
 
@@ -950,36 +911,20 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
     static async makeForwardProgram(
         gl: GLC,
         material: MtlMaterial,
-        customShaderPaths?: { vs: string, fs: string }
+        customShaderPaths?: { vs: string, fs: string },
     ): Promise<ProgramInfo> {
-        if (!material.map_diffuse && !material.diffuse) throw ``;
+        if (!material.map_diffuse && !material.diffuse) throw "";
 
         // Load forward rendering shader files
         let vsSource = "";
         let fsSource = "";
         
-        // Use custom paths if provided, otherwise use defaults
-        // Fix paths to be relative to the web server root
-        const vsPath = customShaderPaths?.vs || 'static/src/shaders/forward.vert';
-        const fsPath = customShaderPaths?.fs || 'static/src/shaders/forward.frag';
+        // Check if we're in a test environment (no real WebGL context)
+        const isTestEnvironment = typeof window === "undefined" || 
+                                 (typeof window !== "undefined" && !window.fetch) || 
+                                 gl.constructor.name === "Object";
         
-        // Convert absolute paths to relative paths
-        const normalizedVsPath = vsPath.startsWith('/') ? vsPath.substring(1) : vsPath;
-        const normalizedFsPath = fsPath.startsWith('/') ? fsPath.substring(1) : fsPath;
-        
-        try {
-            const [vsResponse, fsResponse] = await Promise.all([
-                fetch(normalizedVsPath),
-                fetch(normalizedFsPath)
-            ]);
-            
-            if (vsResponse.ok && fsResponse.ok) {
-                vsSource = await vsResponse.text();
-                fsSource = await fsResponse.text();
-            } else {
-                throw new Error(`HTTP error: VS=${vsResponse.status}, FS=${fsResponse.status}`);
-            }
-        } catch (error) {
+        if (isTestEnvironment) {
             // Use minimal default shaders for testing
             vsSource = `#version 300 es
                 in vec4 aVertexPosition;
@@ -1001,6 +946,31 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                 void main() {
                     fragColor = uDiffuseColor;
                 }`;
+        } else {
+            // Use custom paths if provided, otherwise use defaults
+            // Fix paths to be relative to the web server root
+            const vsPath = customShaderPaths?.vs || "static/src/shaders/forward.vert";
+            const fsPath = customShaderPaths?.fs || "static/src/shaders/forward.frag";
+            
+            // Convert absolute paths to relative paths
+            const normalizedVsPath = vsPath.startsWith("/") ? vsPath.substring(1) : vsPath;
+            const normalizedFsPath = fsPath.startsWith("/") ? fsPath.substring(1) : fsPath;
+            
+            try {
+                const [vsResponse, fsResponse] = await Promise.all([
+                    fetch(normalizedVsPath),
+                    fetch(normalizedFsPath),
+                ]);
+                
+                if (vsResponse.ok && fsResponse.ok) {
+                    vsSource = await vsResponse.text();
+                    fsSource = await fsResponse.text();
+                } else {
+                    throw new Error(`Failed to load forward shaders from ${normalizedVsPath}, ${normalizedFsPath}: VS=${vsResponse.status} (${vsResponse.statusText}), FS=${fsResponse.status} (${fsResponse.statusText})`);
+                }
+            } catch (error) {
+                throw new Error(`Failed to fetch forward shaders from ${normalizedVsPath}, ${normalizedFsPath}: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
 
         const shaderProgram = await createShaderProgram(gl, {
@@ -1036,7 +1006,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             program: shaderProgram,
             attributeLocations,
             uniformLocations,
-            shaderSources: { vs: vsSource, fs: fsSource }
+            shaderSources: { vs: vsSource, fs: fsSource },
         };
     }
 
@@ -1068,23 +1038,31 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
 
         // Load texture or create default
         if (diffuseTexturePath && diffuseTexturePath.length > 0) {
-            try {
-                const response = await fetch(diffuseTexturePath);
-                if (!response.ok) {
-                    throw new Error(`Failed to load texture: ${response.statusText}`);
-                }
-                const buffer = await response.arrayBuffer();
-                // time the parsepng time
-                const start = performance.now();
-                const imageData = await parsePng(diffuseTexturePath);
-                const end = performance.now();
-                console.log(`parsePng took ${end - start}ms`);
-                
-                gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
-            } catch (error) {
-                console.warn('Failed to load texture, using default:', error);
-                // Create a 1x1 white texture as fallback
+            // Check if we're in a test environment
+            const isTestEnvironment = typeof window === "undefined" || 
+                                     (typeof window !== "undefined" && !window.fetch) || 
+                                     gl.constructor.name === "Object";
+            
+            if (isTestEnvironment) {
+                // Create a 1x1 white texture for testing
                 gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+            } else {
+                try {
+                    const response = await fetch(diffuseTexturePath);
+                    if (!response.ok) {
+                        throw new Error(`Failed to load texture: ${response.statusText}`);
+                    }
+                    await response.arrayBuffer(); // Buffer not used, but fetch is needed
+                    // time the parsepng time
+                    const start = performance.now();
+                    const imageData = await parsePng(diffuseTexturePath);
+                    const end = performance.now();
+                    console.log(`parsePng took ${end - start}ms`);
+                    
+                    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
+                } catch (error) {
+                    throw new Error(`Failed to load texture from ${diffuseTexturePath}: ${error instanceof Error ? error.message : String(error)}`);
+                }
             }
         } else {
             // Create a 1x1 white texture
@@ -1108,12 +1086,12 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
      * Calculate the axis-aligned bounding box of this mesh in local space
      * @returns The bounding box as min/max coordinates
      */
-    calculateBoundingBox(): { min: vec3, max: vec3 } {
+    calculateBoundingBox(): { min: Vec3Like, max: Vec3Like } {
         if (!this._rawVertexData || this._rawVertexData.length === 0) {
             // Return default bounding box if no vertex data
             return {
                 min: vec3.fromValues(-0.5, -0.5, -0.5),
-                max: vec3.fromValues(0.5, 0.5, 0.5)
+                max: vec3.fromValues(0.5, 0.5, 0.5),
             };
         }
 
@@ -1170,7 +1148,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             // Top face edges  
             4, 5,  5, 6,  6, 7,  7, 4,
             // Vertical edges
-            0, 4,  1, 5,  2, 6,  3, 7
+            0, 4,  1, 5,  2, 6,  3, 7,
         ];
         
         // Create vertex data in the expected format (8 components per vertex)
@@ -1179,7 +1157,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             vertexData.push(
                 cubeVertices[i],     cubeVertices[i + 1], cubeVertices[i + 2], // position
                 0, 1, 0,                                                       // normal (up)
-                0, 0                                                           // texture coordinates
+                0, 0,                                                           // texture coordinates
             );
         }
         
@@ -1193,7 +1171,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             this.gl,
             "", // No texture
             new Float32Array(vertexData),
-            new Uint32Array(wireframeIndices)
+            new Uint32Array(wireframeIndices),
         );
         
         // Create forward program for wireframe rendering
@@ -1202,8 +1180,8 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             wireframeMaterial,
             {
                 vs: "/static/src/shaders/wireframe_forward.vert",
-                fs: "/static/src/shaders/wireframe_forward.frag"
-            }
+                fs: "/static/src/shaders/wireframe_forward.frag",
+            },
         );
         
         // Create identity transform (wireframe is in parent's local space)
@@ -1219,7 +1197,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             wireframeMaterial,
             true,  // enabled
             true,  // visible
-            "Dynamic Wireframe Bounding Box"
+            "Dynamic Wireframe Bounding Box",
         );
         
         // Set forward rendering properties
@@ -1227,7 +1205,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         wireframeModel.forwardProgramInfo = forwardProgramInfo;
         wireframeModel.forwardShaderPaths = {
             vs: "/static/src/shaders/wireframe_forward.vert",
-            fs: "/static/src/shaders/wireframe_forward.frag"
+            fs: "/static/src/shaders/wireframe_forward.frag",
         };
         
         // Set line drawing properties

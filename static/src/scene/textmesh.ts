@@ -32,11 +32,11 @@
  *    - Consider adding a background or outline for better contrast
  */
 
-import { vec3 } from "gl-matrix";
+import { vec3, Vec3Like } from "gl-matrix";
 import { Model } from "./model";
 import { Transform } from "./transform";
-import { GL, GLC } from "../gl";
-import { TextMesh, Font } from "../text";
+import { GLC } from "../gl";
+import { TextMesh } from "../text";
 import { MtlMaterial } from "../bits/obj";
 
 /**
@@ -44,9 +44,9 @@ import { MtlMaterial } from "../bits/obj";
  */
 export interface TextRenderConfig {
     /** RGB color for text (both wireframe lines and filled triangles) */
-    color: vec3;
+    color: Vec3Like;
     /** Position where text should start (lower-left corner of first character) */
-    position: vec3;
+    position: Vec3Like;
 }
 
 
@@ -67,7 +67,7 @@ export async function createTextModel(
     config: TextRenderConfig,
     text: string,
     filled: boolean,
-    lineWidth: number = 1.0
+    lineWidth: number = 1.0,
 ): Promise<Model> {
     // Convert text mesh vertices to Model format (8 components per vertex)
     const vertexData: number[] = [];
@@ -81,7 +81,7 @@ export async function createTextModel(
         vertexData.push(
             x, y, z,        // position
             0, 0, 1,        // normal (pointing forward)
-            0, 0            // texture coordinates (not used)
+            0, 0,            // texture coordinates (not used)
         );
     }
     
@@ -101,20 +101,20 @@ export async function createTextModel(
         gl,
         "", // No texture
         new Float32Array(vertexData),
-        new Uint32Array(textMesh.indices)
+        new Uint32Array(textMesh.indices),
     );
     
     // Create forward program based on filled vs wireframe mode
     // Use flat_forward shaders for both filled and wireframe text to avoid UBO issues
     const shaderPaths = {
         vs: "/static/src/shaders/flat_forward.vert",
-        fs: "/static/src/shaders/flat_forward.frag"
+        fs: "/static/src/shaders/flat_forward.frag",
     };
     
     const forwardProgramInfo = await Model.makeForwardProgram(
         gl,
         textMaterial,
-        shaderPaths
+        shaderPaths,
     );
     
     // Create transform - set position from config since vertices are now at origin
@@ -136,7 +136,7 @@ export async function createTextModel(
         textMaterial,
         true,  // enabled
         true,  // visible
-        `Text ${filled ? '(filled)' : '(wireframe)'}: ${text}`
+        `Text ${filled ? "(filled)" : "(wireframe)"}: ${text}`,
     );
     
     // Set forward rendering properties

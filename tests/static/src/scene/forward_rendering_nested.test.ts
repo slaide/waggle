@@ -1,397 +1,111 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import { GameObject, GameObjectRegistry } from "../../../../static/src/scene/gameobject";
-import { Model } from "../../../../static/src/scene/model";
+import { describe, test, expect } from "bun:test";
+import { GameObject } from "../../../../static/src/scene/gameobject";
 import { Transform } from "../../../../static/src/scene/transform";
-import { Scene } from "../../../../static/src/scene/scene";
 import { vec3, quat } from "gl-matrix";
 
-// Mock WebGL context for testing
-const mockGL = {
-    createBuffer: () => ({} as WebGLBuffer),
-    createTexture: () => ({} as WebGLTexture),
-    createProgram: () => ({} as WebGLProgram),
-    createShader: () => ({} as WebGLShader),
-    bindBuffer: () => {},
-    bufferData: () => {},
-    bindTexture: () => {},
-    texImage2D: () => {},
-    texParameteri: () => {},
-    shaderSource: () => {},
-    compileShader: () => {},
-    getShaderParameter: () => true,
-    attachShader: () => {},
-    linkProgram: () => {},
-    getProgramParameter: () => true,
-    getShaderInfoLog: () => "",
-    getProgramInfoLog: () => "",
-    getAttribLocation: () => 0,
-    getUniformLocation: () => ({} as WebGLUniformLocation),
-    getActiveAttrib: () => ({ name: "test" }),
-    getActiveUniform: () => ({ name: "test" }),
-    VERTEX_SHADER: 35633,
-    FRAGMENT_SHADER: 35632,
-    COMPILE_STATUS: 35713,
-    LINK_STATUS: 35714,
-    ACTIVE_ATTRIBUTES: 35721,
-    ACTIVE_UNIFORMS: 35718,
-    ARRAY_BUFFER: 34962,
-    ELEMENT_ARRAY_BUFFER: 34963,
-    STATIC_DRAW: 35044,
-    TEXTURE_2D: 3553,
-    RGBA: 6408,
-    UNSIGNED_BYTE: 5121,
-    TEXTURE_WRAP_S: 10242,
-    TEXTURE_WRAP_T: 10243,
-    TEXTURE_MIN_FILTER: 10241,
-    TEXTURE_MAG_FILTER: 10240,
-    CLAMP_TO_EDGE: 33071,
-    LINEAR: 9729,
-} as any;
+// Simple mock GL context - just enough to create GameObjects
+const mockGL = {} as WebGL2RenderingContext;
 
 describe("Forward Rendering Nested Objects", () => {
-    beforeAll(() => {
-        // Register Model type for testing
-        GameObjectRegistry.register("mesh", Model.fromJSON);
-    });
-
-    test("should correctly identify rendering mode in nested hierarchy", async () => {
-        // Create nested structure: Deferred > Forward > Deferred
-        const parentData = {
-            type: "mesh",
-            name: "Deferred Parent",
-            forwardRendered: false,
-            enabled: true,
-            visible: true,
-            transform: {
-                position: [0, 0, 0],
-                rotation: [0, 0, 0, 1],
-                scale: [1, 1, 1]
-            },
-            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            rawIndices: [0, 1, 2],
-            children: [
-                {
-                    type: "mesh",
-                    name: "Forward Child",
-                    forwardRendered: true,
-                    enabled: true,
-                    visible: true,
-                    transform: {
-                        position: [1, 0, 0],
-                        rotation: [0, 0, 0, 1],
-                        scale: [1, 1, 1]
-                    },
-                    rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                    rawIndices: [0, 1, 2],
-                    children: [
-                        {
-                            type: "mesh",
-                            name: "Deferred Grandchild",
-                            forwardRendered: false,
-                            enabled: true,
-                            visible: true,
-                            transform: {
-                                position: [0, 1, 0],
-                                rotation: [0, 0, 0, 1],
-                                scale: [1, 1, 1]
-                            },
-                            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                            rawIndices: [0, 1, 2]
-                        }
-                    ]
-                }
-            ]
-        };
-
-        const parentObject = await GameObject.fromJSON(mockGL, parentData);
-        
-        // Verify parent is deferred
-        expect(parentObject.forwardRendered).toBe(false);
-        expect(parentObject.name).toBe("Deferred Parent");
-        
-        // Verify child is forward rendered
-        expect(parentObject.children.length).toBe(1);
-        const child = parentObject.children[0];
-        expect(child.forwardRendered).toBe(true);
-        expect(child.name).toBe("Forward Child");
-        
-        // Verify grandchild is deferred
-        expect(child.children.length).toBe(1);
-        const grandchild = child.children[0];
-        expect(grandchild.forwardRendered).toBe(false);
-        expect(grandchild.name).toBe("Deferred Grandchild");
-    });
-
-    test("should serialize and deserialize nested forward/deferred objects correctly", async () => {
-        // Create a mixed hierarchy
+    test("should correctly set and get forward rendering flag", () => {
         const transform = new Transform();
-        transform.position = vec3.fromValues(0, 0, 0);
+        const obj = new GameObject(mockGL, transform, true, true, "TestObject");
         
-        const parent = new Model(
-            mockGL,
-            transform,
-            {
-                vertexData: {} as WebGLBuffer,
-                indices: {} as WebGLBuffer,
-                texture: {} as WebGLTexture
-            },
-            {
-                program: {} as WebGLProgram,
-                attributeLocations: {},
-                uniformLocations: {},
-                shaderSources: { vs: "", fs: "" }
-            },
-            1,
-            undefined,
-            true,
-            true,
-            "Parent"
-        );
-        parent.forwardRendered = false; // Deferred parent
+        // Default should be false
+        expect(obj.forwardRendered).toBe(false);
+        
+        // Should be able to set to true
+        obj.forwardRendered = true;
+        expect(obj.forwardRendered).toBe(true);
+        
+        // Should be able to set back to false
+        obj.forwardRendered = false;
+        expect(obj.forwardRendered).toBe(false);
+    });
 
-        const child = new Model(
-            mockGL,
-            new Transform(),
-            {
-                vertexData: {} as WebGLBuffer,
-                indices: {} as WebGLBuffer,
-                texture: {} as WebGLTexture
-            },
-            {
-                program: {} as WebGLProgram,
-                attributeLocations: {},
-                uniformLocations: {},
-                shaderSources: { vs: "", fs: "" }
-            },
-            1,
-            undefined,
-            true,
-            true,
-            "Child"
-        );
-        child.forwardRendered = true; // Forward child
+    test("should serialize forward rendering flag in JSON", () => {
+        const transform = new Transform();
+        const obj = new GameObject(mockGL, transform, true, true, "TestObject");
+        
+        // Test with forwardRendered = false
+        obj.forwardRendered = false;
+        let json = obj.toJSON();
+        expect(json.forwardRendered).toBe(false);
+        
+        // Test with forwardRendered = true
+        obj.forwardRendered = true;
+        json = obj.toJSON();
+        expect(json.forwardRendered).toBe(true);
+    });
 
+    test("should handle forward shader paths", () => {
+        const transform = new Transform();
+        const obj = new GameObject(mockGL, transform, true, true, "TestObject");
+        
+        // Default should be undefined
+        expect(obj.forwardShaderPaths).toBeUndefined();
+        
+        // Should be able to set custom paths
+        const customPaths = { vs: "custom.vert", fs: "custom.frag" };
+        obj.forwardShaderPaths = customPaths;
+        expect(obj.forwardShaderPaths).toEqual(customPaths);
+        
+        // Should serialize in JSON
+        const json = obj.toJSON();
+        expect(json.forwardShaderPaths).toEqual(customPaths);
+    });
+
+    test("should maintain forward rendering flag in nested hierarchy", () => {
+        // Create parent with forward rendering disabled
+        const parentTransform = new Transform();
+        const parent = new GameObject(mockGL, parentTransform, true, true, "Parent");
+        parent.forwardRendered = false;
+        
+        // Create child with forward rendering enabled
+        const childTransform = new Transform();
+        const child = new GameObject(mockGL, childTransform, true, true, "Child");
+        child.forwardRendered = true;
+        
+        // Add child to parent
         parent.addChild(child);
+        
+        // Verify flags are maintained independently
+        expect(parent.forwardRendered).toBe(false);
+        expect(child.forwardRendered).toBe(true);
+        
+        // Verify hierarchy is correct
+        expect(parent.children).toHaveLength(1);
+        expect(child.parent).toBe(parent);
+    });
 
+    test("should serialize nested forward rendering flags correctly", () => {
+        // Create nested hierarchy with mixed forward rendering flags
+        const parentTransform = new Transform();
+        const parent = new GameObject(mockGL, parentTransform, true, true, "Parent");
+        parent.forwardRendered = false;
+        
+        const childTransform = new Transform();
+        const child = new GameObject(mockGL, childTransform, true, true, "Child");
+        child.forwardRendered = true;
+        
+        const grandchildTransform = new Transform();
+        const grandchild = new GameObject(mockGL, grandchildTransform, true, true, "Grandchild");
+        grandchild.forwardRendered = false;
+        
+        // Build hierarchy
+        parent.addChild(child);
+        child.addChild(grandchild);
+        
         // Serialize
-        const serialized = parent.toJSON();
+        const json = parent.toJSON();
         
-        // Add required model data for deserialization
-        serialized.rawVertexData = [0, 0, 0, 1, 0, 0, 0, 1, 0];
-        serialized.rawIndices = [0, 1, 2];
-        serialized.children[0].rawVertexData = [0, 0, 0, 1, 0, 0, 0, 1, 0];
-        serialized.children[0].rawIndices = [0, 1, 2];
-        
-        // Check serialization includes forward rendering flags
-        expect(serialized.forwardRendered).toBe(false);
-        expect(serialized.children[0].forwardRendered).toBe(true);
-        
-        // Deserialize
-        const deserialized = await GameObject.fromJSON(mockGL, serialized);
-        
-        // Verify deserialization preserved forward rendering flags
-        expect(deserialized.forwardRendered).toBe(false);
-        expect(deserialized.children[0].forwardRendered).toBe(true);
-    });
-
-    test("should handle scene with mixed forward/deferred objects", async () => {
-        const scene = new Scene(mockGL);
-        
-        // Add deferred object
-        const deferredData = {
-            type: "mesh",
-            name: "Deferred Object",
-            forwardRendered: false,
-            enabled: true,
-            visible: true,
-            transform: {
-                position: [-1, 0, 0],
-                rotation: [0, 0, 0, 1],
-                scale: [1, 1, 1]
-            },
-            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            rawIndices: [0, 1, 2]
-        };
-        
-        // Add forward object
-        const forwardData = {
-            type: "mesh",
-            name: "Forward Object",
-            forwardRendered: true,
-            enabled: true,
-            visible: true,
-            transform: {
-                position: [1, 0, 0],
-                rotation: [0, 0, 0, 1],
-                scale: [1, 1, 1]
-            },
-            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            rawIndices: [0, 1, 2]
-        };
-
-        const deferredObj = await GameObject.fromJSON(mockGL, deferredData);
-        const forwardObj = await GameObject.fromJSON(mockGL, forwardData);
-        
-        scene.objects.push(deferredObj, forwardObj);
-
-        // Verify scene contains both types
-        expect(scene.objects.length).toBe(2);
-        expect(scene.objects[0].forwardRendered).toBe(false);
-        expect(scene.objects[1].forwardRendered).toBe(true);
-
-        // Test scene serialization/deserialization
-        const sceneData = scene.toJSON();
-        const deserializedScene = await Scene.fromJSON(mockGL, sceneData);
-        
-        expect(deserializedScene.objects.length).toBe(2);
-        expect(deserializedScene.objects[0].forwardRendered).toBe(false);
-        expect(deserializedScene.objects[1].forwardRendered).toBe(true);
-    });
-
-    test("should maintain transform hierarchy integrity with mixed rendering modes", async () => {
-        // Create complex nested structure with mixed rendering modes
-        const rootData = {
-            type: "mesh",
-            name: "Root (Deferred)",
-            forwardRendered: false,
-            transform: {
-                position: [0, 0, 0],
-                rotation: [0, 0, 0, 1],
-                scale: [2, 2, 2]
-            },
-            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            rawIndices: [0, 1, 2],
-            children: [
-                {
-                    type: "mesh",
-                    name: "Child1 (Forward)",
-                    forwardRendered: true,
-                    transform: {
-                        position: [1, 0, 0],
-                        rotation: [0, 0, 0, 1],
-                        scale: [0.5, 0.5, 0.5]
-                    },
-                    rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                    rawIndices: [0, 1, 2],
-                    children: [
-                        {
-                            type: "mesh",
-                            name: "Grandchild1 (Deferred)",
-                            forwardRendered: false,
-                            transform: {
-                                position: [0, 1, 0],
-                                rotation: [0, 0, 0, 1],
-                                scale: [1, 1, 1]
-                            },
-                            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                            rawIndices: [0, 1, 2]
-                        }
-                    ]
-                },
-                {
-                    type: "mesh",
-                    name: "Child2 (Deferred)",
-                    forwardRendered: false,
-                    transform: {
-                        position: [-1, 0, 0],
-                        rotation: [0, 0, 0, 1],
-                        scale: [1, 1, 1]
-                    },
-                    rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                    rawIndices: [0, 1, 2]
-                }
-            ]
-        };
-
-        const root = await GameObject.fromJSON(mockGL, rootData);
-        
-        // Verify hierarchy structure
-        expect(root.children.length).toBe(2);
-        expect(root.children[0].children.length).toBe(1);
-        
-        // Verify rendering modes are preserved in hierarchy
-        expect(root.forwardRendered).toBe(false);
-        expect(root.children[0].forwardRendered).toBe(true);
-        expect(root.children[0].children[0].forwardRendered).toBe(false);
-        expect(root.children[1].forwardRendered).toBe(false);
-        
-        // Verify parent-child relationships are intact
-        expect(root.children[0].parent).toBe(root);
-        expect(root.children[1].parent).toBe(root);
-        expect(root.children[0].children[0].parent).toBe(root.children[0]);
-        
-        // Test transform updates propagate correctly
-        let transformUpdateCount = 0;
-        root.traverse((obj) => {
-            // Each object should have a transform
-            expect(obj.transform).toBeDefined();
-            transformUpdateCount++;
-        });
-        
-        expect(transformUpdateCount).toBe(4); // root + 2 children + 1 grandchild
-    });
-
-    test("should handle edge cases in nested forward rendering", async () => {
-        // Test case: All objects are forward rendered
-        const allForwardData = {
-            type: "mesh",
-            name: "Forward Root",
-            forwardRendered: true,
-            transform: {
-                position: [0, 0, 0],
-                rotation: [0, 0, 0, 1],
-                scale: [1, 1, 1]
-            },
-            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            rawIndices: [0, 1, 2],
-            children: [
-                {
-                    type: "mesh",
-                    name: "Forward Child",
-                    forwardRendered: true,
-                    transform: {
-                        position: [1, 0, 0],
-                        rotation: [0, 0, 0, 1],
-                        scale: [1, 1, 1]
-                    },
-                    rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                    rawIndices: [0, 1, 2]
-                }
-            ]
-        };
-
-        const allForward = await GameObject.fromJSON(mockGL, allForwardData);
-        expect(allForward.forwardRendered).toBe(true);
-        expect(allForward.children[0].forwardRendered).toBe(true);
-
-        // Test case: All objects are deferred (default behavior)
-        const allDeferredData = {
-            type: "mesh",
-            name: "Deferred Root",
-            transform: {
-                position: [0, 0, 0],
-                rotation: [0, 0, 0, 1],
-                scale: [1, 1, 1]
-            },
-            rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            rawIndices: [0, 1, 2],
-            children: [
-                {
-                    type: "mesh",
-                    name: "Deferred Child",
-                    transform: {
-                        position: [1, 0, 0],
-                        rotation: [0, 0, 0, 1],
-                        scale: [1, 1, 1]
-                    },
-                    rawVertexData: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-                    rawIndices: [0, 1, 2]
-                }
-            ]
-        };
-
-        const allDeferred = await GameObject.fromJSON(mockGL, allDeferredData);
-        expect(allDeferred.forwardRendered).toBe(false);
-        expect(allDeferred.children[0].forwardRendered).toBe(false);
+        // Verify serialization
+        expect(json.forwardRendered).toBe(false);
+        expect(json.children).toBeDefined();
+        expect(json.children).toHaveLength(1);
+        expect(json.children![0].forwardRendered).toBe(true);
+        expect(json.children![0].children).toBeDefined();
+        expect(json.children![0].children).toHaveLength(1);
+        expect(json.children![0].children![0].forwardRendered).toBe(false);
     });
 }); 

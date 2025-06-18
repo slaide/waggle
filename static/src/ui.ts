@@ -7,12 +7,12 @@
  * - Text wrapping and layout utilities
  */
 
-import { vec3 } from "gl-matrix";
+import { vec3, type Vec3Like } from "gl-matrix";
 import { Model } from "./scene/model";
 import { Transform } from "./scene/transform";
 import { GL, GLC } from "./gl";
 import { MtlMaterial } from "./bits/obj";
-import { Font, TextMesh } from "./text";
+import { Font } from "./text";
 import { createTextModel } from "./scene/textmesh";
 
 /**
@@ -24,11 +24,11 @@ export interface UIPanelConfig {
     /** Panel height in screen space units */
     height: number;
     /** Background color (RGBA) */
-    backgroundColor: vec3;
+    backgroundColor: Vec3Like;
     /** Background alpha (0-1) */
     backgroundAlpha?: number;
     /** Border color (optional) */
-    borderColor?: vec3;
+    borderColor?: Vec3Like;
     /** Border width in pixels (optional) */
     borderWidth?: number;
     /** Corner radius for rounded corners (optional) */
@@ -42,13 +42,13 @@ export interface UITextConfig {
     /** Text content */
     text: string;
     /** Text color */
-    color: vec3;
+    color: Vec3Like;
     /** Maximum width for text wrapping */
     maxWidth?: number;
     /** Line spacing multiplier */
     lineSpacing?: number;
     /** Text alignment */
-    alignment?: 'left' | 'center' | 'right';
+    alignment?: "left" | "center" | "right";
 }
 
 /**
@@ -87,7 +87,7 @@ export class UIPanel {
     constructor(
         private gl: GLC,
         config: UIPanelConfig,
-        position: vec3 = vec3.create()
+        position: Vec3Like = vec3.create(),
     ) {
         this.config = config;
         this.transform = new Transform();
@@ -116,7 +116,7 @@ export class UIPanel {
         // Create shader program using flat_forward for UI panels
         const shaderPaths = {
             vs: "/static/src/shaders/flat_forward.vert",
-            fs: "/static/src/shaders/flat_forward.frag"
+            fs: "/static/src/shaders/flat_forward.frag",
         };
         
         const programInfo = await Model.makeForwardProgram(this.gl, material, shaderPaths);
@@ -131,7 +131,7 @@ export class UIPanel {
             material,
             true,  // enabled
             true,  // visible
-            "UI Panel"
+            "UI Panel",
         );
         
         // Set up for forward rendering
@@ -150,7 +150,7 @@ export class UIPanel {
      * Add text to the panel
      */
     async addText(font: Font, textConfig: UITextConfig, offsetX: number = 10, offsetY: number = 10): Promise<Model> {
-        const { text, color, maxWidth, lineSpacing = 1.2, alignment = 'left' } = textConfig;
+        const { text, color, maxWidth, lineSpacing = 1.2 } = textConfig;
         
         // Determine effective max width
         const effectiveMaxWidth = maxWidth || (this.config.width - offsetX * 2);
@@ -172,7 +172,7 @@ export class UIPanel {
             { color, position: textPosition },
             text,
             font.config.filled,
-            font.config.lineWidth
+            font.config.lineWidth,
         );
         
         // Position text relative to panel: from top-left corner with offset
@@ -181,7 +181,7 @@ export class UIPanel {
         textModel.transform.position = vec3.fromValues(
             offsetX, 
             this.config.height - offsetY, // Top of panel minus offset
-            0.1 // Slightly in front of panel
+            0.1, // Slightly in front of panel
         );
         
         // Set up parent-child relationship so text moves with panel
@@ -222,7 +222,7 @@ export class UIPanel {
     /**
      * Update panel position
      */
-    setPosition(position: vec3): void {
+    setPosition(position: Vec3Like): void {
         vec3.copy(this.transform.position, position);
         this.transform.markDirty();
     }
@@ -233,7 +233,7 @@ export class UIPanel {
     getBounds(): { width: number; height: number } {
         return {
             width: this.config.width,
-            height: this.config.height
+            height: this.config.height,
         };
     }
 }
@@ -245,7 +245,7 @@ export class UIContainer {
     public elements: (UIPanel | Model)[] = [];
     public transform: Transform;
     
-    constructor(position: vec3 = vec3.create()) {
+    constructor(position: Vec3Like = vec3.create()) {
         this.transform = new Transform();
         this.transform.position = vec3.clone(position);
     }
@@ -287,7 +287,7 @@ export class UIContainer {
     /**
      * Update container position (affects all child elements)
      */
-    setPosition(position: vec3): void {
+    setPosition(position: Vec3Like): void {
         const deltaX = position[0] - this.transform.position[0];
         const deltaY = position[1] - this.transform.position[1];
         const deltaZ = position[2] - this.transform.position[2];
@@ -301,7 +301,7 @@ export class UIContainer {
                 element.setPosition(vec3.fromValues(
                     currentPos[0] + deltaX,
                     currentPos[1] + deltaY,
-                    currentPos[2] + deltaZ
+                    currentPos[2] + deltaZ,
                 ));
             } else {
                 const currentPos = element.transform.position;
@@ -341,8 +341,8 @@ export class UILayoutUtils {
         screenWidth: number, 
         screenHeight: number,
         mouseX?: number,
-        mouseY?: number
-    ): vec3 {
+        mouseY?: number,
+    ): Vec3Like {
         let x = mouseX ?? screenWidth * 0.7;
         let y = mouseY ?? screenHeight * 0.3;
         

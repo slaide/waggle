@@ -3,7 +3,7 @@ import { Camera } from "./scene/camera";
 import { Scene } from "./scene/scene";
 import { GameObject, createShaderProgram } from "./scene/gameobject";
 import { PointLight, DirectionalLight } from "./scene/light";
-import { vec3, mat4 } from "gl-matrix";
+import { vec3, mat4, Vec3Like, Vec3 } from "gl-matrix";
 
 const POINTLIGHTBLOCKBINDING = 1;
 const DIRECTIONALLIGHTBLOCKBINDING = 2;
@@ -47,15 +47,15 @@ export class GBuffer {
 
     static async make(gl: GLC, size: { width: number; height: number }) {
         const fsq = await createShaderProgram(gl, {
-            vs: await fetch('/static/src/shaders/deferred_lighting.vert').then(r => r.text()),
-            fs: await fetch('/static/src/shaders/deferred_lighting.frag').then(r => r.text()),
+            vs: await fetch("/static/src/shaders/deferred_lighting.vert").then(r => r.text()),
+            fs: await fetch("/static/src/shaders/deferred_lighting.frag").then(r => r.text()),
         });
 
         // create with default size
         const gbuffer = new GBuffer(gl, { width: 1, height: 1 }, fsq);
 
         const extHF = gl.getExtension("EXT_color_buffer_half_float");
-        if (!extHF) throw `EXT_color_buffer_half_float unimplemented`;
+        if (!extHF) throw "EXT_color_buffer_half_float unimplemented";
         gbuffer.layers = [
             {
                 name: "position",
@@ -146,12 +146,9 @@ export class GBuffer {
             (l) => GL.COLOR_ATTACHMENT0 + l.attachmentid,
         );
 
-        console.assert(
-            gl.checkFramebufferStatus(GL.FRAMEBUFFER) ===
-                GL.FRAMEBUFFER_COMPLETE,
-            "G-buffer incomplete:",
-            gl.checkFramebufferStatus(GL.FRAMEBUFFER),
-        );
+        if (gl.checkFramebufferStatus(GL.FRAMEBUFFER) !== GL.FRAMEBUFFER_COMPLETE) {
+            console.error("G-buffer incomplete:", gl.checkFramebufferStatus(GL.FRAMEBUFFER));
+        }
 
         gl.bindFramebuffer(GL.FRAMEBUFFER, null);
 
@@ -495,7 +492,7 @@ export class GBuffer {
                 closestDistance = hit.distance;
                 closestHit = {
                     objectId: obj.id,
-                    depth: hit.distance
+                    depth: hit.distance,
                 };
             }
         });
@@ -504,7 +501,7 @@ export class GBuffer {
     }
     
     // Create a ray from camera through screen pixel
-    private createCameraRay(ndcX: number, ndcY: number, camera: Camera): { origin: vec3, direction: vec3 } {
+    private createCameraRay(ndcX: number, ndcY: number, camera: Camera): { origin: Vec3, direction: Vec3 } {
         
         // Get camera matrices
         const viewMatrix = camera.viewMatrix;
@@ -550,7 +547,7 @@ export class GBuffer {
     }
     
     // Ray-box intersection test
-    private rayBoxIntersect(ray: { origin: vec3, direction: vec3 }, obj: GameObject): { distance: number } | null {
+    private rayBoxIntersect(ray: { origin: Vec3Like, direction: Vec3Like }, obj: GameObject): { distance: number } | null {
         // Get object's world matrix
         const worldMatrix = obj.transform.worldMatrix;
         
@@ -559,7 +556,7 @@ export class GBuffer {
         let max = vec3.fromValues(0.5, 0.5, 0.5);
         
         // If object has a calculateBoundingBox method, use it
-        if ('calculateBoundingBox' in obj && typeof obj.calculateBoundingBox === 'function') {
+        if ("calculateBoundingBox" in obj && typeof obj.calculateBoundingBox === "function") {
             const bounds = (obj as any).calculateBoundingBox();
             min = bounds.min;
             max = bounds.max;
@@ -575,43 +572,43 @@ export class GBuffer {
         const actualMin = vec3.fromValues(
             Math.min(worldMin[0], worldMax[0]),
             Math.min(worldMin[1], worldMax[1]),
-            Math.min(worldMin[2], worldMax[2])
+            Math.min(worldMin[2], worldMax[2]),
         );
         const actualMax = vec3.fromValues(
             Math.max(worldMin[0], worldMax[0]),
             Math.max(worldMin[1], worldMax[1]),
-            Math.max(worldMin[2], worldMax[2])
+            Math.max(worldMin[2], worldMax[2]),
         );
         
         // Ray-AABB intersection
         const invDir = vec3.fromValues(
             1.0 / ray.direction[0],
             1.0 / ray.direction[1],
-            1.0 / ray.direction[2]
+            1.0 / ray.direction[2],
         );
         
         const t1 = vec3.fromValues(
             (actualMin[0] - ray.origin[0]) * invDir[0],
             (actualMin[1] - ray.origin[1]) * invDir[1],
-            (actualMin[2] - ray.origin[2]) * invDir[2]
+            (actualMin[2] - ray.origin[2]) * invDir[2],
         );
         
         const t2 = vec3.fromValues(
             (actualMax[0] - ray.origin[0]) * invDir[0],
             (actualMax[1] - ray.origin[1]) * invDir[1],
-            (actualMax[2] - ray.origin[2]) * invDir[2]
+            (actualMax[2] - ray.origin[2]) * invDir[2],
         );
         
         const tMin = vec3.fromValues(
             Math.min(t1[0], t2[0]),
             Math.min(t1[1], t2[1]),
-            Math.min(t1[2], t2[2])
+            Math.min(t1[2], t2[2]),
         );
         
         const tMax = vec3.fromValues(
             Math.max(t1[0], t2[0]),
             Math.max(t1[1], t2[1]),
-            Math.max(t1[2], t2[2])
+            Math.max(t1[2], t2[2]),
         );
         
         const tNear = Math.max(tMin[0], tMin[1], tMin[2]);
