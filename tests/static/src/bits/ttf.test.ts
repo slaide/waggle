@@ -6,7 +6,12 @@ import {
     parseHheaTable, 
     parseMaxpTable, 
     parseNameTable, 
-    parseCmapTable 
+    parseCmapTable,
+    TTFHeadTable,
+    TTFHheaTable,
+    TTFMaxpTable,
+    TTFNameTable,
+    TTFCmapTable
 } from '../../../../static/src/bits/ttf';
 
 describe('TTF Parser', () => {
@@ -51,6 +56,54 @@ describe('TTF Parser', () => {
         // Debug output for manual inspection
         console.log('\n=== TTF Parser Test Results ===');
         debugTTFFont(font);
+    });
+
+    test('should provide unified table access API', () => {
+        // Test the new unified table access interface
+        expect(font.tableAccess).toBeDefined();
+        
+        // Test raw table access
+        const headRaw = font.tableAccess.getRawTable('head');
+        const hmtxRaw = font.tableAccess.getRawTable('hmtx');
+        expect(headRaw).toBeDefined();
+        expect(hmtxRaw).toBeDefined();
+        expect(headRaw!.length).toBeGreaterThan(0);
+        expect(hmtxRaw!.length).toBeGreaterThan(0);
+        
+        // Test parsed table access
+        const headParsed = font.tableAccess.getParsedTable<TTFHeadTable>('head');
+        const hheaParsed = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
+        const maxpParsed = font.tableAccess.getParsedTable<TTFMaxpTable>('maxp');
+        const nameParsed = font.tableAccess.getParsedTable<TTFNameTable>('name');
+        const cmapParsed = font.tableAccess.getParsedTable<TTFCmapTable>('cmap');
+        
+        expect(headParsed).toBeDefined();
+        expect(hheaParsed).toBeDefined();
+        expect(maxpParsed).toBeDefined();
+        expect(nameParsed).toBeDefined();
+        expect(cmapParsed).toBeDefined();
+        
+        // Verify parsed data matches old API
+        expect(headParsed!.unitsPerEm).toBe(parseHeadTable(font)!.unitsPerEm);
+        expect(hheaParsed!.ascender).toBe(parseHheaTable(font)!.ascender);
+        expect(maxpParsed!.numGlyphs).toBe(parseMaxpTable(font)!.numGlyphs);
+        
+        // Test utility methods
+        expect(font.tableAccess.hasTable('head')).toBe(true);
+        expect(font.tableAccess.hasTable('nonexistent')).toBe(false);
+        
+        const tableInfo = font.tableAccess.getTableInfo('head');
+        expect(tableInfo).toBeDefined();
+        expect(tableInfo!.tag).toBe('head');
+        expect(tableInfo!.length).toBeGreaterThan(0);
+        
+        const allTables = font.tableAccess.listTables();
+        expect(allTables).toContain('head');
+        expect(allTables).toContain('hhea');
+        expect(allTables).toContain('hmtx');
+        expect(allTables.length).toBe(font.header.numTables);
+        
+        console.log('Unified API test passed. Available tables:', allTables);
     });
     
     test('should parse head table correctly', () => {

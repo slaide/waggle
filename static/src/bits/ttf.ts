@@ -158,12 +158,8 @@ export interface TTFFont {
     tables: Map<string, TTFTableEntry>;
     rawData: Uint8Array;
     
-    // Parsed table data
-    headTable?: TTFHeadTable;
-    hheaTable?: TTFHheaTable;
-    maxpTable?: TTFMaxpTable;
-    nameTable?: TTFNameTable;
-    cmapTable?: TTFCmapTable;
+    // Unified table access interface
+    tableAccess: TTFTableAccess;
 }
 
 /**
@@ -261,11 +257,17 @@ export async function parseTTF(src: string): Promise<TTFFont> {
         tables.set(tag, tableEntry);
     }
 
-    return {
+    const font: TTFFont = {
         header,
         tables,
-        rawData: new Uint8Array(responseData)
+        rawData: new Uint8Array(responseData),
+        tableAccess: null as any // Will be set below
     };
+    
+    // Create table access interface
+    font.tableAccess = createTableAccess(font);
+    
+    return font;
 }
 
 /**
@@ -624,7 +626,7 @@ export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
  * @returns Glyph ID or 0 if not found
  */
 export function getGlyphId(font: TTFFont, charCode: number): number {
-    const cmapTable = parseCmapTable(font);
+    const cmapTable = font.tableAccess.getParsedTable<TTFCmapTable>('cmap');
     if (!cmapTable) {
         return 0;
     }
@@ -706,17 +708,24 @@ export interface GlyphOutline {
  * Parse a simple glyph outline from the glyf table
  * @param font - TTF font structure
  * @param glyphId - Glyph ID to parse
- * @returns Glyph outline or null if not found/parseable
+ * @returns Glyph outline, or null only for critical errors (missing tables, invalid glyph ID, data corruption)
+ *          Empty glyphs and composite glyphs return valid empty outlines rather than null
  */
 export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline | null {
-    const maxpTable = parseMaxpTable(font);
+    // Check cache first
+    const cached = font.tableAccess.getCachedGlyphOutline(glyphId);
+    if (cached) {
+        return cached;
+    }
+
+    const maxpTable = font.tableAccess.getParsedTable<TTFMaxpTable>('maxp');
     if (!maxpTable || glyphId >= maxpTable.numGlyphs) {
         return null;
     }
 
     // Parse loca table to find glyph location
-    const locaData = getTableData(font, 'loca');
-    const headTable = parseHeadTable(font);
+    const locaData = font.tableAccess.getRawTable('loca');
+    const headTable = font.tableAccess.getParsedTable<TTFHeadTable>('head');
     if (!locaData || !headTable) {
         return null;
     }
@@ -739,12 +748,37 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
     }
 
     if (glyphOffset === nextGlyphOffset) {
-        // Empty glyph
-        return null;
+        // Empty glyph (legitimate case like space character)
+        // Get proper advance width from hmtx table
+        let advanceWidth = 1000; // Default
+        const hmtxData = font.tableAccess.getRawTable('hmtx');
+        const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
+        if (hmtxData && hheaTable) {
+            const hmtxReader = new ByteReader(hmtxData.buffer.slice(hmtxData.byteOffset, hmtxData.byteOffset + hmtxData.byteLength) as ArrayBuffer, false);
+            if (glyphId < hheaTable.numberOfHMetrics) {
+                hmtxReader.skip(glyphId * 4);
+                advanceWidth = hmtxReader.readUint16();
+            } else {
+                // Use last advance width
+                hmtxReader.skip((hheaTable.numberOfHMetrics - 1) * 4);
+                advanceWidth = hmtxReader.readUint16();
+            }
+        }
+        
+        const result = {
+            contours: [],
+            xMin: 0, yMin: 0, xMax: 0, yMax: 0,
+            advanceWidth
+        };
+
+        // Cache the result
+        font.tableAccess.cacheGlyphOutline(glyphId, result);
+        
+        return result;
     }
 
     // Parse glyph data
-    const glyfData = getTableData(font, 'glyf');
+    const glyfData = font.tableAccess.getRawTable('glyf');
     if (!glyfData) {
         return null;
     }
@@ -758,18 +792,43 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
     const xMax = glyphReader.readInt16();
     const yMax = glyphReader.readInt16();
 
-    if (numberOfContours < 0) {
-        // Composite glyph - not implemented for simplicity
-        return null;
+    if (numberOfContours < -1) {
+        // Invalid numberOfContours value
+        throw new Error(`Invalid numberOfContours value: ${numberOfContours} for glyph ID ${glyphId}. Valid values are: -1 (composite glyph), 0 (empty glyph), or positive (simple glyph).`);
+    }
+
+    if (numberOfContours === -1) {
+        // Composite glyph - not implemented yet
+        throw new Error(`Composite glyph (glyph ID: ${glyphId}) not supported. numberOfContours=-1 indicates a composite glyph which requires component parsing that is not yet implemented.`);
     }
 
     if (numberOfContours === 0) {
-        // No contours
-        return {
+        // No contours - get proper advance width
+        let advanceWidth = 1000; // Default
+        const hmtxData = font.tableAccess.getRawTable('hmtx');
+        const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
+        if (hmtxData && hheaTable) {
+            const hmtxReader = new ByteReader(hmtxData.buffer.slice(hmtxData.byteOffset, hmtxData.byteOffset + hmtxData.byteLength) as ArrayBuffer, false);
+            if (glyphId < hheaTable.numberOfHMetrics) {
+                hmtxReader.skip(glyphId * 4);
+                advanceWidth = hmtxReader.readUint16();
+            } else {
+                // Use last advance width
+                hmtxReader.skip((hheaTable.numberOfHMetrics - 1) * 4);
+                advanceWidth = hmtxReader.readUint16();
+            }
+        }
+        
+        const result = {
             contours: [],
             xMin, yMin, xMax, yMax,
-            advanceWidth: 1000 // Default
+            advanceWidth
         };
+
+        // Cache the result
+        font.tableAccess.cacheGlyphOutline(glyphId, result);
+        
+        return result;
     }
 
     // Read contour end points
@@ -851,8 +910,8 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
 
     // Get advance width from hmtx table
     let advanceWidth = 1000; // Default
-    const hmtxData = getTableData(font, 'hmtx');
-    const hheaTable = parseHheaTable(font);
+    const hmtxData = font.tableAccess.getRawTable('hmtx');
+    const hheaTable = font.tableAccess.getParsedTable<TTFHheaTable>('hhea');
     if (hmtxData && hheaTable) {
         const hmtxReader = new ByteReader(hmtxData.buffer.slice(hmtxData.byteOffset, hmtxData.byteOffset + hmtxData.byteLength) as ArrayBuffer, false);
         if (glyphId < hheaTable.numberOfHMetrics) {
@@ -865,11 +924,16 @@ export function parseGlyphOutline(font: TTFFont, glyphId: number): GlyphOutline 
         }
     }
 
-    return {
+    const result = {
         contours,
         xMin, yMin, xMax, yMax,
         advanceWidth
     };
+
+    // Cache the result
+    font.tableAccess.cacheGlyphOutline(glyphId, result);
+    
+    return result;
 }
 
 /**
@@ -900,4 +964,159 @@ export function debugTTFFont(font: TTFFont): void {
         const present = font.tables.has(table);
         console.log(`${table}: ${present ? '✓' : '✗'}`);
     }
+}
+
+/**
+ * Unified table access interface for TTF fonts
+ * Provides consistent API for both raw and parsed table data with comprehensive caching
+ */
+export class TTFTableAccess {
+    private font: TTFFont;
+    private parsedCache = new Map<string, any>();
+    private rawCache = new Map<string, Uint8Array>();
+    private glyphCache = new Map<number, GlyphOutline>();
+
+    constructor(font: TTFFont) {
+        this.font = font;
+    }
+
+    /**
+     * Get raw table data as Uint8Array with caching
+     * @param tableTag - 4-character table identifier (e.g., 'hmtx', 'glyf', 'loca')
+     * @returns Raw table data or null if table doesn't exist
+     */
+    getRawTable(tableTag: string): Uint8Array | null {
+        // Check cache first
+        if (this.rawCache.has(tableTag)) {
+            return this.rawCache.get(tableTag)!;
+        }
+
+        // Get table data
+        const tableEntry = this.font.tables.get(tableTag);
+        if (!tableEntry) {
+            return null;
+        }
+        
+        const tableData = this.font.rawData.subarray(tableEntry.offset, tableEntry.offset + tableEntry.length);
+        
+        // Cache the result
+        this.rawCache.set(tableTag, tableData);
+        
+        return tableData;
+    }
+
+    /**
+     * Get parsed table data with automatic caching
+     * @param tableTag - 4-character table identifier 
+     * @returns Parsed table structure or null if table doesn't exist or can't be parsed
+     */
+    getParsedTable<T>(tableTag: string): T | null {
+        // Check cache first
+        if (this.parsedCache.has(tableTag)) {
+            return this.parsedCache.get(tableTag) as T;
+        }
+
+        let parsed: T | null = null;
+
+        switch (tableTag) {
+            case 'head':
+                parsed = parseHeadTable(this.font) as T;
+                break;
+            case 'hhea':
+                parsed = parseHheaTable(this.font) as T;
+                break;
+            case 'maxp':
+                parsed = parseMaxpTable(this.font) as T;
+                break;
+            case 'name':
+                parsed = parseNameTable(this.font) as T;
+                break;
+            case 'cmap':
+                parsed = parseCmapTable(this.font) as T;
+                break;
+            default:
+                // For tables without dedicated parsers, return null
+                return null;
+        }
+
+        // Cache the result
+        if (parsed !== null) {
+            this.parsedCache.set(tableTag, parsed);
+        }
+
+        return parsed;
+    }
+
+    /**
+     * Get cached glyph outline data
+     * @param glyphId - Glyph ID to retrieve
+     * @returns Cached glyph outline or null if not cached or invalid
+     */
+    getCachedGlyphOutline(glyphId: number): GlyphOutline | null {
+        return this.glyphCache.get(glyphId) || null;
+    }
+
+    /**
+     * Cache glyph outline data
+     * @param glyphId - Glyph ID 
+     * @param outline - Glyph outline to cache
+     */
+    cacheGlyphOutline(glyphId: number, outline: GlyphOutline): void {
+        this.glyphCache.set(glyphId, outline);
+    }
+
+    /**
+     * Check if a table exists in the font
+     * @param tableTag - 4-character table identifier
+     * @returns True if table exists, false otherwise
+     */
+    hasTable(tableTag: string): boolean {
+        return this.font.tables.has(tableTag);
+    }
+
+    /**
+     * Get table metadata (offset, length, checksum)
+     * @param tableTag - 4-character table identifier
+     * @returns Table entry or null if table doesn't exist
+     */
+    getTableInfo(tableTag: string): TTFTableEntry | null {
+        return this.font.tables.get(tableTag) || null;
+    }
+
+    /**
+     * List all available tables in the font
+     * @returns Array of table tags
+     */
+    listTables(): string[] {
+        return Array.from(this.font.tables.keys()).sort();
+    }
+
+    /**
+     * Clear all caches
+     */
+    clearCache(): void {
+        this.parsedCache.clear();
+        this.rawCache.clear();
+        this.glyphCache.clear();
+    }
+
+    /**
+     * Get cache statistics
+     */
+    getCacheStats() {
+        return {
+            parsedTables: this.parsedCache.size,
+            rawTables: this.rawCache.size,
+            cachedGlyphs: this.glyphCache.size
+        };
+    }
+}
+
+/**
+ * Create a table access interface for a TTF font
+ * @param font - TTF font structure
+ * @returns Table access interface
+ */
+export function createTableAccess(font: TTFFont): TTFTableAccess {
+    return new TTFTableAccess(font);
 } 

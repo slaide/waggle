@@ -13,16 +13,16 @@ import "./scene/textmesh";
  */
 class UITextManager {
     private gl: any;
-    private textRenderer: any;
+    private font: any;
     private textModel: any;
     private config: any;
     private currentText: string;
     private uiObjects: any[];
     private modelIndex: number;
-    
-    constructor(gl: any, textRenderer: any, textModel: any, config: any, initialText: string, uiObjects: any[], modelIndex: number) {
+
+    constructor(gl: any, font: any, textModel: any, config: any, initialText: string, uiObjects: any[], modelIndex: number) {
         this.gl = gl;
-        this.textRenderer = textRenderer;
+        this.font = font;
         this.textModel = textModel;
         this.config = config;
         this.currentText = initialText;
@@ -75,10 +75,10 @@ class UITextManager {
             const oldPosition = this.textModel.transform.position;
             
             // Generate the text mesh first
-            const textMesh = this.textRenderer.generateTextMesh(this.currentText, this.config);
+            const textMesh = this.font.generateText(this.currentText, this.config.position, this.config.color);
             
             // Create a completely new text model
-            const fontConfig = this.textRenderer.fontConfig;
+            const fontConfig = this.font.config;
             const newTextModel = await createTextModel(this.gl, textMesh, this.config, this.currentText, fontConfig.filled, fontConfig.lineWidth);
             
             // Restore the position
@@ -148,10 +148,11 @@ export async function main() {
     const scene = await loadScene(gl, sceneDescription);
 
     // Add text demonstrations to the 3D scene
-    const { TextRenderer, createTextModel } = await import("./scene/textmesh");
+    const { createTextModel } = await import("./scene/textmesh");
+    const { Font } = await import("./text");
     
-    // Create outline (wireframe) text renderer for 3D world space
-    const outlineTextRenderer = await TextRenderer.fromFile(
+    // Create outline (wireframe) font for 3D world space
+    const outlineFont = await Font.fromFile(
         "./static/resources/Raleway-Regular.ttf",
         8,        // smoothness - 8 steps for smooth curves
         false,    // filled - false for wireframe outline
@@ -164,12 +165,12 @@ export async function main() {
         color: vec3.fromValues(0.0, 1.0, 0.0), // Green outlines
         position: vec3.fromValues(-4, 1, -1)
     };
-    const wireframeMesh = outlineTextRenderer.generateTextMesh("Outline Text", wireframeConfig);
-    const wireframeText = await createTextModel(gl, wireframeMesh, wireframeConfig, "Outline Text", outlineTextRenderer.fontConfig.filled, outlineTextRenderer.fontConfig.lineWidth);
+            const wireframeMesh = outlineFont.generateText("Outline Text", wireframeConfig.position, wireframeConfig.color);
+    const wireframeText = await createTextModel(gl, wireframeMesh, wireframeConfig, "Outline Text", outlineFont.config.filled, outlineFont.config.lineWidth);
     scene.objects.push(wireframeText);
     
-    // Create filled text renderer for 3D world space  
-    const filledTextRenderer = await TextRenderer.fromFile(
+    // Create filled font for 3D world space  
+    const filledFont = await Font.fromFile(
         "./static/resources/Raleway-Regular.ttf",
         8,        // smoothness - 8 steps for smooth curves
         true,     // filled - true for solid triangles
@@ -182,8 +183,8 @@ export async function main() {
         color: vec3.fromValues(1.0, 0.2, 0.2), // Red filled triangles  
         position: vec3.fromValues(1, 1, -1)
     };
-    const filledMesh = filledTextRenderer.generateTextMesh("Filled Text", filledConfig);
-    const filledText = await createTextModel(gl, filledMesh, filledConfig, "Filled Text", filledTextRenderer.fontConfig.filled, filledTextRenderer.fontConfig.lineWidth);
+    const filledMesh = filledFont.generateText("Filled Text", filledConfig.position, filledConfig.color);
+    const filledText = await createTextModel(gl, filledMesh, filledConfig, "Filled Text", filledFont.config.filled, filledFont.config.lineWidth);
     scene.objects.push(filledText);
     
     // Add alphabet demonstration - filled text below
@@ -191,24 +192,24 @@ export async function main() {
         color: vec3.fromValues(0.8, 0.4, 1.0), // Purple
         position: vec3.fromValues(-4, -0.5, -1)
     };
-    const alphabetMesh = filledTextRenderer.generateTextMesh("ABCDEFGHIJKLM", alphabetConfig);
-    const alphabetText = await createTextModel(gl, alphabetMesh, alphabetConfig, "ABCDEFGHIJKLM", filledTextRenderer.fontConfig.filled, filledTextRenderer.fontConfig.lineWidth);
+    const alphabetMesh = filledFont.generateText("ABCDEFGHIJKLM", alphabetConfig.position, alphabetConfig.color);
+    const alphabetText = await createTextModel(gl, alphabetMesh, alphabetConfig, "ABCDEFGHIJKLM", filledFont.config.filled, filledFont.config.lineWidth);
     scene.objects.push(alphabetText);
     
     const numbersConfig = {
         color: vec3.fromValues(1.0, 0.8, 0.2), // Orange
         position: vec3.fromValues(-2, -1.5, -1)
     };
-    const numbersMesh = filledTextRenderer.generateTextMesh("0123456789", numbersConfig);
-    const numbersText = await createTextModel(gl, numbersMesh, numbersConfig, "0123456789", filledTextRenderer.fontConfig.filled, filledTextRenderer.fontConfig.lineWidth);
+    const numbersMesh = filledFont.generateText("0123456789", numbersConfig.position, numbersConfig.color);
+    const numbersText = await createTextModel(gl, numbersMesh, numbersConfig, "0123456789", filledFont.config.filled, filledFont.config.lineWidth);
     scene.objects.push(numbersText);
     
     // Create UI objects array for orthographic UI rendering
     const uiObjects: any[] = [];
     
-    // Create UI text renderer - filled for better readability
+    // Create UI font - filled for better readability
     const baseFontSize = Math.min(canvas_size.width, canvas_size.height) / 30; // Responsive base size
-    const uiTextRenderer = await TextRenderer.fromFile(
+    const uiFont = await Font.fromFile(
         "./static/resources/Raleway-Regular.ttf",
         8,               // smoothness - 8 steps for smooth UI text
         true,            // filled - true for solid, readable UI text
@@ -221,8 +222,8 @@ export async function main() {
         color: vec3.fromValues(1.0, 1.0, 0.0), // Yellow
         position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
     };
-    const uiTitleMesh = uiTextRenderer.generateTextMesh("3D Text Demo - UI Layer", uiTitleConfig);
-    const uiTitle = await createTextModel(gl, uiTitleMesh, uiTitleConfig, "3D Text Demo - UI Layer", uiTextRenderer.fontConfig.filled, uiTextRenderer.fontConfig.lineWidth);
+            const uiTitleMesh = uiFont.generateText("3D Text Demo - UI Layer", uiTitleConfig.position, uiTitleConfig.color);
+    const uiTitle = await createTextModel(gl, uiTitleMesh, uiTitleConfig, "3D Text Demo - UI Layer", uiFont.config.filled, uiFont.config.lineWidth);
     // Position in top-left corner with margin
     uiTitle.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, canvas_size.height/2 - baseFontSize * 2, 0);
     uiObjects.push(uiTitle);
@@ -234,17 +235,17 @@ export async function main() {
     };
     
     const initialUIText = "FPS: 0.0 | Selected: None";
-    const uiInfoMesh = uiTextRenderer.generateTextMesh(initialUIText, uiInfoConfig);
-    const uiInfo = await createTextModel(gl, uiInfoMesh, uiInfoConfig, initialUIText, uiTextRenderer.fontConfig.filled, uiTextRenderer.fontConfig.lineWidth);
+            const uiInfoMesh = uiFont.generateText(initialUIText, uiInfoConfig.position, uiInfoConfig.color);
+    const uiInfo = await createTextModel(gl, uiInfoMesh, uiInfoConfig, initialUIText, uiFont.config.filled, uiFont.config.lineWidth);
     // Position below title
     uiInfo.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, canvas_size.height/2 - baseFontSize * 4, 0);
     uiObjects.push(uiInfo);
     
     // Create UI text manager for dynamic updates
-    const uiInfoManager = new UITextManager(gl, uiTextRenderer, uiInfo, uiInfoConfig, initialUIText, uiObjects, 1); // Index 1 in uiObjects array
+    const uiInfoManager = new UITextManager(gl, uiFont, uiInfo, uiInfoConfig, initialUIText, uiObjects, 1); // Index 1 in uiObjects array
     
-    // Create smaller UI renderer for help text
-    const smallUITextRenderer = await TextRenderer.fromFile(
+    // Create smaller UI font for help text
+    const smallUIFont = await Font.fromFile(
         "./static/resources/Raleway-Regular.ttf",
         6,                    // smoothness - slightly less for small text
         true,                 // filled - true for readable small text
@@ -256,8 +257,8 @@ export async function main() {
         color: vec3.fromValues(0.6, 0.6, 0.6), // Gray
         position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
     };
-    const uiControlsMesh = smallUITextRenderer.generateTextMesh("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", uiControlsConfig);
-    const uiControls = await createTextModel(gl, uiControlsMesh, uiControlsConfig, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", smallUITextRenderer.fontConfig.filled, smallUITextRenderer.fontConfig.lineWidth);
+            const uiControlsMesh = smallUIFont.generateText("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", uiControlsConfig.position, uiControlsConfig.color);
+    const uiControls = await createTextModel(gl, uiControlsMesh, uiControlsConfig, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", smallUIFont.config.filled, smallUIFont.config.lineWidth);
     // Position in bottom-left corner with margin
     uiControls.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, -canvas_size.height/2 + baseFontSize * 2, 0);
     uiObjects.push(uiControls);

@@ -49,77 +49,7 @@ export interface TextRenderConfig {
     position: vec3;
 }
 
-/**
- * TextRenderer class for managing fonts and generating text meshes
- * Handles font loading, preprocessing, and provides a clean interface for text rendering
- */
-export class TextRenderer {
-    private font: Font;
-    private fontPath: string;
 
-    private constructor(font: Font, fontPath: string) {
-        this.font = font;
-        this.fontPath = fontPath;
-    }
-
-    /**
-     * Create a TextRenderer instance from a font file
-     * @param fontPath - Path to TTF font file  
-     * @param smoothness - Number of interpolation steps per curve segment (0 = no interpolation)
-     * @param filled - Whether to generate filled triangulated mesh (true) or wireframe outline (false)
-     * @param fontSize - Font size in world units
-     * @param lineWidth - Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0
-     * @returns Promise<TextRenderer>
-     */
-    static async fromFile(
-        fontPath: string, 
-        smoothness: number = 0, 
-        filled: boolean = false,
-        fontSize: number = 1.0,
-        lineWidth: number = 1.0
-    ): Promise<TextRenderer> {
-        const font = await Font.fromFile(fontPath, smoothness, filled, fontSize, lineWidth);
-        return new TextRenderer(font, fontPath);
-    }
-
-    /**
-     * Generate a text mesh with explicit configuration
-     * @param text - Text string to render
-     * @param config - Complete rendering configuration (only color and position)
-     * @returns TextMesh or FilledTextMesh based on font configuration
-     */
-    generateTextMesh(text: string, config: TextRenderConfig): TextMesh | FilledTextMesh {
-        return this.font.generateTextMesh(text, config.position, config.color);
-    }
-
-    /**
-     * Get the font path for this renderer
-     */
-    get path(): string {
-        return this.fontPath;
-    }
-
-    /**
-     * Get font configuration
-     */
-    get fontConfig() {
-        return this.font.config;
-    }
-
-    /**
-     * Get cache statistics
-     */
-    getCacheStats() {
-        return this.font.getCacheStats();
-    }
-
-    /**
-     * Clear glyph cache
-     */
-    clearCache() {
-        this.font.clearCache();
-    }
-}
 
 /**
  * Generate a text Model from a TextMesh or FilledTextMesh

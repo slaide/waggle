@@ -40,67 +40,99 @@ Waggle is a 3D rendering engine that combines the efficiency of deferred shading
 - **Scene Serialization**: JSON-based scene format with hot-reloading
 
 ### Advanced Text Rendering System
-Waggle features a sophisticated text rendering system with full TTF font support, smooth curve interpolation, and robust polygon triangulation for both wireframe and filled text rendering.
+Waggle features a sophisticated text rendering system with full TTF font support, smooth curve interpolation, robust polygon triangulation, and efficient glyph caching for both wireframe and filled text rendering.
 
 #### **Core Features**
 - **TTF Font Support**: Complete TrueType font parsing and glyph extraction
-- **Dual Rendering Modes**: Both wireframe outlines and filled triangle meshes
+- **Dual Rendering Modes**: Both wireframe outlines and filled triangle meshes  
+- **Glyph Caching**: Efficient mesh caching with lazy loading for optimal performance
+- **Font-Level Configuration**: Rendering options configured at font creation time
 - **Smooth Curve Interpolation**: Configurable spline steps for high-quality curves
 - **Robust Triangulation**: Advanced ear clipping with hole bridging support
 - **Multi-Contour Handling**: Proper support for complex characters (i, d, o, etc.)
+
+#### **Modern Font Architecture**
+
+**Font-Level Configuration**
+```typescript
+// Create font with rendering configuration at construction time
+const wireframeFont = new Font(
+    ttfFont,           // Parsed TTF font data
+    8,                 // smoothness: spline interpolation steps
+    false,             // filled: false = wireframe, true = filled triangles
+    1.0,               // fontSize: size in world units
+    1.0                // lineWidth: line width for wireframe rendering
+);
+
+const filledFont = new Font(ttfFont, 8, true, 0.8, 1.0);
+
+// Generate text with only color specified per-text
+const wireframeText = wireframeFont.generateTextMesh(
+    "Hello World",
+    vec3.fromValues(0.0, 1.0, 0.0)  // Green color
+);
+
+const filledText = filledFont.generateTextMesh(
+    "Filled Text", 
+    vec3.fromValues(1.0, 0.0, 0.0)  // Red color
+);
+```
+
+**Efficient Glyph Caching**
+- **Lazy Loading**: Glyphs computed and cached only when first needed
+- **Cache Reuse**: Identical glyph configurations share cached mesh data
+- **Memory Efficient**: Cached data stored in font units, transformed as needed
+- **Cache Management**: Built-in cache statistics and clearing capabilities
+
+```typescript
+// Check cache performance
+const stats = font.getCacheStats();
+console.log(`Cache size: ${stats.size}, hit rate: ${stats.hitRate}`);
+
+// Clear cache if needed
+font.clearCache();
+```
 
 #### **Technical Implementation**
 
 **Font Processing Pipeline**
 ```typescript
-// Load font and create text renderer
-const textRenderer = await TextRenderer.fromFile("./static/resources/Raleway-Regular.ttf");
+// Create fonts with different configurations
+const wireframeFont = await Font.fromFile("./static/resources/Raleway-Regular.ttf", 8, false, 1.0, 1.0);
+const filledFont = await Font.fromFile("./static/resources/Raleway-Regular.ttf", 8, true, 1.0, 1.0);
+const uiFont = await Font.fromFile("./static/resources/Raleway-Regular.ttf", 6, true, 0.5, 1.0);
 
-// Create wireframe text
-const wireframeText = await createTextModelFromRenderer(gl, textRenderer, "Hello", {
-    fontSize: 1.0,
-    lineWidth: 1.0,
-    color: vec3.fromValues(0.0, 1.0, 0.0), // Green
-    position: vec3.fromValues(-3, 0, -1),
-    splineSteps: 8, // Smooth curve interpolation
-    filled: false
-});
+// Generate text meshes
+const wireframeText = wireframeFont.generateTextMesh("3D Text", vec3.fromValues(-3, 0, -1), vec3.fromValues(0.0, 1.0, 0.0));
+const filledText = filledFont.generateTextMesh("Filled Text", vec3.fromValues(3, 0, -0.5), vec3.fromValues(1.0, 0.0, 0.0));
+const uiText = uiFont.generateTextMesh("UI Text", vec3.fromValues(-5, 4, 0), vec3.fromValues(1.0, 1.0, 0.0));
 
-// Create filled text
-const filledText = await createTextModelFromRenderer(gl, textRenderer, "World", {
-    fontSize: 1.0,
-    color: vec3.fromValues(1.0, 0.0, 0.0), // Red
-    position: vec3.fromValues(3, 0, -0.5),
-    splineSteps: 8,
-    filled: true
-});
+// Convert to renderable models
+const wireframeModel = await createTextModel(gl, wireframeText, config, "3D Text", wireframeFont.config.filled, wireframeFont.config.lineWidth);
+const filledModel = await createTextModel(gl, filledText, config, "Filled Text", filledFont.config.filled, filledFont.config.lineWidth);
+const uiModel = await createTextModel(gl, uiText, config, "UI Text", uiFont.config.filled, uiFont.config.lineWidth);
 ```
-
-**Triangulation Algorithm**
-- **Containment-Based Classification**: Automatically detects outer contours vs holes
-- **Hole Bridging**: Connects holes to outer contours using rightmost vertex + visibility testing
-- **Robust Ear Clipping**: Enhanced algorithm with centroid validation
-- **Multi-Contour Support**: Handles characters like 'i' with separate dot and stem
 
 **Character Processing Flow**
 1. **Glyph Extraction**: Parse TTF glyph data and control points
-2. **Curve Interpolation**: Generate smooth curves using quadratic Bézier interpolation
-3. **Contour Classification**: Identify outer shapes vs holes using geometric containment
-4. **Hole Bridging**: Connect holes to main contour with minimal bridge connections
-5. **Triangulation**: Robust ear clipping with triangle validation
-6. **Mesh Generation**: Convert triangles to WebGL vertex/index buffers
+2. **Cache Lookup**: Check if glyph mesh already exists for current font configuration
+3. **Curve Interpolation**: Generate smooth curves using quadratic Bézier interpolation
+4. **Contour Classification**: Identify outer shapes vs holes using geometric containment
+5. **Hole Bridging**: Connect holes to main contour with minimal bridge connections
+6. **Triangulation**: Robust ear clipping with triangle validation
+7. **Cache Storage**: Store generated mesh in font's glyph cache
+8. **Mesh Assembly**: Transform and combine cached glyphs into final text mesh
 
-#### **Font Configuration Options**
+#### **Configuration Separation**
 
-```typescript
-interface FontOptions {
-    fontSize: number;        // Font size in world units
-    lineWidth: number;       // Line width for wireframe (most browsers support 1.0 only)
-    color: vec3;             // RGB color for text (both wireframe lines and filled triangles)
-    splineSteps: number;     // Curve interpolation steps (0 = no interpolation)
-    filled?: boolean;        // Generate filled triangles vs wireframe outline
-}
-```
+**Font-Level Options** (Set at construction)
+- **`smoothness`**: Curve interpolation steps (0 = no interpolation, 8+ recommended)
+- **`filled`**: Rendering mode (false = wireframe lines, true = filled triangles)
+- **`fontSize`**: Text size in world units
+- **`lineWidth`**: Line width for wireframe rendering (most browsers support 1.0 only)
+
+**Text-Level Options** (Set per text generation)
+- **`color`**: RGB color values for the text (vec3)
 
 #### **Advanced Features**
 
@@ -124,59 +156,183 @@ interface FontOptions {
 - **Unicode Support**: Full character set including special symbols (öäüß, punctuation)
 
 #### **Performance Characteristics**
-- **Efficient Caching**: Generated meshes are cached for repeated use
+- **Glyph Caching**: O(1) lookup for previously generated glyphs
+- **Lazy Loading**: Glyphs computed only when needed
+- **Memory Efficient**: Cached data shared across text instances
 - **Minimal GPU Impact**: Text rendered in standard forward/deferred pipeline
 - **Scalable Quality**: Spline steps configurable for performance tuning
-- **Memory Efficient**: Shared vertex data and optimized index buffers
 
 #### **Usage Examples**
 
-**Basic Text Creation**
+**Creating Different Font Configurations**
 ```typescript
-// Simple filled text
-const text = await createFilledTextMesh(
-    "Hello World",
-    "./static/resources/Raleway-Regular.ttf",
-    {
-        fontSize: 2.0,
-        lineWidth: 1.0,
-        color: vec3.fromValues(1.0, 1.0, 1.0),
-        splineSteps: 8
-    },
-    vec3.fromValues(0, 0, -5)
+// High-quality filled text for titles
+const titleFont = new Font(ttfFont, 12, true, 1.5, 1.0);
+const title = createTextModel(
+    titleFont.generateTextMesh("Game Title", vec3.fromValues(1.0, 1.0, 0.0)),
+    vec3.fromValues(0, 3, -5)
 );
-```
 
-**Advanced Configuration**
-```typescript
-// High-quality wireframe text with custom styling
-const styledText = await createTextModelFromRenderer(gl, textRenderer, "Waggle", {
-    fontSize: 1.5,
-    lineWidth: 1.0,
-    color: vec3.fromValues(0.2, 0.8, 1.0), // Cyan
-    position: vec3.fromValues(-2, 1, -3),
-    splineSteps: 16, // High quality curves
-    filled: false
-});
-scene.objects.push(styledText);
-```
+// Wireframe text for debugging/technical display
+const debugFont = new Font(ttfFont, 4, false, 0.8, 1.0);
+const debugInfo = createTextModel(
+    debugFont.generateTextMesh("FPS: 60", vec3.fromValues(0.0, 1.0, 0.0)),
+    vec3.fromValues(-5, 4, 0)
+);
 
-**Console Output**
-The system provides clean triangle count feedback:
-```
-Character 'H': 52 triangles
-Character 'e': 89 triangles  
-Character 'l': 66 triangles
-Character 'o': 127 triangles
+// Small UI text for interface elements
+const uiFont = new Font(ttfFont, 6, true, 0.4, 1.0);
+const controls = createTextModel(
+    uiFont.generateTextMesh("Click to select", vec3.fromValues(0.7, 0.7, 0.7)),
+    vec3.fromValues(-5, -4, 0)
+);
 ```
 
 #### **Supported Features**
 - **Font Formats**: TrueType (.ttf) fonts with complete glyph support
 - **Rendering Modes**: Wireframe outlines and filled triangle meshes
+- **Glyph Caching**: Automatic mesh caching with performance monitoring
 - **Text Layout**: Automatic character spacing and positioning
 - **Material Integration**: Full material system support with lighting
 - **Transform Hierarchy**: Text objects support parent-child relationships
 - **Performance Scaling**: Configurable quality levels for different use cases
+
+### Dynamic UI Layer System
+Waggle includes a comprehensive UI overlay system that renders dynamic information directly on the 3D scene using forward-rendered text. The UI layer provides real-time feedback and controls without interfering with the main 3D rendering pipeline.
+
+#### **Core Features**
+- **Real-Time Updates**: UI elements update dynamically with game state
+- **Forward Rendered**: UI text uses forward rendering to avoid depth conflicts
+- **Performance Monitoring**: Built-in FPS tracking and display system
+- **Interactive Feedback**: Dynamic UI updates based on user interactions
+- **Clean Typography**: High-quality filled text rendering for maximum readability
+
+#### **UI Architecture**
+
+**UITextManager System**
+```typescript
+// Create different font configurations for UI purposes
+const titleFont = await Font.fromFile("./static/resources/Raleway-Regular.ttf", 8, true, 0.8, 1.0);    // Large title text
+const infoFont = await Font.fromFile("./static/resources/Raleway-Regular.ttf", 6, true, 0.5, 1.0);     // Information text
+const controlsFont = await Font.fromFile("./static/resources/Raleway-Regular.ttf", 4, true, 0.4, 1.0); // Small control hints
+
+// Generate text meshes and create models
+const titleMesh = titleFont.generateTextMesh("Waggle 3D Engine", vec3.fromValues(-4, 4, 0), vec3.fromValues(1.0, 1.0, 0.0));
+const titleModel = await createTextModel(gl, titleMesh, config, "Waggle 3D Engine", titleFont.config.filled, titleFont.config.lineWidth);
+
+const fpsMesh = infoFont.generateTextMesh("FPS: 60", vec3.fromValues(-5, 3, 0), vec3.fromValues(0.7, 0.7, 0.7));
+const fpsModel = await createTextModel(gl, fpsMesh, config, "FPS: 60", infoFont.config.filled, infoFont.config.lineWidth);
+
+// UI text manager for dynamic updates
+const uiTextManager = new UITextManager(gl, infoFont, fpsModel, config, "FPS: 60", uiObjects, 1);
+```
+
+**Dynamic Content Updates**
+```typescript
+// Update UI content in real-time (main render loop)
+const fps = Math.round(1000 / deltaTime);
+const newText = selectedObject 
+    ? `FPS: ${fps} | Selected: ${selectedObject.name || selectedObject.id}`
+    : `FPS: ${fps} | No object selected`;
+
+// Update the UI text manager with new content
+await uiTextManager.setText(newText);
+```
+
+#### **UI Component Types**
+
+**Performance Monitoring**
+- **FPS Display**: Real-time frame rate calculation and display
+- **Smooth Updates**: FPS averaging to prevent flickering
+- **Color Coding**: Performance-based color coding (green = good, yellow = moderate, red = poor)
+
+**Interactive Feedback**
+- **Selection Status**: Dynamic updates showing currently selected objects
+- **Object Information**: Display selected object names and IDs
+- **State Changes**: Visual feedback for user interactions
+
+**Control Hints**
+- **Keyboard Shortcuts**: Display available keyboard commands
+- **Mouse Controls**: Interactive help for mouse operations
+- **Context-Sensitive**: Hints change based on application state
+
+#### **Text Positioning System**
+
+**Screen-Space Coordinates**
+```typescript
+// UI text positioned in screen-space coordinates
+// Origin at screen center, extends to edges
+const positions = {
+    topLeft: vec3.fromValues(-5, 4, 0),      // Upper left corner
+    topRight: vec3.fromValues(5, 4, 0),      // Upper right corner
+    bottomLeft: vec3.fromValues(-5, -4, 0),  // Lower left corner
+    bottomRight: vec3.fromValues(5, -4, 0),  // Lower right corner
+    center: vec3.fromValues(0, 0, 0)         // Screen center
+};
+```
+
+**Automatic Layout Management**
+- **Fixed Positioning**: UI elements maintain consistent screen positions
+- **No Clipping**: UI text rendered in front of 3D scene elements
+- **Scalable Fonts**: Different font sizes for hierarchy (titles, info, controls)
+
+#### **Integration with Main Rendering**
+
+**Forward Rendering Pipeline**
+```typescript
+// UI elements use forward rendering for proper depth handling
+uiTextManager.render(gl, camera, uniforms);
+
+// UI text objects are marked as forward-rendered
+const uiTextModel = createTextModel(textMesh, position);
+uiTextModel.forwardRendered = true;
+uiTextModel.forwardShaderPaths = {
+    vs: "static/src/shaders/flat_forward.vert",
+    fs: "static/src/shaders/flat_forward.frag"
+};
+```
+
+**Performance Characteristics**
+- **Minimal Overhead**: UI updates only when content changes
+- **Efficient Rendering**: Uses same text rendering pipeline as 3D text
+- **Cache Friendly**: Glyph caching applies to UI text as well
+- **GPU Optimized**: Forward rendering avoids GBuffer conflicts
+
+#### **Real-World Usage**
+
+**Main Application Integration**
+```typescript
+// In main render loop
+function render() {
+    // Calculate performance metrics
+    const fps = Math.round(1000 / deltaTime);
+    
+    // Update UI content
+    uiTextManager.updateText("fps", `FPS: ${fps}`);
+    uiTextManager.updateText("camera", `Camera: (${camera.position[0].toFixed(1)}, ${camera.position[1].toFixed(1)}, ${camera.position[2].toFixed(1)})`);
+    
+    // Update selection feedback
+    if (selectedObject) {
+        uiTextManager.updateText("selection", `Selected: ${selectedObject.name}`, vec3.fromValues(0.0, 1.0, 0.0));
+    }
+    
+    // Render UI layer
+    uiTextManager.render(gl, camera, uniforms);
+}
+```
+
+**Interactive Features**
+- **Click Feedback**: UI updates immediately when objects are selected
+- **Performance Monitoring**: Real-time FPS display with color coding
+- **State Visualization**: Current application state always visible
+- **Help System**: Context-sensitive control hints
+
+#### **Supported UI Elements**
+- **Performance Counters**: FPS, frame time, render statistics
+- **Selection Information**: Currently selected object details
+- **Control Hints**: Available keyboard and mouse commands
+- **Status Messages**: Application state and error messages
+- **Debug Information**: Technical details for development
 
 ### Comprehensive Testing
 - **Unit Tests**: Complete test coverage for core systems
@@ -405,64 +561,7 @@ gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, imageData.width, imageData.height,
               0, gl.RGBA, gl.UNSIGNED_BYTE, imageData.data);
 ```
 
-## Text Rendering System
 
-Waggle includes a comprehensive text rendering system built on a custom TTF font parser, enabling 3D text rendering with wireframe visualization.
-
-### TTF Font Parser (`bits/ttf.ts`)
-- **Pure TypeScript**: Complete TTF font file parsing with no external dependencies
-- **Glyph Extraction**: Character-to-glyph mapping with Unicode support
-- **Outline Parsing**: Vector-based glyph contour extraction for precise geometry
-- **Font Metrics**: Proper scaling using font units per em (unitsPerEm)
-
-### Font Class Interface (`text.ts`)
-The Font class provides a clean, extensible API for text rendering:
-
-```typescript
-import { Font, FontOptions } from './text';
-import { vec3 } from 'gl-matrix';
-
-// Configure font rendering options
-const fontOptions: FontOptions = {
-    fontSize: 1.0,                              // Font size in world units
-    lineWidth: 1.0,                             // Line width (most browsers only support 1.0)
-    lineColor: vec3.fromValues(0.0, 1.0, 0.0)   // Green wireframe color
-};
-
-// Load font and generate text
-const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', fontOptions);
-const textMesh = font.generateTextMesh('ABC', vec3.fromValues(0, 0, -1));
-```
-
-### Features
-- **World-Space Positioning**: Text positioned using 3D coordinates with lower-left corner specification
-- **Automatic Character Spacing**: Intelligent character spacing based on font size (fontSize × 0.7)
-- **Wireframe Rendering**: Line-based text rendering integrated with WebGL2 pipeline
-- **Extensible Options**: FontOptions interface designed for future feature expansion
-- **Single Character Support**: Individual character mesh generation for custom layouts
-
-### Integration with Rendering Pipeline
-Text meshes integrate seamlessly with Waggle's forward rendering system:
-
-```typescript
-import { createTextModel } from './scene/textmesh';
-
-// Convert text mesh to renderable Model object
-const textModel = createTextModel(textMesh, fontOptions.lineColor, fontOptions.lineWidth);
-scene.addObject(textModel);
-```
-
-### Current Limitations & Future Enhancements
-**Note**: The current implementation supports wireframe-only text rendering. Future versions will include:
-- **Smooth Outline Rendering**: Anti-aliased text outlines for improved visual quality
-- **Filled Text Rendering**: Solid text appearance with proper triangulation
-- **Advanced Typography**: Kerning, ligatures, and multi-line text support
-
-### Performance Characteristics
-- **Font Loading**: O(1) - Fonts cached after initial parse
-- **Text Generation**: O(n) - Linear with character count
-- **Memory Usage**: Efficient typed arrays for vertex data
-- **Rendering**: Uses GL.LINES primitive with configurable line width
 
 ## Forward Rendering System
 
@@ -704,6 +803,8 @@ The server provides:
 4. **Scene Serialization** [#cd95c5a](https://github.com/slaide/waggle/tree/cd95c5a39782056aa00b5df7d4fe2a8cf39c28c2): JSON-based scene format
 5. **Forward Rendering**: Hybrid pipeline with custom shader support
 6. **Object Picking** (Complete): Hybrid system supporting both deferred (GBuffer-based) and forward-rendered (raycast-based) object selection with dynamic wireframe feedback
+7. **Advanced Text Rendering System** (Complete): Comprehensive TTF font support with font-level configuration, glyph caching, smooth curve interpolation, robust polygon triangulation, and support for both wireframe and filled text rendering modes
+8. **Dynamic UI Layer System** (Complete): Real-time UI overlay system with performance monitoring, interactive feedback, and forward-rendered text elements that integrate seamlessly with the main 3D rendering pipeline
 
 ## Contributing
 
