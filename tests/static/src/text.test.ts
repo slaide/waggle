@@ -651,13 +651,159 @@ describe('TextRenderer Class', () => {
     });
 });
 
+describe('Filled Text Mesh Generation', () => {
+    test('should generate filled triangulated mesh vs wireframe outline', async () => {
+        const baseOptions: FontOptions = {
+            fontSize: 1.0,
+            lineWidth: 1.0,
+            lineColor: vec3.fromValues(1.0, 0.0, 0.0),
+            splineSteps: 4
+        };
+        
+        // Test wireframe (outline) mode
+        const wireframeOptions: FontOptions = { ...baseOptions, filled: false };
+        const wireframeMesh = await createTextMesh('O', './static/resources/Raleway-Regular.ttf', 
+            wireframeOptions, vec3.fromValues(0, 0, 0));
+        
+        // Test filled (triangulated) mode
+        const filledOptions: FontOptions = { ...baseOptions, filled: true };
+        const filledMesh = await createTextMesh('O', './static/resources/Raleway-Regular.ttf', 
+            filledOptions, vec3.fromValues(0, 0, 0));
+        
+        expect(wireframeMesh).toBeDefined();
+        expect(filledMesh).toBeDefined();
+        
+        // Check mesh properties
+        expect(wireframeMesh!.filled).toBe(false);
+        expect(filledMesh!.filled).toBe(true);
+        
+        // Wireframe should have line indices (pairs), filled should have triangle indices (triples)
+        expect(wireframeMesh!.indices.length % 2).toBe(0); // Even number for line pairs
+        expect(filledMesh!.indices.length % 3).toBe(0); // Multiple of 3 for triangles
+        
+        // Filled mesh should typically have more indices than wireframe (triangulation creates more primitives)
+        const wireframeSegments = wireframeMesh!.indices.length / 2;
+        const filledTriangles = filledMesh!.indices.length / 3;
+        
+        console.log('Mesh comparison for letter O:', {
+            wireframe: { 
+                vertices: wireframeMesh!.vertices.length / 3, 
+                segments: wireframeSegments, 
+                filled: wireframeMesh!.filled 
+            },
+            filled: { 
+                vertices: filledMesh!.vertices.length / 3, 
+                triangles: filledTriangles, 
+                filled: filledMesh!.filled 
+            }
+        });
+        
+        // For a simple letter like 'O', we should have triangles
+        expect(filledTriangles).toBeGreaterThan(0);
+    });
+    
+    test('should handle triangulation of different letter shapes', async () => {
+        const options: FontOptions = {
+            fontSize: 1.0,
+            lineWidth: 1.0,
+            lineColor: vec3.fromValues(0.0, 1.0, 0.0),
+            splineSteps: 4,
+            filled: true
+        };
+        
+        // Test various letter shapes for triangulation
+        const letters = ['A', 'B', 'C', 'D', 'O', 'P', 'R'];
+        
+        for (const letter of letters) {
+            const mesh = await createTextMesh(letter, './static/resources/Raleway-Regular.ttf', 
+                options, vec3.fromValues(0, 0, 0));
+            
+            expect(mesh).toBeDefined();
+            expect(mesh!.filled).toBe(true);
+            
+            // Debug output for failing letters
+            if (mesh!.vertices.length === 0) {
+                console.error(`Letter ${letter} produced zero vertices!`);
+            }
+            
+            expect(mesh!.vertices.length).toBeGreaterThan(0);
+            expect(mesh!.indices.length).toBeGreaterThan(0);
+            expect(mesh!.indices.length % 3).toBe(0); // Should be triangles
+            
+            const triangleCount = mesh!.indices.length / 3;
+            const vertexCount = mesh!.vertices.length / 3;
+            
+            // Sanity check: triangle count should be reasonable relative to vertex count
+            expect(triangleCount).toBeGreaterThan(0);
+            expect(triangleCount).toBeLessThan(vertexCount * 2); // Reasonable upper bound
+            
+            console.log(`Filled letter ${letter}: ${vertexCount} vertices, ${triangleCount} triangles`);
+        }
+    });
+    
+    test('should maintain consistent bounds between wireframe and filled modes', async () => {
+        const baseOptions: FontOptions = {
+            fontSize: 2.0,
+            lineWidth: 1.0,
+            lineColor: vec3.fromValues(0.0, 0.0, 1.0),
+            splineSteps: 6
+        };
+        
+        const wireframeMesh = await createTextMesh('Q', './static/resources/Raleway-Regular.ttf', 
+            { ...baseOptions, filled: false }, vec3.fromValues(0, 0, 0));
+        
+        const filledMesh = await createTextMesh('Q', './static/resources/Raleway-Regular.ttf', 
+            { ...baseOptions, filled: true }, vec3.fromValues(0, 0, 0));
+        
+        expect(wireframeMesh).toBeDefined();
+        expect(filledMesh).toBeDefined();
+        
+        // Bounds should be very similar (small tolerance for triangulation differences)
+        const tolerance = 0.2; // Increased tolerance since triangulation may create different bounds
+        
+        expect(Math.abs(wireframeMesh!.bounds.min[0] - filledMesh!.bounds.min[0])).toBeLessThan(tolerance);
+        expect(Math.abs(wireframeMesh!.bounds.min[1] - filledMesh!.bounds.min[1])).toBeLessThan(tolerance);
+        expect(Math.abs(wireframeMesh!.bounds.max[0] - filledMesh!.bounds.max[0])).toBeLessThan(tolerance);
+        expect(Math.abs(wireframeMesh!.bounds.max[1] - filledMesh!.bounds.max[1])).toBeLessThan(tolerance);
+        
+        console.log('Bounds consistency check passed for wireframe vs filled modes');
+    });
+    
+    test('should work with Font class interface for filled text', async () => {
+        const options: FontOptions = {
+            fontSize: 1.5,
+            lineWidth: 1.0,
+            lineColor: vec3.fromValues(1.0, 0.5, 0.0),
+            splineSteps: 8,
+            filled: true
+        };
+        
+        const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', options);
+        const singleCharMesh = font.generateCharacterMesh('S', vec3.fromValues(0, 0, 0));
+        const multiCharMesh = font.generateTextMesh('Hello', vec3.fromValues(0, 0, 0));
+        
+        expect(singleCharMesh).toBeDefined();
+        expect(multiCharMesh).toBeDefined();
+        
+        expect(singleCharMesh!.filled).toBe(true);
+        expect(multiCharMesh.filled).toBe(true);
+        
+        // Both should have triangle indices
+        expect(singleCharMesh!.indices.length % 3).toBe(0);
+        expect(multiCharMesh.indices.length % 3).toBe(0);
+        
+        console.log('Font class filled text generation test passed');
+    });
+});
+
 describe('Spline Interpolation', () => {
     test('should generate smooth outline with spline interpolation steps', async () => {
         const baseOptions: FontOptions = {
             fontSize: 1.0,
             lineWidth: 1.0,
             lineColor: vec3.fromValues(1.0, 0.0, 0.0),
-            splineSteps: 0 // Start with no interpolation
+            splineSteps: 0, // Start with no interpolation
+            filled: false // Default to wireframe for existing tests
         };
         
         // Test with no interpolation (control points only)

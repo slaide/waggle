@@ -53,6 +53,8 @@ export interface TextRenderConfig {
     position: vec3;
     /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
     splineSteps: number;
+    /** Whether to generate filled triangulated mesh (true) or wireframe outline (false) */
+    filled: boolean;
 }
 
 /**
@@ -79,7 +81,8 @@ export class TextRenderer {
             fontSize: 1.0,  // Will be overridden during rendering
             lineWidth: 1.0, // Will be overridden during rendering  
             lineColor: vec3.fromValues(1.0, 1.0, 1.0), // Will be overridden during rendering
-            splineSteps: 0 // Will be overridden during rendering
+            splineSteps: 0, // Will be overridden during rendering
+            filled: false // Will be overridden during rendering
         };
         
         const font = await Font.fromFile(fontPath, loadingOptions);
@@ -98,6 +101,7 @@ export class TextRenderer {
         this.font.options.lineWidth = config.lineWidth;
         this.font.options.lineColor = vec3.clone(config.lineColor);
         this.font.options.splineSteps = config.splineSteps;
+        this.font.options.filled = config.filled;
         
         return this.font.generateTextMesh(text, config.position);
     }
@@ -140,10 +144,16 @@ export async function createTextModel(
         );
     }
     
-    // Create material for wireframe text
+    // Create material for text rendering
     const textMaterial = new MtlMaterial();
     textMaterial.diffuse = vec3.clone(config.lineColor);
     textMaterial.specularExponent = 1;
+    
+    // For filled text, ensure proper material properties
+    if (textMesh.filled) {
+        textMaterial.ambient = vec3.fromValues(0.1, 0.1, 0.1); // Small ambient component
+        textMaterial.specular = vec3.fromValues(0.2, 0.2, 0.2); // Small specular component
+    }
     
     // Create buffers using Model infrastructure
     const buffers = await Model.makeBuffers(
@@ -153,45 +163,64 @@ export async function createTextModel(
         new Uint32Array(textMesh.indices)
     );
     
-    // Create forward program for wireframe text rendering
+    // Create forward program based on filled vs wireframe mode
+    // Use flat_forward shaders for both filled and wireframe text to avoid UBO issues
+    const shaderPaths = {
+        vs: "/static/src/shaders/flat_forward.vert",
+        fs: "/static/src/shaders/flat_forward.frag"
+    };
+    
     const forwardProgramInfo = await Model.makeForwardProgram(
         gl,
         textMaterial,
-        {
-            vs: "/static/src/shaders/flat_forward.vert",
-            fs: "/static/src/shaders/flat_forward.frag"
-        }
+        shaderPaths
     );
     
     // Create transform (position is already applied to vertices, so use origin)
     const transform = new Transform();
     transform.position = vec3.fromValues(0, 0, 0);
     
-    // Create the wireframe text model
+    // Calculate number of primitives based on mesh type
+    const primitiveCount = textMesh.filled 
+        ? textMesh.indices.length / 3  // Triangles
+        : textMesh.indices.length / 2; // Lines
+    
+    // Create the text model
     const textModel = new Model(
         gl,
         transform,
         buffers,
         forwardProgramInfo,
-        textMesh.indices.length / 3, // Number of triangles (though we're drawing lines)
+        primitiveCount,
         textMaterial,
         true,  // enabled
         true,  // visible
-        `Text: ${text}`
+        `Text ${textMesh.filled ? '(filled)' : '(wireframe)'}: ${text}`
     );
     
     // Set forward rendering properties
     textModel.forwardRendered = true;
     textModel.forwardProgramInfo = forwardProgramInfo;
-    textModel.forwardShaderPaths = {
-        vs: "/static/src/shaders/flat_forward.vert",
-        fs: "/static/src/shaders/flat_forward.frag"
-    };
+    textModel.forwardShaderPaths = shaderPaths;
     
-    // Set line drawing properties from configuration
-    textModel.drawMode = "lines";
-    textModel.lineWidth = config.lineWidth;
-    textModel.lineColor = vec3.clone(config.lineColor);
+    // Set rendering mode and properties based on mesh type
+    if (textMesh.filled) {
+        textModel.drawMode = "triangles";
+        console.log(`🔺 Filled text model: ${primitiveCount} triangles, ${numVertices} vertices`);
+        console.log(`   Material diffuse: [${textMaterial.diffuse[0].toFixed(2)}, ${textMaterial.diffuse[1].toFixed(2)}, ${textMaterial.diffuse[2].toFixed(2)}]`);
+        console.log(`   Shader paths:`, shaderPaths);
+        
+        // Disable face culling for text to ensure triangles are visible from both sides
+        // This is important because our fan triangulation might not have consistent winding
+        (textModel as any).cullFace = false;
+        
+        // For filled rendering, use the material's diffuse color
+    } else {
+        textModel.drawMode = "lines";
+        textModel.lineWidth = config.lineWidth;
+        textModel.lineColor = vec3.clone(config.lineColor);
+        console.log(`📏 Wireframe text model: ${primitiveCount} lines, ${numVertices} vertices`);
+    }
     
     // Store indices for line drawing (Model class needs this)
     (textModel as any)._indices = new Uint32Array(textMesh.indices);

@@ -61,15 +61,48 @@ export async function main() {
     // Add wireframe text 'ABC' to the scene using the TextRenderer API directly with spline interpolation
     const { TextRenderer, createTextModelFromRenderer } = await import("./scene/textmesh");
     const textRenderer = await TextRenderer.fromFile("./static/resources/Raleway-Regular.ttf");
-    const textConfig = {
+    
+    // Create wireframe text
+    const wireframeTextConfig = {
         fontSize: 1.0,
         lineWidth: 1.0, // Set to 1.0 - most browsers only support this value
         lineColor: vec3.fromValues(0.0, 1.0, 0.0), // Green
-        position: vec3.fromValues(0, 0, -1),
-        splineSteps: 8 // 8 spline interpolation steps per curve segment for smooth outlines
+        position: vec3.fromValues(-3, 0, -1),
+        splineSteps: 8, // 8 spline interpolation steps per curve segment for smooth outlines
+        filled: false
     };
-    const textABC = await createTextModelFromRenderer(gl, textRenderer, "ABCj", textConfig);
-    scene.objects.push(textABC);
+    const wireframeText = await createTextModelFromRenderer(gl, textRenderer, "Outline", wireframeTextConfig);
+    console.log("✅ Created wireframe text:", wireframeText.name, "- vertices:", wireframeText.rawVertexData?.length ? wireframeText.rawVertexData.length / 8 : 0);
+    scene.objects.push(wireframeText);
+    
+    // Create filled text with different content
+    const filledTextConfig = {
+        fontSize: 1.0,
+        lineWidth: 1.0, // Not used for filled text
+        lineColor: vec3.fromValues(1.0, 0.0, 0.0), // Red (material color)
+        position: vec3.fromValues(3, 0, -0.5),
+        splineSteps: 8, // 8 spline interpolation steps per curve segment for smooth outlines
+        filled: true
+    };
+    const filledText = await createTextModelFromRenderer(gl, textRenderer, "Filled", filledTextConfig);
+    console.log("✅ Created filled text:", filledText.name, "- vertices:", filledText.rawVertexData?.length ? filledText.rawVertexData.length / 8 : 0);
+    console.log("   Draw mode:", filledText.drawMode, "Visible:", filledText.visible, "Enabled:", filledText.enabled);
+    console.log("   Material diffuse:", filledText.material.diffuse);
+    scene.objects.push(filledText);
+    
+    // Add another filled text below for comparison
+    const filledTextConfig2 = {
+        fontSize: 0.8,
+        lineWidth: 1.0, // Not used for filled text
+        lineColor: vec3.fromValues(0.0, 0.0, 1.0), // Blue (material color)
+        position: vec3.fromValues(1, -2, -0.5),
+        splineSteps: 8, // 8 spline interpolation steps per curve segment for smooth outlines
+        filled: true
+    };
+    const filledText2 = await createTextModelFromRenderer(gl, textRenderer, "Hello World", filledTextConfig2);
+    console.log("✅ Created filled text 2:", filledText2.name, "- vertices:", filledText2.rawVertexData?.length ? filledText2.rawVertexData.length / 8 : 0);
+    console.log("   Draw mode:", filledText2.drawMode, "Visible:", filledText2.visible, "Enabled:", filledText2.enabled);
+    scene.objects.push(filledText2);
 
     // Ensure all transforms are properly calculated after loading
     scene.updateAllTransforms();
