@@ -3,6 +3,7 @@ import { GBuffer } from "./gbuffer";
 import { GL } from "./gl";
 import { loadScene, SceneDescription } from "./scene/scene";
 import { OrthographicCamera } from "./scene/camera";
+import { UIPanel, UIContainer, UILayoutUtils } from "./ui";
 // Import these to ensure GameObject types are registered
 import "./scene/model";
 import "./scene/light";
@@ -257,8 +258,8 @@ export async function main() {
         color: vec3.fromValues(0.6, 0.6, 0.6), // Gray
         position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
     };
-            const uiControlsMesh = smallUIFont.generateText("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", uiControlsConfig.position, uiControlsConfig.color);
-    const uiControls = await createTextModel(gl, uiControlsMesh, uiControlsConfig, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", smallUIFont.config.filled, smallUIFont.config.lineWidth);
+            const uiControlsMesh = smallUIFont.generateText("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen, Click=Select Object", uiControlsConfig.position, uiControlsConfig.color);
+    const uiControls = await createTextModel(gl, uiControlsMesh, uiControlsConfig, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen, Click=Select Object", smallUIFont.config.filled, smallUIFont.config.lineWidth);
     // Position in bottom-left corner with margin
     uiControls.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, -canvas_size.height/2 + baseFontSize * 2, 0);
     uiObjects.push(uiControls);
@@ -281,6 +282,90 @@ export async function main() {
     let selectedObject: any = null;
     let dynamicWireframe: any = null;
     
+    // UI Panel for displaying transform data
+    let transformPanel: UIPanel | null = null;
+    let uiContainer: UIContainer | null = null;
+    
+    /**
+     * Create or update the transform panel for the selected object
+     */
+    async function createTransformPanel(object: any): Promise<void> {
+        // Remove existing panel
+        if (transformPanel && uiContainer) {
+            uiContainer.removeElement(transformPanel);
+        }
+        
+        if (!object) {
+            transformPanel = null;
+            return;
+        }
+        
+        // Prepare transform data text first
+        const objectName = object.name || `Object ID: ${object.id}`;
+        const transformData = UILayoutUtils.formatTransformData(object.transform);
+        
+        // Format additional object info
+        const objectType = object.type || 'Unknown';
+        const isVisible = object.visible ? 'Yes' : 'No';
+        const isEnabled = object.enabled ? 'Yes' : 'No';
+        
+        // Format text with better line breaks to prevent awkward wrapping
+        const panelText = `${objectName}\nType: ${objectType}\nVisible: ${isVisible}\nEnabled: ${isEnabled}\n\n${transformData}`;
+        
+        // Measure text to determine required panel size
+        const textMeasurement = uiFont.measureText(panelText);
+        const padding = 20; // Padding on all sides
+        const panelWidth = Math.max(250, Math.ceil(textMeasurement.width) + padding * 2); // Minimum width of 250
+        const panelHeight = Math.max(120, Math.ceil(textMeasurement.height) + padding * 2); // Minimum height of 120
+        
+        // Debug logging
+        console.log('Panel sizing:', {
+            textWidth: textMeasurement.width,
+            textHeight: textMeasurement.height,
+            panelWidth,
+            panelHeight,
+            padding
+        });
+        
+        // Calculate panel position based on measured size
+        const panelPosition = UILayoutUtils.calculateSafePanelPosition(
+            panelWidth, 
+            panelHeight, 
+            canvas_size.width, 
+            canvas_size.height
+        );
+        
+        // Create new panel with calculated size
+        transformPanel = new UIPanel(
+            gl!,
+            {
+                width: panelWidth,
+                height: panelHeight,
+                backgroundColor: vec3.fromValues(0.2, 0.2, 0.3), // Dark blue-gray
+                backgroundAlpha: 0.9
+            },
+            panelPosition
+        );
+        
+        await transformPanel.init();
+        
+        // Add text to panel with proper positioning
+        await transformPanel.addText(uiFont, {
+            text: panelText,
+            color: vec3.fromValues(1.0, 1.0, 1.0), // White text
+            maxWidth: panelWidth - padding, // Use measured width minus padding
+            lineSpacing: 1.1
+        }, padding / 2, padding / 2); // Position text with half padding as offset
+        
+        // Initialize container if not exists
+        if (!uiContainer) {
+            uiContainer = new UIContainer();
+        }
+        
+        // Add panel to container
+        uiContainer.addElement(transformPanel);
+    }
+    
     el.addEventListener("click", async (ev) => {
         const rect = el.getBoundingClientRect();
         const x = (ev.clientX - rect.left) * dpr;
@@ -300,6 +385,9 @@ export async function main() {
                 // Select new object
                 selectedObject = clickedObject;
                 
+                // Create transform panel for selected object
+                await createTransformPanel(selectedObject);
+                
                 // Note: UI text will be updated by the main draw loop with current FPS
                 
                 // Create dynamic wireframe bounding box for mesh objects
@@ -318,6 +406,9 @@ export async function main() {
                 selectedObject.removeChild(dynamicWireframe);
                 dynamicWireframe = null;
                 selectedObject = null;
+                
+                // Remove transform panel
+                await createTransformPanel(null);
                 
                 // Note: UI text will be updated by the main draw loop with current FPS
             }
@@ -351,6 +442,18 @@ export async function main() {
         // Update canvas_size reference
         canvas_size.width = width;
         canvas_size.height = height;
+        
+        // Reposition transform panel if it exists
+        if (transformPanel && selectedObject) {
+            const panelBounds = transformPanel.getBounds();
+            const newPosition = UILayoutUtils.calculateSafePanelPosition(
+                panelBounds.width,
+                panelBounds.height,
+                width,
+                height
+            );
+            transformPanel.setPosition(newPosition);
+        }
     };
     onresize();
     window.addEventListener("resize", onresize);
@@ -551,6 +654,33 @@ export async function main() {
                     uiCamera.viewMatrix as Float32Array,
                     uiCamera.projectionMatrix as Float32Array
                 );
+            }
+        }
+        
+        // Render UI panels (transform panel, etc.)
+        if (uiContainer) {
+            const panelModels = uiContainer.getAllModels();
+            for (const panelModel of panelModels) {
+                if (!panelModel.shouldDraw) continue;
+                
+                // Update transform to ensure it's current
+                panelModel.transform.updateWorldMatrix();
+                
+                if (panelModel.forwardRendered && panelModel.drawForward) {
+                    panelModel.drawForward(
+                        panelModel.transform.worldMatrix as Float32Array,
+                        uiCamera.viewMatrix as Float32Array,
+                        uiCamera.projectionMatrix as Float32Array,
+                        lightUBOs,
+                        new Float32Array([0, 0, 0])
+                    );
+                } else {
+                    panelModel.drawWithMatrix(
+                        panelModel.transform.worldMatrix as Float32Array,
+                        uiCamera.viewMatrix as Float32Array,
+                        uiCamera.projectionMatrix as Float32Array
+                    );
+                }
             }
         }
         

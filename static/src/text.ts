@@ -1048,8 +1048,16 @@ export class Font {
     /**
      * Generate a mesh for a text string
      * Uses the font's configured rendering mode (wireframe/filled) and caching automatically
+     * Handles newline characters by converting them to multiline rendering
      */
     generateText(text: string, position: vec3, color: vec3): TextMesh {
+        // Check if text contains newlines - if so, use multiline rendering
+        if (text.includes('\n')) {
+            const lines = text.split('\n');
+            return this.generateMultilineText(lines, position, color, 1.2, false); // Default to bottom-left for backward compatibility
+        }
+        
+        // Single line rendering (original logic)
         const allVertices: number[] = [];
         const allIndices: number[] = [];
         let vertexOffset = 0;
@@ -1064,9 +1072,15 @@ export class Font {
         const baseZ = position[2];
         let totalAdvanceWidth = 0;
 
-        // Process each character
+        // Process each character (skip newlines since we handle them above)
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
+            
+            // Skip control characters that don't have visual representation
+            if (char === '\n' || char === '\r' || char === '\t') {
+                continue;
+            }
+            
             const charPosition = vec3.fromValues(currentX, baseY, baseZ);
             
             const cachedGlyph = this.getCachedGlyph(char);
@@ -1153,6 +1167,209 @@ export class Font {
     }
 
 
+
+    /**
+     * Measure text dimensions without creating a mesh
+     * Handles newlines by measuring as multiline text
+     * @param text Text to measure
+     * @returns Object with width, height, and line count information
+     */
+    measureText(text: string): { width: number; height: number; lineHeight: number } {
+        if (!text || text.length === 0) {
+            return { width: 0, height: this.fontSize, lineHeight: this.fontSize };
+        }
+
+        // If text contains newlines, measure as multiline
+        if (text.includes('\n')) {
+            const lines = text.split('\n');
+            let maxWidth = 0;
+            
+            for (const line of lines) {
+                if (line.trim() === '') continue; // Skip empty lines for width calculation
+                
+                let lineWidth = 0;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    // Skip control characters
+                    if (char === '\r' || char === '\t') continue;
+                    
+                    const cachedGlyph = this.getCachedGlyph(char);
+                    lineWidth += this.fontUnitsToWorld(cachedGlyph.advanceWidth);
+                }
+                maxWidth = Math.max(maxWidth, lineWidth);
+            }
+            
+            return {
+                width: maxWidth,
+                height: Math.max(1, lines.length) * this.fontSize * 1.2, // Ensure at least one line height
+                lineHeight: this.fontSize
+            };
+        }
+
+        // Single line measurement
+        let totalWidth = 0;
+        
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            // Skip control characters
+            if (char === '\n' || char === '\r' || char === '\t') continue;
+            
+            const cachedGlyph = this.getCachedGlyph(char);
+            totalWidth += this.fontUnitsToWorld(cachedGlyph.advanceWidth);
+        }
+
+        return {
+            width: totalWidth,
+            height: this.fontSize,
+            lineHeight: this.fontSize
+        };
+    }
+
+    /**
+     * Wrap text to fit within a specified width, breaking at spaces
+     * Preserves explicit line breaks (\n) in the input text
+     * @param text Text to wrap
+     * @param maxWidth Maximum width in world units
+     * @returns Array of text lines that fit within maxWidth
+     */
+    wrapText(text: string, maxWidth: number): string[] {
+        if (!text || text.length === 0) {
+            return [];
+        }
+
+        const lines: string[] = [];
+        
+        // First split by explicit newlines
+        const paragraphs = text.split('\n');
+        
+        for (const paragraph of paragraphs) {
+            if (paragraph.trim() === '') {
+                // Empty line - preserve it
+                lines.push('');
+                continue;
+            }
+            
+            // Wrap each paragraph
+            const words = paragraph.split(' ');
+            let currentLine = '';
+
+            for (const word of words) {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                const { width } = this.measureText(testLine);
+
+                if (width <= maxWidth) {
+                    currentLine = testLine;
+                } else {
+                    if (currentLine) {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        // Single word exceeds max width - force break
+                        lines.push(word);
+                    }
+                }
+            }
+
+            if (currentLine) {
+                lines.push(currentLine);
+            }
+        }
+
+        return lines.length > 0 ? lines : [''];
+    }
+
+    /**
+     * Generate multi-line text mesh with proper line spacing
+     * @param lines Array of text lines
+     * @param position Starting position (top-left corner)
+     * @param color Text color
+     * @param lineSpacing Multiplier for line height spacing (default 1.2)
+     * @param topLeftAnchor If true, position is treated as top-left corner; if false, bottom-left (default false for backward compatibility)
+     * @returns TextMesh for all lines combined
+     */
+    generateMultilineText(lines: string[], position: vec3, color: vec3, lineSpacing: number = 1.2, topLeftAnchor: boolean = false): TextMesh {
+        if (lines.length === 0) {
+            return {
+                vertices: new Float32Array([]),
+                indices: new Uint32Array([]),
+                bounds: {
+                    min: vec3.clone(position),
+                    max: vec3.clone(position)
+                },
+                advanceWidth: 0
+            };
+        }
+
+        const allVertices: number[] = [];
+        const allIndices: number[] = [];
+        let vertexOffset = 0;
+        let maxWidth = 0;
+        
+        const bounds = {
+            min: vec3.fromValues(Infinity, Infinity, Infinity),
+            max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
+        };
+
+        const lineHeight = this.fontSize * lineSpacing;
+
+        // Calculate starting Y position based on anchor type
+        let startY: number;
+        if (topLeftAnchor) {
+            // For top-left anchor, start from the top and move down
+            // The first line should be positioned one line height below the anchor point
+            startY = position[1] - this.fontSize; // Start first line one font size down from top
+        } else {
+            // For bottom-left anchor (default), start from bottom and move up
+            startY = position[1];
+        }
+
+        // Process each line
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            const line = lines[lineIndex];
+            let lineY: number;
+            
+            if (topLeftAnchor) {
+                // For top-left anchor, move down for each line
+                lineY = startY - (lineIndex * lineHeight);
+            } else {
+                // For bottom-left anchor, move up for each line (original behavior)
+                lineY = startY + ((lines.length - 1 - lineIndex) * lineHeight);
+            }
+            
+            const linePosition = vec3.fromValues(
+                position[0],
+                lineY,
+                position[2]
+            );
+
+            const lineMesh = this.generateText(line, linePosition, color);
+            
+            // Add vertices
+            for (let j = 0; j < lineMesh.vertices.length; j++) {
+                allVertices.push(lineMesh.vertices[j]);
+            }
+            
+            // Add indices with offset
+            for (let j = 0; j < lineMesh.indices.length; j++) {
+                allIndices.push(lineMesh.indices[j] + vertexOffset);
+            }
+            
+            vertexOffset += lineMesh.vertices.length / 3;
+            
+            // Update bounds
+            this.updateBounds(bounds, lineMesh.bounds);
+            
+            // Track maximum width
+            maxWidth = Math.max(maxWidth, lineMesh.advanceWidth);
+        }
+
+        return {
+            vertices: new Float32Array(allVertices),
+            indices: new Uint32Array(allIndices),
+            bounds,
+            advanceWidth: maxWidth
+        };
+    }
 
     /**
      * Get cache statistics
