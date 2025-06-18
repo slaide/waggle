@@ -14,6 +14,21 @@ PROJROOTDIR=Path(__file__).resolve().parent
 
 app = FastAPI()
 
+def run_bash_command(command: str, cwd: Path | None = None, check: bool = True):
+    """
+    Execute a command through bash -c with source ~/.bashrc.
+    
+    Args:
+        command: The command to execute
+        cwd: Working directory (defaults to PROJROOTDIR)
+        check: Whether to raise exception on non-zero exit code
+    """
+    if cwd is None:
+        cwd = PROJROOTDIR
+    
+    full_command = f"source ~/.bashrc && {command}"
+    return subprocess.run(['bash', '-c', full_command], cwd=cwd, check=check)
+
 @app.get("/repo_url")
 def get_repo_url():
     repo = git.Repo(PROJROOTDIR)
@@ -39,12 +54,12 @@ def get_repo_url():
 def update_server(request:Request):
     try:
         # pull
-        subprocess.run(['git', 'pull'], cwd=PROJROOTDIR, check=True)
+        run_bash_command('git pull')
 
         # manually execute post-merge commands to keep them tracked in the repo
-        subprocess.run(['bash', '-c', f'source ~/.bashrc && bash {PROJROOTDIR}/server/build.sh'], cwd=PROJROOTDIR, check=True)
-        subprocess.run(['touch', '/var/www/padraig_eu_pythonanywhere_com_wsgi.py'], check=True)
-        subprocess.run(['bash', f'{PROJROOTDIR}/server/reload.sh'], check=True)
+        run_bash_command(f'bash {PROJROOTDIR}/server/build.sh')
+        run_bash_command('touch /var/www/padraig_eu_pythonanywhere_com_wsgi.py')
+        run_bash_command(f'bash {PROJROOTDIR}/server/reload.sh')
 
         return "Updated successfully", 200
     
