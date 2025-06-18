@@ -36,25 +36,17 @@ import { vec3 } from "gl-matrix";
 import { Model } from "./model";
 import { Transform } from "./transform";
 import { GL, GLC } from "../gl";
-import { TextMesh, FilledTextMesh, Font, FontOptions } from "../text";
+import { TextMesh, FilledTextMesh, Font } from "../text";
 import { MtlMaterial } from "../bits/obj";
 
 /**
  * Text rendering configuration for Model generation
  */
 export interface TextRenderConfig {
-    /** Font size in world units */
-    fontSize: number;
-    /** Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0 */
-    lineWidth: number;
     /** RGB color for text (both wireframe lines and filled triangles) */
     color: vec3;
     /** Position where text should start (lower-left corner of first character) */
     position: vec3;
-    /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
-    splineSteps: number;
-    /** Whether to generate filled triangulated mesh (true) or wireframe outline (false) */
-    filled: boolean;
 }
 
 /**
@@ -72,42 +64,32 @@ export class TextRenderer {
 
     /**
      * Create a TextRenderer instance from a font file
-     * @param fontPath - Path to TTF font file
+     * @param fontPath - Path to TTF font file  
+     * @param smoothness - Number of interpolation steps per curve segment (0 = no interpolation)
+     * @param filled - Whether to generate filled triangulated mesh (true) or wireframe outline (false)
+     * @param fontSize - Font size in world units
+     * @param lineWidth - Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0
      * @returns Promise<TextRenderer>
      */
-    static async fromFile(fontPath: string): Promise<TextRenderer> {
-        // Create a minimal FontOptions just for font loading (actual rendering options are specified later)
-        const loadingOptions: FontOptions = {
-            fontSize: 1.0,  // Will be overridden during rendering
-            lineWidth: 1.0, // Will be overridden during rendering  
-            color: vec3.fromValues(1.0, 1.0, 1.0), // Will be overridden during rendering
-            splineSteps: 0, // Will be overridden during rendering
-            filled: false // Will be overridden during rendering
-        };
-        
-        const font = await Font.fromFile(fontPath, loadingOptions);
+    static async fromFile(
+        fontPath: string, 
+        smoothness: number = 0, 
+        filled: boolean = false,
+        fontSize: number = 1.0,
+        lineWidth: number = 1.0
+    ): Promise<TextRenderer> {
+        const font = await Font.fromFile(fontPath, smoothness, filled, fontSize, lineWidth);
         return new TextRenderer(font, fontPath);
     }
 
     /**
      * Generate a text mesh with explicit configuration
      * @param text - Text string to render
-     * @param config - Complete rendering configuration (no defaults)
-     * @returns TextMesh or FilledTextMesh based on config.filled
+     * @param config - Complete rendering configuration (only color and position)
+     * @returns TextMesh or FilledTextMesh based on font configuration
      */
     generateTextMesh(text: string, config: TextRenderConfig): TextMesh | FilledTextMesh {
-        // Update font options with the provided configuration
-        this.font.options.fontSize = config.fontSize;
-        this.font.options.lineWidth = config.lineWidth;
-        this.font.options.color = vec3.clone(config.color);
-        this.font.options.splineSteps = config.splineSteps;
-        this.font.options.filled = config.filled;
-        
-        if (config.filled) {
-            return this.font.generateFilledTextMesh(text, config.position);
-        } else {
-            return this.font.generateTextMesh(text, config.position);
-        }
+        return this.font.generateTextMesh(text, config.position, config.color);
     }
 
     /**
@@ -115,6 +97,27 @@ export class TextRenderer {
      */
     get path(): string {
         return this.fontPath;
+    }
+
+    /**
+     * Get font configuration
+     */
+    get fontConfig() {
+        return this.font.config;
+    }
+
+    /**
+     * Get cache statistics
+     */
+    getCacheStats() {
+        return this.font.getCacheStats();
+    }
+
+    /**
+     * Clear glyph cache
+     */
+    clearCache() {
+        this.font.clearCache();
     }
 }
 
@@ -124,13 +127,17 @@ export class TextRenderer {
  * @param textMesh - Text mesh data (wireframe or filled)
  * @param config - Rendering configuration
  * @param text - Text string (for naming purposes)
+ * @param filled - Whether the mesh is filled (triangles) or wireframe (lines)
+ * @param lineWidth - Line width for wireframe rendering
  * @returns Promise<Model> - A Model configured for text rendering
  */
 export async function createTextModel(
     gl: GLC,
     textMesh: TextMesh | FilledTextMesh,
     config: TextRenderConfig,
-    text: string
+    text: string,
+    filled: boolean,
+    lineWidth: number = 1.0
 ): Promise<Model> {
     // Convert text mesh vertices to Model format (8 components per vertex)
     const vertexData: number[] = [];
@@ -154,7 +161,7 @@ export async function createTextModel(
     textMaterial.specularExponent = 1;
     
     // For filled text, ensure proper material properties
-    if (config.filled) {
+    if (filled) {
         textMaterial.ambient = vec3.fromValues(0.1, 0.1, 0.1); // Small ambient component
         textMaterial.specular = vec3.fromValues(0.2, 0.2, 0.2); // Small specular component
     }
@@ -185,7 +192,7 @@ export async function createTextModel(
     transform.position = vec3.fromValues(0, 0, 0);
     
     // Calculate number of primitives based on mesh type
-    const primitiveCount = config.filled 
+    const primitiveCount = filled 
         ? textMesh.indices.length / 3  // Triangles
         : textMesh.indices.length / 2; // Lines
     
@@ -199,7 +206,7 @@ export async function createTextModel(
         textMaterial,
         true,  // enabled
         true,  // visible
-        `Text ${config.filled ? '(filled)' : '(wireframe)'}: ${text}`
+        `Text ${filled ? '(filled)' : '(wireframe)'}: ${text}`
     );
     
     // Set forward rendering properties
@@ -208,11 +215,8 @@ export async function createTextModel(
     textModel.forwardShaderPaths = shaderPaths;
     
     // Set rendering mode and properties based on mesh type
-    if (config.filled) {
+    if (filled) {
         textModel.drawMode = "triangles";
-        console.log(`🔺 Filled text model: ${primitiveCount} triangles, ${numVertices} vertices`);
-        console.log(`   Material diffuse: [${textMaterial.diffuse[0].toFixed(2)}, ${textMaterial.diffuse[1].toFixed(2)}, ${textMaterial.diffuse[2].toFixed(2)}]`);
-        console.log(`   Shader paths:`, shaderPaths);
         
         // Disable face culling for text to ensure triangles are visible from both sides
         // This is important because our fan triangulation might not have consistent winding
@@ -221,9 +225,8 @@ export async function createTextModel(
         // For filled rendering, use the material's diffuse color
     } else {
         textModel.drawMode = "lines";
-        textModel.lineWidth = config.lineWidth;
+        textModel.lineWidth = lineWidth;
         textModel.lineColor = vec3.clone(config.color);
-        console.log(`📏 Wireframe text model: ${primitiveCount} lines, ${numVertices} vertices`);
     }
     
     // Store indices for line drawing (Model class needs this)
@@ -234,24 +237,6 @@ export async function createTextModel(
     textModel.rawIndices = Array.from(textMesh.indices);
     
     return textModel;
-}
-
-/**
- * Convenience function to create a text Model with explicit parameters
- * @param gl - WebGL context
- * @param textRenderer - Pre-loaded text renderer
- * @param text - Text string to render
- * @param config - Complete rendering configuration (no defaults)
- * @returns Promise<Model> - A Model configured for text rendering (wireframe or filled based on config.filled)
- */
-export async function createTextModelFromRenderer(
-    gl: GLC,
-    textRenderer: TextRenderer,
-    text: string,
-    config: TextRenderConfig
-): Promise<Model> {
-    const textMesh = textRenderer.generateTextMesh(text, config);
-    return createTextModel(gl, textMesh, config, text);
 }
 
  

@@ -3,20 +3,22 @@
  * 
  * This module provides a text rendering system with smooth contour generation and triangulation:
  * 
- * ### FontOptions
- * Configuration for font rendering:
+ * ### Font Configuration (Set at Construction)
+ * - `smoothness`: Number of interpolation steps per curve segment (0 = no interpolation, just control points)
+ * - `filled`: Whether to generate filled triangulated mesh (true) or wireframe outline (false)
  * - `fontSize`: Font size in world units
  * - `lineWidth`: Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0
- * - `color`: RGB color for text (both wireframe lines and filled triangles) (vec3)
- * - `splineSteps`: Number of interpolation steps per curve segment (default: 0 = no interpolation, just control points)
  * 
  * ### Font Class
  * Main class for text rendering:
- * - `Font.fromFile(fontPath, options)`: Create font from TTF file
- * - `font.generateCharacterMesh(char, position)`: Generate single character wireframe
- * - `font.generateTextMesh(text, position)`: Generate multi-character text wireframe
- * - `font.generateFilledCharacterMesh(char, position)`: Generate single character filled mesh
- * - `font.generateFilledTextMesh(text, position)`: Generate multi-character filled text mesh
+ * - `Font.fromFile(fontPath, smoothness, filled, fontSize, lineWidth)`: Create font from TTF file
+ * - `font.generateCharacterMesh(char, position, color)`: Generate single character mesh (cached)
+ * - `font.generateTextMesh(text, position, color)`: Generate multi-character text mesh
+ * 
+ * ### Font Configuration
+ * - **Smoothness**, **filled mode**, **fontSize**, and **lineWidth** are configured at Font construction time
+ * - **Color** is the only option specified per text generation
+ * - Glyph meshes are cached per character to avoid regeneration
  * 
  * ### Triangulation Algorithm Roadmap
  * 🔷 Step-by-Step Hole Bridging + Ear Clipping Implementation:
@@ -47,16 +49,11 @@
  * 
  * ### Usage Example
  * ```typescript
- * const fontOptions: FontOptions = {
- *     fontSize: 1.0,
- *     lineWidth: 3.0,
- *     color: vec3.fromValues(1.0, 0.0, 0.0), // Red
- *     splineSteps: 8 // 8 steps per curve segment for smooth outlines
- * };
+ * // Create font with built-in configuration
+ * const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 8, true, 1.0, 1.0);
  * 
- * const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', fontOptions);
- * const wireframeMesh = font.generateTextMesh('ABC', vec3.fromValues(0, 0, -1));
- * const filledMesh = font.generateFilledTextMesh('ABC', vec3.fromValues(0, 0, -1));
+ * // Generate text with only color specification
+ * const textMesh = font.generateTextMesh('ABC', vec3.fromValues(0, 0, -1), vec3.fromValues(1.0, 0.0, 0.0));
  * ```
  * 
  * ### Position Specification
@@ -130,7 +127,19 @@ export interface Polygon2D {
 }
 
 /**
- * Font rendering options
+ * Text rendering options (deprecated - kept for backward compatibility)
+ */
+export interface TextRenderOptions {
+    /** Font size in world units */
+    fontSize: number;
+    /** Line width for wireframe rendering - NOTE: Most browsers only support 1.0 */
+    lineWidth: number;
+    /** RGB color for text (both wireframe lines and filled triangles) */
+    color: vec3;
+}
+
+/**
+ * Font rendering options (deprecated - kept for backward compatibility)
  */
 export interface FontOptions {
     /** Font size in world units */
@@ -140,9 +149,27 @@ export interface FontOptions {
     /** RGB color for text (both wireframe lines and filled triangles) */
     color: vec3;
     /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
-    splineSteps: number;
+    splineSteps?: number;
     /** Whether to generate filled triangulated mesh (true) or wireframe outline (false) */
     filled?: boolean;
+}
+
+/**
+ * Internal cached glyph data
+ */
+interface CachedGlyph {
+    /** Wireframe mesh vertices in font units */
+    wireframeVertices: [number, number][];
+    /** Wireframe indices (line pairs) */
+    wireframeIndices: number[];
+    /** Filled mesh vertices in font units (null if font is not filled) */
+    filledVertices?: [number, number][];
+    /** Filled mesh indices (triangles) (null if font is not filled) */
+    filledIndices?: number[];
+    /** Advance width in font units */
+    advanceWidth: number;
+    /** Bounding box in font units */
+    bounds: { min: [number, number], max: [number, number] };
 }
 
 /**
@@ -825,16 +852,23 @@ class PolygonTriangulator {
 }
 
 /**
- * Font class for text rendering
+ * Font class for text rendering with caching
  */
 export class Font {
     private ttfFont: TTFFont;
     private unitsPerEm: number;
-    public options: FontOptions;
+    private smoothness: number;
+    private filled: boolean;
+    private fontSize: number;
+    private lineWidth: number;
+    private glyphCache: Map<string, CachedGlyph> = new Map();
 
-    constructor(ttfFont: TTFFont, options: FontOptions) {
+    constructor(ttfFont: TTFFont, smoothness: number, filled: boolean, fontSize: number, lineWidth: number) {
         this.ttfFont = ttfFont;
-        this.options = { ...options }; // Clone options
+        this.smoothness = smoothness;
+        this.filled = filled;
+        this.fontSize = fontSize;
+        this.lineWidth = lineWidth;
         
         // Get font metrics
         const headTable = parseHeadTable(ttfFont);
@@ -847,92 +881,130 @@ export class Font {
     /**
      * Create a Font instance from a font file
      */
-    static async fromFile(fontPath: string, options: FontOptions): Promise<Font> {
+    static async fromFile(
+        fontPath: string, 
+        smoothness: number = 0, 
+        filled: boolean = false, 
+        fontSize: number = 1.0, 
+        lineWidth: number = 1.0
+    ): Promise<Font> {
         const ttfFont = await parseTTF(fontPath);
-        return new Font(ttfFont, options);
+        return new Font(ttfFont, smoothness, filled, fontSize, lineWidth);
+    }
+
+    /**
+     * Get font configuration
+     */
+    get config() {
+        return {
+            smoothness: this.smoothness,
+            filled: this.filled,
+            fontSize: this.fontSize,
+            lineWidth: this.lineWidth
+        };
     }
 
     /**
      * Convert font units to world units
      */
     private fontUnitsToWorld(fontUnits: number): number {
-        return (fontUnits / this.unitsPerEm) * this.options.fontSize;
+        return (fontUnits / this.unitsPerEm) * this.fontSize;
     }
 
     /**
-     * Get the advance width for a character in world units
+     * Get or generate cached glyph data
      */
-    private getCharacterAdvanceWidth(character: string): number {
+    private getCachedGlyph(character: string): CachedGlyph {
+        // Check cache first
+        if (this.glyphCache.has(character)) {
+            return this.glyphCache.get(character)!;
+        }
+
         // Handle space character specially
         if (character === ' ') {
-            // For space, use a typical space width (roughly 1/4 of font size)
-            return this.options.fontSize * 0.25;
+            const spaceGlyph: CachedGlyph = {
+                wireframeVertices: [],
+                wireframeIndices: [],
+                filledVertices: this.filled ? [] : undefined,
+                filledIndices: this.filled ? [] : undefined,
+                advanceWidth: this.unitsPerEm * 0.25, // Space width in font units
+                bounds: { min: [0, 0], max: [0, 0] }
+            };
+            this.glyphCache.set(character, spaceGlyph);
+            return spaceGlyph;
         }
 
         // Get character code and glyph ID
         const charCode = character.charCodeAt(0);
         const glyphId = getGlyphId(this.ttfFont, charCode);
         if (glyphId === 0) {
-            // Character not found, use default spacing
-            return this.options.fontSize * 0.5;
-        }
-        
-        // Parse glyph outline to get advance width
-        const outline = parseGlyphOutline(this.ttfFont, glyphId);
-        if (!outline) {
-            // Could not parse outline, use default spacing
-            return this.options.fontSize * 0.5;
-        }
-
-        // Convert font units to world units
-        return this.fontUnitsToWorld(outline.advanceWidth);
-    }
-
-    /**
-     * Generate a mesh for a single character
-     */
-    generateCharacterMesh(character: string, position: vec3): TextMesh | null {
-        // Get advance width for this character
-        const advanceWidth = this.getCharacterAdvanceWidth(character);
-
-        // Handle space character specially - it has no visible geometry
-        if (character === ' ') {
-            return this.createEmptyMesh(position, advanceWidth);
-        }
-
-        // Get character code and glyph ID
-        const charCode = character.charCodeAt(0);
-        const glyphId = getGlyphId(this.ttfFont, charCode);
-        if (glyphId === 0) {
-            console.warn(`Character '${character}' not found in font`);
-            return null;
+            // Character not found, create empty glyph
+            const emptyGlyph: CachedGlyph = {
+                wireframeVertices: [],
+                wireframeIndices: [],
+                filledVertices: this.filled ? [] : undefined,
+                filledIndices: this.filled ? [] : undefined,
+                advanceWidth: this.unitsPerEm * 0.5, // Default width
+                bounds: { min: [0, 0], max: [0, 0] }
+            };
+            this.glyphCache.set(character, emptyGlyph);
+            return emptyGlyph;
         }
         
         // Parse glyph outline
         const outline = parseGlyphOutline(this.ttfFont, glyphId);
         if (!outline) {
-            console.warn(`Could not parse outline for character '${character}'`);
-            return null;
+            // Could not parse outline, create empty glyph
+            const emptyGlyph: CachedGlyph = {
+                wireframeVertices: [],
+                wireframeIndices: [],
+                filledVertices: this.filled ? [] : undefined,
+                filledIndices: this.filled ? [] : undefined,
+                advanceWidth: this.unitsPerEm * 0.5, // Default width
+                bounds: { min: [0, 0], max: [0, 0] }
+            };
+            this.glyphCache.set(character, emptyGlyph);
+            return emptyGlyph;
         }
 
-        // Generate wireframe mesh from outline
-        const vertices: number[] = [];
-        const indices: number[] = [];
+        // Generate glyph mesh data
+        const cachedGlyph = this.generateGlyphData(outline);
+        
+        // Cache the result
+        this.glyphCache.set(character, cachedGlyph);
+        
+        return cachedGlyph;
+    }
+
+    /**
+     * Generate glyph data from outline
+     */
+    private generateGlyphData(outline: GlyphOutline): CachedGlyph {
+        const wireframeVertices: [number, number][] = [];
+        const wireframeIndices: number[] = [];
         let vertexIndex = 0;
         
-        const bounds = this.createBounds();
+        // Calculate bounds
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
 
+        // Generate wireframe mesh
         for (const contour of outline.contours) {
             const contourStartIndex = vertexIndex;
             
             // Generate smooth contour points
-            const smoothPoints = CurveGenerator.generateSmoothContour(contour, this.options.splineSteps);
+            const smoothPoints = CurveGenerator.generateSmoothContour(contour, this.smoothness);
             
             // Add all points as vertices
             for (const [pointX, pointY] of smoothPoints) {
-                const [finalX, finalY, finalZ] = this.transformPoint(pointX, pointY, position);
-                vertices.push(finalX, finalY, finalZ);
-                this.updateBoundsWithPoint(bounds, finalX, finalY, finalZ);
+                wireframeVertices.push([pointX, pointY]);
+                
+                // Update bounds
+                minX = Math.min(minX, pointX);
+                minY = Math.min(minY, pointY);
+                maxX = Math.max(maxX, pointX);
+                maxY = Math.max(maxY, pointY);
+                
                 vertexIndex++;
             }
             
@@ -940,22 +1012,122 @@ export class Font {
             for (let i = 0; i < smoothPoints.length; i++) {
                 const currentIndex = contourStartIndex + i;
                 const nextIndex = contourStartIndex + ((i + 1) % smoothPoints.length);
-                indices.push(currentIndex, nextIndex);
+                wireframeIndices.push(currentIndex, nextIndex);
+            }
+        }
+
+        // Generate filled mesh if needed
+        let filledVertices: [number, number][] | undefined;
+        let filledIndices: number[] | undefined;
+        
+        if (this.filled && outline.contours.length > 0) {
+            // Convert contours to 2D polygons for triangulation
+            const contourPolygons: [number, number][][] = [];
+            
+            for (const contour of outline.contours) {
+                const smoothPoints = CurveGenerator.generateSmoothContour(contour, this.smoothness);
+                if (smoothPoints.length >= 3) {
+                    contourPolygons.push(smoothPoints);
+                }
+            }
+
+            if (contourPolygons.length > 0) {
+                let triangles: Array<[[number, number], [number, number], [number, number]]>;
+
+                // Simple case: single contour
+                if (contourPolygons.length === 1) {
+                    triangles = PolygonTriangulator.triangulate(contourPolygons[0]);
+                } else {
+                    // Multiple contours - use containment analysis for proper classification
+                    const { outerContours, holes } = PolygonTriangulator.classifyContours(contourPolygons);
+
+                    if (outerContours.length > 0) {
+                        // Handle multiple outer contours (like 'i' with dot and stem)
+                        if (outerContours.length > 1) {
+                            // Triangulate each outer contour separately with its associated holes
+                            triangles = [];
+                            
+                            for (const outerContour of outerContours) {
+                                // Find holes that belong to this outer contour
+                                const associatedHoles = holes
+                                    .filter(hole => hole.parentIndex === outerContour.index)
+                                    .map(hole => hole.polygon);
+                                
+                                // Triangulate this outer contour with its holes
+                                const contourTriangles = associatedHoles.length > 0 
+                                    ? PolygonTriangulator.triangulateWithHoles(outerContour.polygon, associatedHoles)
+                                    : PolygonTriangulator.triangulate(outerContour.polygon);
+                                
+                                triangles.push(...contourTriangles);
+                            }
+                        } else {
+                            // Single outer contour with holes (like 'd', 'o')
+                            const mainOuter = outerContours[0];
+                            const allHoles = holes.map(hole => hole.polygon);
+                            
+                            // Use proper hole bridging triangulation
+                            triangles = PolygonTriangulator.triangulateWithHoles(mainOuter.polygon, allHoles);
+                        }
+                    } else {
+                        triangles = [];
+                    }
+                }
+
+                // Convert triangles to vertex/index data
+                if (triangles.length > 0) {
+                    filledVertices = [];
+                    filledIndices = [];
+                    const vertexMap = new Map<string, number>();
+                    let filledVertexIndex = 0;
+
+                    for (const [a, b, c] of triangles) {
+                        for (const point of [a, b, c]) {
+                            const key = `${point[0]},${point[1]}`;
+                            let index = vertexMap.get(key);
+                            
+                            if (index === undefined) {
+                                filledVertices.push([point[0], point[1]]);
+                                index = filledVertexIndex++;
+                                vertexMap.set(key, index);
+                            }
+                            
+                            filledIndices.push(index);
+                        }
+                    }
+                }
             }
         }
 
         return {
-            vertices: new Float32Array(vertices),
-            indices: new Uint32Array(indices),
-            bounds,
-            advanceWidth
+            wireframeVertices,
+            wireframeIndices,
+            filledVertices,
+            filledIndices,
+            advanceWidth: outline.advanceWidth,
+            bounds: { 
+                min: [isFinite(minX) ? minX : 0, isFinite(minY) ? minY : 0], 
+                max: [isFinite(maxX) ? maxX : 0, isFinite(maxY) ? maxY : 0] 
+            }
         };
     }
 
     /**
-     * Generate a mesh for a text string
+     * Generate a mesh for a single character using cached data
      */
-    generateTextMesh(text: string, position: vec3): TextMesh {
+    generateCharacterMesh(character: string, position: vec3, color: vec3): TextMesh | FilledTextMesh {
+        const cachedGlyph = this.getCachedGlyph(character);
+        
+        if (this.filled) {
+            return this.createFilledMeshFromCache(cachedGlyph, position, color);
+        } else {
+            return this.createWireframeMeshFromCache(cachedGlyph, position, color);
+        }
+    }
+
+    /**
+     * Generate a mesh for a text string using cached glyph data
+     */
+    generateTextMesh(text: string, position: vec3, color: vec3): TextMesh | FilledTextMesh {
         const allVertices: number[] = [];
         const allIndices: number[] = [];
         let vertexOffset = 0;
@@ -975,223 +1147,141 @@ export class Font {
             const char = text[i];
             const charPosition = vec3.fromValues(currentX, baseY, baseZ);
             
-            const charMesh = this.generateCharacterMesh(char, charPosition);
-            if (charMesh) {
-                // Add vertices
-                for (let j = 0; j < charMesh.vertices.length; j++) {
-                    allVertices.push(charMesh.vertices[j]);
-                }
-                
-                // Add indices with offset
-                for (let j = 0; j < charMesh.indices.length; j++) {
-                    allIndices.push(charMesh.indices[j] + vertexOffset);
-                }
-                
-                vertexOffset += charMesh.vertices.length / 3;
-                
-                // Update bounds
-                this.updateBounds(bounds, charMesh.bounds);
-                
-                // Advance position using proper character advance width
-                currentX += charMesh.advanceWidth;
-                totalAdvanceWidth += charMesh.advanceWidth;
-            } else {
-                // If character mesh generation failed, use fallback advance width
-                const fallbackAdvance = this.getCharacterAdvanceWidth(char);
-                currentX += fallbackAdvance;
-                totalAdvanceWidth += fallbackAdvance;
+            const charMesh = this.generateCharacterMesh(char, charPosition, color);
+            
+            // Add vertices
+            for (let j = 0; j < charMesh.vertices.length; j++) {
+                allVertices.push(charMesh.vertices[j]);
             }
+            
+            // Add indices with offset
+            for (let j = 0; j < charMesh.indices.length; j++) {
+                allIndices.push(charMesh.indices[j] + vertexOffset);
+            }
+            
+            vertexOffset += charMesh.vertices.length / 3;
+            
+            // Update bounds
+            this.updateBounds(bounds, charMesh.bounds);
+            
+            // Advance position using proper character advance width
+            currentX += charMesh.advanceWidth;
+            totalAdvanceWidth += charMesh.advanceWidth;
+        }
+
+        if (this.filled) {
+            return {
+                vertices: new Float32Array(allVertices),
+                indices: new Uint32Array(allIndices),
+                bounds,
+                advanceWidth: totalAdvanceWidth
+            } as FilledTextMesh;
+        } else {
+            return {
+                vertices: new Float32Array(allVertices),
+                indices: new Uint32Array(allIndices),
+                bounds,
+                advanceWidth: totalAdvanceWidth
+            } as TextMesh;
+        }
+    }
+
+    /**
+     * Create wireframe mesh from cached glyph data
+     */
+    private createWireframeMeshFromCache(cachedGlyph: CachedGlyph, position: vec3, color: vec3): TextMesh {
+        const vertices: number[] = [];
+        const bounds = this.createBounds();
+
+        // Transform vertices to world coordinates
+        for (const [x, y] of cachedGlyph.wireframeVertices) {
+            const [finalX, finalY, finalZ] = this.transformPoint(x, y, position);
+            vertices.push(finalX, finalY, finalZ);
+            this.updateBoundsWithPoint(bounds, finalX, finalY, finalZ);
         }
 
         return {
-            vertices: new Float32Array(allVertices),
-            indices: new Uint32Array(allIndices),
+            vertices: new Float32Array(vertices),
+            indices: new Uint32Array(cachedGlyph.wireframeIndices),
             bounds,
-            advanceWidth: totalAdvanceWidth
+            advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth)
         };
     }
 
     /**
-     * Generate a filled mesh for a single character using triangulation
+     * Create filled mesh from cached glyph data
+     */
+    private createFilledMeshFromCache(cachedGlyph: CachedGlyph, position: vec3, color: vec3): FilledTextMesh {
+        if (!cachedGlyph.filledVertices || !cachedGlyph.filledIndices) {
+            // No filled data available, return empty mesh
+            return {
+                vertices: new Float32Array([]),
+                indices: new Uint32Array([]),
+                bounds: {
+                    min: vec3.fromValues(position[0], position[1], position[2]),
+                    max: vec3.fromValues(position[0], position[1], position[2])
+                },
+                advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth)
+            };
+        }
+
+        const vertices: number[] = [];
+        const bounds = this.createBounds();
+
+        // Transform vertices to world coordinates
+        for (const [x, y] of cachedGlyph.filledVertices) {
+            const [finalX, finalY, finalZ] = this.transformPoint(x, y, position);
+            vertices.push(finalX, finalY, finalZ);
+            this.updateBoundsWithPoint(bounds, finalX, finalY, finalZ);
+        }
+
+        return {
+            vertices: new Float32Array(vertices),
+            indices: new Uint32Array(cachedGlyph.filledIndices),
+            bounds,
+            advanceWidth: this.fontUnitsToWorld(cachedGlyph.advanceWidth)
+        };
+    }
+
+    /**
+     * Legacy methods for backward compatibility
      */
     generateFilledCharacterMesh(character: string, position: vec3): FilledTextMesh | null {
-        // Get advance width for this character
-        const advanceWidth = this.getCharacterAdvanceWidth(character);
-
-        // Handle space character specially - it has no visible geometry
-        if (character === ' ') {
-            return this.createEmptyFilledMesh(position, advanceWidth);
-        }
-
-        // Get character code and glyph ID
-        const charCode = character.charCodeAt(0);
-        const glyphId = getGlyphId(this.ttfFont, charCode);
-        if (glyphId === 0) {
+        if (!this.filled) {
+            console.warn('generateFilledCharacterMesh called on non-filled font. Use filled=true in constructor.');
             return null;
         }
         
-        // Parse glyph outline
-        const outline = parseGlyphOutline(this.ttfFont, glyphId);
-        if (!outline) {
-            return null;
-        }
+        // Use white color for legacy calls
+        const defaultColor = vec3.fromValues(1.0, 1.0, 1.0);
+        return this.generateCharacterMesh(character, position, defaultColor) as FilledTextMesh;
+    }
 
-        if (outline.contours.length === 0) {
-            return this.createEmptyFilledMesh(position, advanceWidth);
+    generateFilledTextMesh(text: string, position: vec3): FilledTextMesh {
+        if (!this.filled) {
+            console.warn('generateFilledTextMesh called on non-filled font. Use filled=true in constructor.');
         }
-
-        // Convert contours to 2D polygons for triangulation
-        const contourPolygons: [number, number][][] = [];
         
-        for (const contour of outline.contours) {
-            const smoothPoints = CurveGenerator.generateSmoothContour(contour, this.options.splineSteps);
-            if (smoothPoints.length >= 3) {
-                contourPolygons.push(smoothPoints);
-            }
-        }
+        // Use white color for legacy calls
+        const defaultColor = vec3.fromValues(1.0, 1.0, 1.0);
+        return this.generateTextMesh(text, position, defaultColor) as FilledTextMesh;
+    }
 
-        if (contourPolygons.length === 0) {
-            return this.createEmptyFilledMesh(position, advanceWidth);
-        }
-
-        let triangles: Array<[[number, number], [number, number], [number, number]]>;
-
-        // Simple case: single contour
-        if (contourPolygons.length === 1) {
-            triangles = PolygonTriangulator.triangulate(contourPolygons[0]);
-        } else {
-            // Multiple contours - use containment analysis for proper classification
-            const { outerContours, holes } = PolygonTriangulator.classifyContours(contourPolygons);
-
-            if (outerContours.length === 0) {
-                return this.createEmptyFilledMesh(position, advanceWidth);
-            }
-
-            // Handle multiple outer contours (like 'i' with dot and stem)
-            if (outerContours.length > 1) {
-                // Triangulate each outer contour separately with its associated holes
-                triangles = [];
-                
-                for (const outerContour of outerContours) {
-                    // Find holes that belong to this outer contour
-                    const associatedHoles = holes
-                        .filter(hole => hole.parentIndex === outerContour.index)
-                        .map(hole => hole.polygon);
-                    
-                    // Triangulate this outer contour with its holes
-                    const contourTriangles = associatedHoles.length > 0 
-                        ? PolygonTriangulator.triangulateWithHoles(outerContour.polygon, associatedHoles)
-                        : PolygonTriangulator.triangulate(outerContour.polygon);
-                    
-                    triangles.push(...contourTriangles);
-                }
-            } else {
-                // Single outer contour with holes (like 'd', 'o')
-                const mainOuter = outerContours[0];
-                const allHoles = holes.map(hole => hole.polygon);
-                
-                // Use proper hole bridging triangulation
-                triangles = PolygonTriangulator.triangulateWithHoles(mainOuter.polygon, allHoles);
-            }
-        }
-
-        if (triangles.length === 0) {
-            return this.createEmptyFilledMesh(position, advanceWidth);
-        }
-
-        // Print triangle count for this character
-        console.log(`Character '${character}': ${triangles.length} triangles`);
-
-        // Convert triangles to mesh data
-        const vertices: number[] = [];
-        const indices: number[] = [];
-        const bounds = this.createBounds();
-        
-        let vertexIndex = 0;
-        const vertexMap = new Map<string, number>();
-
-        for (const [a, b, c] of triangles) {
-            for (const point of [a, b, c]) {
-                const key = `${point[0]},${point[1]}`;
-                let index = vertexMap.get(key);
-                
-                if (index === undefined) {
-                    const [finalX, finalY, finalZ] = this.transformPoint(point[0], point[1], position);
-                    vertices.push(finalX, finalY, finalZ);
-                    this.updateBoundsWithPoint(bounds, finalX, finalY, finalZ);
-                    index = vertexIndex++;
-                    vertexMap.set(key, index);
-                }
-                
-                indices.push(index);
-            }
-        }
-
+    /**
+     * Get cache statistics
+     */
+    getCacheStats() {
         return {
-            vertices: new Float32Array(vertices),
-            indices: new Uint32Array(indices),
-            bounds,
-            advanceWidth
+            cachedGlyphs: this.glyphCache.size,
+            glyphs: Array.from(this.glyphCache.keys())
         };
     }
 
     /**
-     * Generate a filled mesh for a text string using triangulation
+     * Clear glyph cache
      */
-    generateFilledTextMesh(text: string, position: vec3): FilledTextMesh {
-        const allVertices: number[] = [];
-        const allIndices: number[] = [];
-        let vertexOffset = 0;
-        
-        const bounds = {
-            min: vec3.fromValues(Infinity, Infinity, Infinity),
-            max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
-        };
-
-        let currentX = position[0];
-        const baseY = position[1];
-        const baseZ = position[2];
-        let totalAdvanceWidth = 0;
-
-        // Process each character
-        for (let i = 0; i < text.length; i++) {
-            const char = text[i];
-            const charPosition = vec3.fromValues(currentX, baseY, baseZ);
-            
-            const charMesh = this.generateFilledCharacterMesh(char, charPosition);
-            if (charMesh) {
-                // Add vertices
-                for (let j = 0; j < charMesh.vertices.length; j++) {
-                    allVertices.push(charMesh.vertices[j]);
-                }
-                
-                // Add indices with offset
-                for (let j = 0; j < charMesh.indices.length; j++) {
-                    allIndices.push(charMesh.indices[j] + vertexOffset);
-                }
-                
-                vertexOffset += charMesh.vertices.length / 3;
-                
-                // Update bounds
-                this.updateBounds(bounds, charMesh.bounds);
-                
-                // Advance position using proper character advance width
-                currentX += charMesh.advanceWidth;
-                totalAdvanceWidth += charMesh.advanceWidth;
-            } else {
-                // If character mesh generation failed, use fallback advance width
-                const fallbackAdvance = this.getCharacterAdvanceWidth(char);
-                currentX += fallbackAdvance;
-                totalAdvanceWidth += fallbackAdvance;
-            }
-        }
-
-        return {
-            vertices: new Float32Array(allVertices),
-            indices: new Uint32Array(allIndices),
-            bounds,
-            advanceWidth: totalAdvanceWidth
-        };
+    clearCache() {
+        this.glyphCache.clear();
     }
 
     /**
@@ -1297,11 +1387,18 @@ export async function createTextMesh(
     position: vec3
 ): Promise<TextMesh | null> {
     try {
-        const font = await Font.fromFile(fontPath, fontOptions);
+        const smoothness = fontOptions.splineSteps || 0;
+        const filled = fontOptions.filled || false;
+        const font = await Font.fromFile(fontPath, smoothness, filled, fontOptions.fontSize, fontOptions.lineWidth);
+        const renderOptions: TextRenderOptions = {
+            fontSize: fontOptions.fontSize,
+            lineWidth: fontOptions.lineWidth,
+            color: fontOptions.color
+        };
         if (text.length === 1) {
-            return font.generateCharacterMesh(text, position);
+            return font.generateCharacterMesh(text, position, fontOptions.color) as TextMesh;
         } else {
-            return font.generateTextMesh(text, position);
+            return font.generateTextMesh(text, position, fontOptions.color) as TextMesh;
         }
     } catch (error) {
         console.error(`Failed to create text mesh: ${error}`);
@@ -1329,11 +1426,11 @@ export async function generateTextMesh(
             splineSteps: 0
         };
         
-        const font = new Font(ttfFont, fontOptions);
+        const font = new Font(ttfFont, 0, false, config.fontSize, 1.0);
         if (text.length === 1) {
-            return font.generateCharacterMesh(text, config.position);
+            return font.generateCharacterMesh(text, config.position, vec3.fromValues(1.0, 1.0, 1.0));
         } else {
-            return font.generateTextMesh(text, config.position);
+            return font.generateTextMesh(text, config.position, vec3.fromValues(1.0, 1.0, 1.0));
         }
     } catch (error) {
         console.error(`Failed to generate text mesh: ${error}`);
@@ -1356,7 +1453,9 @@ export async function createFilledTextMesh(
     position: vec3
 ): Promise<FilledTextMesh | null> {
     try {
-        const font = await Font.fromFile(fontPath, fontOptions);
+        const smoothness = fontOptions.splineSteps || 0;
+        const filled = fontOptions.filled || false;
+        const font = await Font.fromFile(fontPath, smoothness, filled, fontOptions.fontSize, fontOptions.lineWidth);
         if (text.length === 1) {
             return font.generateFilledCharacterMesh(text, position);
         } else {
@@ -1388,7 +1487,7 @@ export async function generateFilledTextMesh(
             splineSteps: 0
         };
         
-        const font = new Font(ttfFont, fontOptions);
+        const font = new Font(ttfFont, 0, false, config.fontSize, 1.0);
         if (text.length === 1) {
             return font.generateFilledCharacterMesh(text, config.position);
         } else {

@@ -69,13 +69,17 @@ class UITextManager {
     private async recreateModel(): Promise<void> {
         try {
             // Import the function we need
-            const { createTextModelFromRenderer } = await import("./scene/textmesh");
+            const { createTextModel } = await import("./scene/textmesh");
             
             // Store the old model's transform
             const oldPosition = this.textModel.transform.position;
             
+            // Generate the text mesh first
+            const textMesh = this.textRenderer.generateTextMesh(this.currentText, this.config);
+            
             // Create a completely new text model
-            const newTextModel = await createTextModelFromRenderer(this.gl, this.textRenderer, this.currentText, this.config);
+            const fontConfig = this.textRenderer.fontConfig;
+            const newTextModel = await createTextModel(this.gl, textMesh, this.config, this.currentText, fontConfig.filled, fontConfig.lineWidth);
             
             // Restore the position
             newTextModel.transform.position = oldPosition;
@@ -143,78 +147,117 @@ export async function main() {
     const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
 
-    // Add text to the scene (3D world space)
-    const { TextRenderer, createTextModelFromRenderer } = await import("./scene/textmesh");
-    const textRenderer = await TextRenderer.fromFile("./static/resources/Raleway-Regular.ttf");
+    // Add text demonstrations to the 3D scene
+    const { TextRenderer, createTextModel } = await import("./scene/textmesh");
     
-    // Create wireframe text in 3D space
-    const wireframeText = await createTextModelFromRenderer(gl, textRenderer, "3D World", {
-        fontSize: 1.0,
-        lineWidth: 1.0,
-        color: vec3.fromValues(0.0, 1.0, 0.0), // Green
-        position: vec3.fromValues(-3, 0, -1),
-        splineSteps: 8,
-        filled: false
-    });
+    // Create outline (wireframe) text renderer for 3D world space
+    const outlineTextRenderer = await TextRenderer.fromFile(
+        "./static/resources/Raleway-Regular.ttf",
+        8,        // smoothness - 8 steps for smooth curves
+        false,    // filled - false for wireframe outline
+        0.8,      // fontSize - medium size for 3D world
+        1.0       // lineWidth - 1.0 (browser limitation)
+    );
+    
+    // Create wireframe text in 3D space - left side
+    const wireframeConfig = {
+        color: vec3.fromValues(0.0, 1.0, 0.0), // Green outlines
+        position: vec3.fromValues(-4, 1, -1)
+    };
+    const wireframeMesh = outlineTextRenderer.generateTextMesh("Outline Text", wireframeConfig);
+    const wireframeText = await createTextModel(gl, wireframeMesh, wireframeConfig, "Outline Text", outlineTextRenderer.fontConfig.filled, outlineTextRenderer.fontConfig.lineWidth);
     scene.objects.push(wireframeText);
     
-    // Create filled text in 3D space
-    const filledText = await createTextModelFromRenderer(gl, textRenderer, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", {
-        fontSize: 1.0,
-        lineWidth: 1.0,
-        color: vec3.fromValues(1.0, 0.0, 0.0), // Red
-        position: vec3.fromValues(3, 0, -0.5),
-        splineSteps: 8,
-        filled: true
-    });
+    // Create filled text renderer for 3D world space  
+    const filledTextRenderer = await TextRenderer.fromFile(
+        "./static/resources/Raleway-Regular.ttf",
+        8,        // smoothness - 8 steps for smooth curves
+        true,     // filled - true for solid triangles
+        0.8,      // fontSize - medium size for 3D world
+        1.0       // lineWidth - not used for filled text
+    );
+    
+    // Create filled text in 3D space - right side
+    const filledConfig = {
+        color: vec3.fromValues(1.0, 0.2, 0.2), // Red filled triangles  
+        position: vec3.fromValues(1, 1, -1)
+    };
+    const filledMesh = filledTextRenderer.generateTextMesh("Filled Text", filledConfig);
+    const filledText = await createTextModel(gl, filledMesh, filledConfig, "Filled Text", filledTextRenderer.fontConfig.filled, filledTextRenderer.fontConfig.lineWidth);
     scene.objects.push(filledText);
+    
+    // Add alphabet demonstration - filled text below
+    const alphabetConfig = {
+        color: vec3.fromValues(0.8, 0.4, 1.0), // Purple
+        position: vec3.fromValues(-4, -0.5, -1)
+    };
+    const alphabetMesh = filledTextRenderer.generateTextMesh("ABCDEFGHIJKLM", alphabetConfig);
+    const alphabetText = await createTextModel(gl, alphabetMesh, alphabetConfig, "ABCDEFGHIJKLM", filledTextRenderer.fontConfig.filled, filledTextRenderer.fontConfig.lineWidth);
+    scene.objects.push(alphabetText);
+    
+    const numbersConfig = {
+        color: vec3.fromValues(1.0, 0.8, 0.2), // Orange
+        position: vec3.fromValues(-2, -1.5, -1)
+    };
+    const numbersMesh = filledTextRenderer.generateTextMesh("0123456789", numbersConfig);
+    const numbersText = await createTextModel(gl, numbersMesh, numbersConfig, "0123456789", filledTextRenderer.fontConfig.filled, filledTextRenderer.fontConfig.lineWidth);
+    scene.objects.push(numbersText);
     
     // Create UI objects array for orthographic UI rendering
     const uiObjects: any[] = [];
     
-    // Create UI text elements (these will be rendered in screen space)
-    // Scale font sizes based on canvas size for proper proportions
+    // Create UI text renderer - filled for better readability
     const baseFontSize = Math.min(canvas_size.width, canvas_size.height) / 30; // Responsive base size
+    const uiTextRenderer = await TextRenderer.fromFile(
+        "./static/resources/Raleway-Regular.ttf",
+        8,               // smoothness - 8 steps for smooth UI text
+        true,            // filled - true for solid, readable UI text
+        baseFontSize,    // fontSize - responsive to screen size
+        1.0              // lineWidth - not used for filled text
+    );
     
-    const uiTitle = await createTextModelFromRenderer(gl, textRenderer, "UI Layer - Screen Space", {
-        fontSize: baseFontSize * 1.5, // Title: larger
-        lineWidth: 1.0,
+    // Create UI title
+    const uiTitleConfig = {
         color: vec3.fromValues(1.0, 1.0, 0.0), // Yellow
-        position: vec3.fromValues(0, 0, 0), // Start at origin, will position via transform
-        splineSteps: 8,
-        filled: true
-    });
+        position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
+    };
+    const uiTitleMesh = uiTextRenderer.generateTextMesh("3D Text Demo - UI Layer", uiTitleConfig);
+    const uiTitle = await createTextModel(gl, uiTitleMesh, uiTitleConfig, "3D Text Demo - UI Layer", uiTextRenderer.fontConfig.filled, uiTextRenderer.fontConfig.lineWidth);
     // Position in top-left corner with margin
     uiTitle.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, canvas_size.height/2 - baseFontSize * 2, 0);
     uiObjects.push(uiTitle);
     
     // Store config for UI info text so we can update it dynamically
     const uiInfoConfig = {
-        fontSize: baseFontSize, // Normal size
-        lineWidth: 1.0,
         color: vec3.fromValues(0.8, 0.8, 0.8), // Light gray
-        position: vec3.fromValues(0, 0, 0), // Start at origin, will position via transform
-        splineSteps: 8,
-        filled: true
+        position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
     };
     
     const initialUIText = "FPS: 0.0 | Selected: None";
-    const uiInfo = await createTextModelFromRenderer(gl, textRenderer, initialUIText, uiInfoConfig);
+    const uiInfoMesh = uiTextRenderer.generateTextMesh(initialUIText, uiInfoConfig);
+    const uiInfo = await createTextModel(gl, uiInfoMesh, uiInfoConfig, initialUIText, uiTextRenderer.fontConfig.filled, uiTextRenderer.fontConfig.lineWidth);
     // Position below title
     uiInfo.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, canvas_size.height/2 - baseFontSize * 4, 0);
     uiObjects.push(uiInfo);
     
     // Create UI text manager for dynamic updates
-    const uiInfoManager = new UITextManager(gl, textRenderer, uiInfo, uiInfoConfig, initialUIText, uiObjects, 1); // Index 1 in uiObjects array
+    const uiInfoManager = new UITextManager(gl, uiTextRenderer, uiInfo, uiInfoConfig, initialUIText, uiObjects, 1); // Index 1 in uiObjects array
     
-    const uiControls = await createTextModelFromRenderer(gl, textRenderer, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", {
-        fontSize: baseFontSize * 0.8, // Smaller for help text
-        lineWidth: 1.0,
+    // Create smaller UI renderer for help text
+    const smallUITextRenderer = await TextRenderer.fromFile(
+        "./static/resources/Raleway-Regular.ttf",
+        6,                    // smoothness - slightly less for small text
+        true,                 // filled - true for readable small text
+        baseFontSize * 0.8,   // fontSize - smaller for help text
+        1.0                   // lineWidth - not used for filled text
+    );
+    
+    const uiControlsConfig = {
         color: vec3.fromValues(0.6, 0.6, 0.6), // Gray
-        position: vec3.fromValues(0, 0, 0), // Start at origin, will position via transform
-        splineSteps: 8,
-        filled: true
-    });
+        position: vec3.fromValues(0, 0, 0) // Start at origin, will position via transform
+    };
+    const uiControlsMesh = smallUITextRenderer.generateTextMesh("Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", uiControlsConfig);
+    const uiControls = await createTextModel(gl, uiControlsMesh, uiControlsConfig, "Controls: WASD+QE=Move, Arrows=Look, F=Fullscreen", smallUITextRenderer.fontConfig.filled, smallUITextRenderer.fontConfig.lineWidth);
     // Position in bottom-left corner with margin
     uiControls.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, -canvas_size.height/2 + baseFontSize * 2, 0);
     uiObjects.push(uiControls);
@@ -255,12 +298,8 @@ export async function main() {
                 
                 // Select new object
                 selectedObject = clickedObject;
-                console.log(`Selected: ${selectedObject.name || selectedObject.id} (ID: ${objectId})`);
                 
-                // Update UI text immediately when selection changes
-                const selectedName = selectedObject ? (selectedObject.name || `ID: ${selectedObject.id}`) : "None";
-                const currentUIText = `FPS: ${document.title.match(/fps (\d+\.\d+)/)?.[1] || "0"} | Selected: ${selectedName}`;
-                uiInfoManager.setText(currentUIText).catch(error => console.warn("Failed to update selection UI text:", error));
+                // Note: UI text will be updated by the main draw loop with current FPS
                 
                 // Create dynamic wireframe bounding box for mesh objects
                 if (selectedObject.type === "mesh" && selectedObject.createBoundingBoxWireframe) {
@@ -279,9 +318,7 @@ export async function main() {
                 dynamicWireframe = null;
                 selectedObject = null;
                 
-                // Update UI text immediately when deselecting
-                const currentUIText = `FPS: ${document.title.match(/fps (\d+\.\d+)/)?.[1] || "0"} | Selected: None`;
-                uiInfoManager.setText(currentUIText).catch(error => console.warn("Failed to update deselection UI text:", error));
+                // Note: UI text will be updated by the main draw loop with current FPS
             }
         }
     });
@@ -440,7 +477,6 @@ export async function main() {
 
     const frametimes = new Float32Array(32);
     let framenum = 0;
-    const original_title = document.title;
     let lastUIUpdateFrame = 0;
 
     let last_frametime = performance.now();
@@ -451,9 +487,6 @@ export async function main() {
         frametimes[framenum++ % frametimes.length] = deltatime_ms;
 
         const average_fps = frametimes.length / frametimes.reduce((o, n) => o + n, 0);
-        const min_fps = 1 / frametimes.reduce((o, n) => Math.max(o, n));
-        const max_fps = 1 / frametimes.reduce((o, n) => Math.min(o, n));
-        document.title = `${original_title} | fps ${average_fps.toFixed(1)} (${min_fps.toFixed(1)}, ${max_fps.toFixed(1)})`;
 
         // Update UI text periodically (not every frame) - let the manager handle change detection
         if (framenum - lastUIUpdateFrame >= 30) { // Update every ~0.5 seconds at 60fps
