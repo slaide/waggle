@@ -1067,9 +1067,9 @@ export class Font {
             max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
         };
 
-        let currentX = position[0];
-        const baseY = position[1];
-        const baseZ = position[2];
+        let currentX = 0; // Start at origin X - overall position handled by Transform
+        const baseY = position[1]; // Respect Y position for line spacing in multiline text
+        const baseZ = 0; // Z position handled by Transform
         let totalAdvanceWidth = 0;
 
         // Process each character (skip newlines since we handle them above)
@@ -1312,15 +1312,15 @@ export class Font {
 
         const lineHeight = this.fontSize * lineSpacing;
 
-        // Calculate starting Y position based on anchor type
+        // Calculate starting Y position based on anchor type (relative to origin)
         let startY: number;
         if (topLeftAnchor) {
             // For top-left anchor, start from the top and move down
             // The first line should be positioned one line height below the anchor point
-            startY = position[1] - this.fontSize; // Start first line one font size down from top
+            startY = -this.fontSize; // Start first line one font size down from top
         } else {
             // For bottom-left anchor (default), start from bottom and move up
-            startY = position[1];
+            startY = 0;
         }
 
         // Process each line
@@ -1337,9 +1337,9 @@ export class Font {
             }
             
             const linePosition = vec3.fromValues(
-                position[0],
+                0, // X position handled by Transform
                 lineY,
-                position[2]
+                0  // Z position handled by Transform
             );
 
             const lineMesh = this.generateText(line, linePosition, color);
@@ -1389,16 +1389,18 @@ export class Font {
     }
 
     /**
-     * Transform a point from font units to world coordinates
+     * Transform a point from font units to world coordinates (with character position but not text block position)
      */
     private transformPoint(fontX: number, fontY: number, position: vec3): [number, number, number] {
         const worldX = this.fontUnitsToWorld(fontX);
         const worldY = this.fontUnitsToWorld(fontY);
         
+        // Apply character position (for character advancement) but not overall text position
+        // Overall text position is handled by Transform system
         return [
-            position[0] + worldX,
-            position[1] + worldY,
-            position[2]
+            position[0] + worldX,  // Character X offset (for advancement)
+            position[1] + worldY,  // Character Y offset (for line positioning)
+            position[2]            // Character Z offset
         ];
     }
 

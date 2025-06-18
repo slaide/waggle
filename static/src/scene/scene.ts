@@ -1,5 +1,5 @@
 import { GLC } from "../gl";
-import { GameObject } from "./gameobject";
+import { GameObject, SerializedTransform, BaseSerializedGameObject } from "./gameobject";
 import { PointLight, DirectionalLight } from "./light";
 import { Transform } from "./transform";
 import { Camera } from "./camera";
@@ -7,25 +7,34 @@ import { parseObj } from "../bits/obj";
 import { Model } from "./model";
 import { vec3, quat, mat4 } from "gl-matrix";
 
-// Type definitions for scene serialization
-export interface SceneDescription {
+// Now we can use the proper types directly
+export type SerializedGameObject = BaseSerializedGameObject;
+export type SerializedCamera = ReturnType<Camera['toJSON']>;
+export type SerializedScene = {
     name?: string;
-    camera: ReturnType<Camera['toJSON']>;
-    objects: any[];  // Using any[] to allow for different object types
+    camera: SerializedCamera;
+    objects: SerializedGameObject[];
+};
+
+// Type for JSON data loaded from external files (before validation)
+export interface UnvalidatedSceneJson {
+    name?: unknown;
+    camera?: unknown;
+    objects?: unknown;
+    [key: string]: unknown; // JSON can contain any properties
 }
 
-export interface SceneData {
-    name?: string;
-    objects: any[];
-}
-
-// Type guard for SceneData
-export function isSceneData(data: any): data is SceneData {
+// Type guard for validating JSON data loaded from files
+export function isValidSceneJson(data: unknown): data is SerializedScene {
     return (
         typeof data === 'object' &&
         data !== null &&
-        (!data.name || typeof data.name === 'string') &&
-        Array.isArray(data.objects)
+        (!('name' in data) || typeof (data as any).name === 'string') &&
+        'camera' in data &&
+        typeof (data as any).camera === 'object' &&
+        (data as any).camera !== null &&
+        'objects' in data &&
+        Array.isArray((data as any).objects)
     );
 }
 
@@ -173,20 +182,17 @@ export class Scene {
         }
     }
 
-    // Add serialization method
-    toJSON(): any {
+    // Serialize scene to JSON format
+    toJSON(camera: Camera): SerializedScene {
         return {
             name: this.name,
+            camera: camera.toJSON(),
             objects: this.objects.map(obj => obj.toJSON())
         };
     }
 
-    // Add deserialization method
-    static async fromJSON(gl: GLC, data: any): Promise<Scene> {
-        if (!isSceneData(data)) {
-            throw new Error("Invalid scene data format");
-        }
-
+    // Deserialize scene from JSON data
+    static async fromJSON(gl: GLC, data: SerializedScene): Promise<Scene> {
         const scene = new Scene(gl, [], data.name);
         
         // Load all objects
@@ -198,8 +204,8 @@ export class Scene {
         return scene;
     }
 
-    // Helper function to convert scene transform to Transform object
-    static createTransform(transform: any): Transform {
+    // Helper function to convert serialized transform to Transform object
+    static createTransform(transform: SerializedTransform): Transform {
         const t = new Transform();
         if (transform.position) {
             t.position = vec3.fromValues(transform.position[0], transform.position[1], transform.position[2]);
@@ -212,20 +218,20 @@ export class Scene {
         }
         return t;
     }
-
-    // Main function to load a scene from a description (moved from scene_format.ts)
-    static async loadScene(gl: GLC, description: SceneDescription): Promise<Scene> {
-        const scene = await Scene.make(gl);
-        
-        // Load all objects using the GameObjectRegistry system
-        for (const objData of description.objects) {
-            const gameObject = await GameObject.fromJSON(gl, objData);
-            scene.objects.push(gameObject);
-        }
-
-        return scene;
-    }
 }
 
-// Export loadScene function at module level for compatibility
-export const loadScene = Scene.loadScene;
+// Main function to load scene from external JSON file or description
+export async function loadScene(gl: GLC, sceneData: unknown): Promise<Scene> {
+    // Validate the JSON data first
+    if (!isValidSceneJson(sceneData)) {
+        throw new Error("Invalid scene JSON format - missing required properties or wrong types");
+    }
+
+    // Create camera from serialized data
+    const camera = Camera.fromJSON(sceneData.camera);
+    
+    // Create scene from validated data
+    const scene = await Scene.fromJSON(gl, sceneData);
+    
+    return scene;
+}

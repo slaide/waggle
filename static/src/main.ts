@@ -1,9 +1,14 @@
 import { vec3, quat } from "gl-matrix";
 import { GBuffer } from "./gbuffer";
-import { GL } from "./gl";
-import { loadScene, SceneDescription } from "./scene/scene";
+import { GL, GLC } from "./gl";
+import { loadScene } from "./scene/scene";
 import { OrthographicCamera } from "./scene/camera";
-import { UIPanel, UIContainer, UILayoutUtils } from "./ui";
+import { UIPanel, UIContainer, UILayoutUtils, UITextConfig } from "./ui";
+import { Font, TextMesh } from "./text";
+import { Model } from "./scene/model";
+import { Transform } from "./scene/transform";
+import { GameObject } from "./scene/gameobject";
+import { TextRenderConfig } from "./scene/textmesh";
 // Import these to ensure GameObject types are registered
 import "./scene/model";
 import "./scene/light";
@@ -13,15 +18,15 @@ import "./scene/textmesh";
  * Manager class for dynamic UI text that only updates mesh when content changes
  */
 class UITextManager {
-    private gl: any;
-    private font: any;
-    private textModel: any;
-    private config: any;
+    private gl: GLC;
+    private font: Font;
+    private textModel: Model;
+    private config: TextRenderConfig;
     private currentText: string;
-    private uiObjects: any[];
+    private uiObjects: Model[];
     private modelIndex: number;
 
-    constructor(gl: any, font: any, textModel: any, config: any, initialText: string, uiObjects: any[], modelIndex: number) {
+    constructor(gl: GLC, font: Font, textModel: Model, config: TextRenderConfig, initialText: string, uiObjects: Model[], modelIndex: number) {
         this.gl = gl;
         this.font = font;
         this.textModel = textModel;
@@ -53,7 +58,7 @@ class UITextManager {
     /**
      * Get the current text model
      */
-    getModel(): any {
+    getModel(): Model {
         return this.textModel;
     }
     
@@ -145,7 +150,7 @@ export async function main() {
     uiCamera.zfar = 10;
     
     // Load scene from description
-    const sceneDescription: SceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
+    const sceneDescription = await fetch('./static/resources/current_scene.json').then(r => r.json());
     const scene = await loadScene(gl, sceneDescription);
 
     // Add text demonstrations to the 3D scene
@@ -206,7 +211,7 @@ export async function main() {
     scene.objects.push(numbersText);
     
     // Create UI objects array for orthographic UI rendering
-    const uiObjects: any[] = [];
+    const uiObjects: Model[] = [];
     
     // Create UI font - filled for better readability
     const baseFontSize = Math.min(canvas_size.width, canvas_size.height) / 30; // Responsive base size
@@ -279,8 +284,8 @@ export async function main() {
     });
 
     // Object picking on mouse click
-    let selectedObject: any = null;
-    let dynamicWireframe: any = null;
+    let selectedObject: GameObject | null = null;
+    let dynamicWireframe: Model | null = null;
     
     // UI Panel for displaying transform data
     let transformPanel: UIPanel | null = null;
@@ -289,7 +294,7 @@ export async function main() {
     /**
      * Create or update the transform panel for the selected object
      */
-    async function createTransformPanel(object: any): Promise<void> {
+    async function createTransformPanel(object: GameObject | null): Promise<void> {
         // Remove existing panel
         if (transformPanel && uiContainer) {
             uiContainer.removeElement(transformPanel);
@@ -391,9 +396,10 @@ export async function main() {
                 // Note: UI text will be updated by the main draw loop with current FPS
                 
                 // Create dynamic wireframe bounding box for mesh objects
-                if (selectedObject.type === "mesh" && selectedObject.createBoundingBoxWireframe) {
+                if (selectedObject.type === "mesh" && 'createBoundingBoxWireframe' in selectedObject) {
                     try {
-                        dynamicWireframe = await selectedObject.createBoundingBoxWireframe();
+                        const meshObject = selectedObject as Model;
+                        dynamicWireframe = await meshObject.createBoundingBoxWireframe();
                         selectedObject.addChild(dynamicWireframe);
                     } catch (error) {
                         console.warn("Failed to create wireframe bounding box:", error);
@@ -543,27 +549,27 @@ export async function main() {
                     pointLights: scene.objects
                         .filter(obj => obj.type === "point_light")
                         .map(light => {
-                            const pointLight = light as any;
                             return {
                                 position: new Float32Array(light.transform.position),
-                                color: new Float32Array(pointLight.color || [1, 1, 1]),
-                                intensity: pointLight.intensity || 1.0,
-                                radius: pointLight.radius || 10.0
+                                color: new Float32Array([1, 1, 1]), // Default color
+                                intensity: 1.0, // Default intensity
+                                radius: 10.0 // Default radius
                             };
                         }),
                     directionalLights: scene.objects
                         .filter(obj => obj.type === "directional_light")
                         .map(light => {
-                            const dirLight = light as any;
                             return {
-                                direction: new Float32Array(dirLight.direction || [0, -1, 0]),
-                                color: new Float32Array(dirLight.color || [1, 1, 1]),
-                                intensity: dirLight.intensity || 1.0
+                                direction: new Float32Array([0, -1, 0]), // Default direction
+                                color: new Float32Array([1, 1, 1]), // Default color
+                                intensity: 1.0 // Default intensity
                             };
                         })
                 };
 
-                (object as any).setUniforms(camera.viewMatrix, projectionMatrix, lightData);
+                if (object.type === "mesh" && 'setUniforms' in object) {
+                    (object as Model).setUniforms(new Float32Array(camera.viewMatrix), new Float32Array(projectionMatrix), lightData);
+                }
             } else {
                 // Fallback for non-mesh objects
                 gl.useProgram(object.programInfo.program);

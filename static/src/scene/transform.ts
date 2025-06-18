@@ -149,30 +149,32 @@ export class Transform {
         };
     }
 
-    static fromJSON(data: any): Transform {
+    static fromJSON(data: unknown): Transform {
         // Type guard inline
         if (typeof data !== 'object' || data === null) {
             throw new Error("Invalid transform data format");
         }
 
+        const transformData = data as any; // Type assertion after validation
         const transform = new Transform();
-        if (data.position) {
-            if (!Array.isArray(data.position) || data.position.length !== 3) {
+        
+        if (transformData.position) {
+            if (!Array.isArray(transformData.position) || transformData.position.length !== 3) {
                 throw new Error("Invalid position format");
             }
-            transform.position = vec3.fromValues(data.position[0], data.position[1], data.position[2]);
+            transform.position = vec3.fromValues(transformData.position[0], transformData.position[1], transformData.position[2]);
         }
-        if (data.rotation) {
-            if (!Array.isArray(data.rotation) || data.rotation.length !== 4) {
+        if (transformData.rotation) {
+            if (!Array.isArray(transformData.rotation) || transformData.rotation.length !== 4) {
                 throw new Error("Invalid rotation format");
             }
-            transform.rotation = quat.fromValues(data.rotation[0], data.rotation[1], data.rotation[2], data.rotation[3]);
+            transform.rotation = quat.fromValues(transformData.rotation[0], transformData.rotation[1], transformData.rotation[2], transformData.rotation[3]);
         }
-        if (data.scale) {
-            if (!Array.isArray(data.scale) || data.scale.length !== 3) {
+        if (transformData.scale) {
+            if (!Array.isArray(transformData.scale) || transformData.scale.length !== 3) {
                 throw new Error("Invalid scale format");
             }
-            transform.scale = vec3.fromValues(data.scale[0], data.scale[1], data.scale[2]);
+            transform.scale = vec3.fromValues(transformData.scale[0], transformData.scale[1], transformData.scale[2]);
         }
         return transform;
     }

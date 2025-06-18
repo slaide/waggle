@@ -4,7 +4,7 @@ import { MtlMaterial, ObjFile, parseObj } from "../bits/obj";
 import { vec3, mat4 } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct } from "../struct";
-import { GameObject, GameObjectRegistry } from "./gameobject";
+import { GameObject, GameObjectRegistry, BaseSerializedGameObject, Serializable, SerializedTransform } from "./gameobject";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
@@ -104,9 +104,33 @@ async function createShaderProgram(
     return shaderProgram;
 }
 
+// Serialized Model type interface
+export interface SerializedModel extends BaseSerializedGameObject {
+    type: "mesh";
+    material?: {
+        diffuse?: Float32Array;
+        specularExponent?: number;
+        diffuseTexture?: string;
+    };
+    numTris: number;
+    rawVertexData?: number[];
+    rawIndices?: number[];
+    rawTexturePath?: string;
+    rawShaderSources?: { vs: string; fs: string };
+    // Additional properties for different loading methods
+    model?: string; // OBJ file path
+    meshData?: { // For test data
+        vertexData?: Float32Array;
+        indices?: Uint32Array;
+    };
+}
+
 // Model class for renderable objects
 // Note: We use typed arrays internally for performance, but convert to regular arrays for serialization
-export class Model extends GameObject {
+export class Model extends GameObject implements Serializable<SerializedModel> {
+    // Static type reference for serialization
+    static SerializedType = {} as SerializedModel;
+
     public type = "mesh" as const;
     
     /** Static flag to track if lineWidth warning has been shown (to avoid console spam) */
@@ -174,6 +198,9 @@ export class Model extends GameObject {
 
     set rawIndices(data: number[] | undefined) {
         this._rawIndices = data;
+        if (data) {
+            this._indices = new Uint32Array(data);
+        }
     }
 
     set rawTexturePath(path: string | undefined) {
@@ -184,18 +211,22 @@ export class Model extends GameObject {
         this._rawShaderSources = sources;
     }
 
-    set material(mat: any) {
+    set material(mat: MtlMaterial | { diffuse?: number[]; specularExponent?: number; diffuseTexture?: string; } | null | undefined) {
         if (!mat) {
             this._material = undefined;
             return;
         }
-        this._material = new MtlMaterial();
-        if (mat.diffuse) {
-            this._material.diffuse = vec3.fromValues(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
-        }
-        this._material.specularExponent = mat.specularExponent ?? 1.0;
-        if (mat.diffuseTexture) {
-            this._material.map_diffuse = { source: mat.diffuseTexture };
+        if (mat instanceof MtlMaterial) {
+            this._material = mat;
+        } else {
+            this._material = new MtlMaterial();
+            if (mat.diffuse) {
+                this._material.diffuse = vec3.fromValues(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
+            }
+            this._material.specularExponent = mat.specularExponent ?? 1.0;
+            if (mat.diffuseTexture) {
+                this._material.map_diffuse = { source: mat.diffuseTexture };
+            }
         }
     }
 
@@ -569,12 +600,23 @@ export class Model extends GameObject {
         }
     }
 
-    override toJSON() {
+    override toJSON(): SerializedModel {
         const base = super.toJSON();
+        
+        // Convert material to serializable format
+        let serializedMaterial: SerializedModel['material'] = undefined;
+        if (this._material) {
+            serializedMaterial = {
+                diffuse: this._material.diffuse ? new Float32Array(this._material.diffuse) : undefined,
+                specularExponent: this._material.specularExponent,
+                diffuseTexture: this._material.map_diffuse?.source
+            };
+        }
+        
         return {
             ...base,
             type: "mesh" as const,
-            material: this.material,
+            material: serializedMaterial,
             numTris: this.numTris,
             rawVertexData: this.rawVertexData,
             rawIndices: this.rawIndices,
@@ -583,27 +625,30 @@ export class Model extends GameObject {
         };
     }
 
-    static async fromJSON(gl: GLC, data: any): Promise<Model> {
+    static async fromJSON(gl: GLC, data: BaseSerializedGameObject): Promise<Model> {
         // Type guard inline
         if (typeof data !== 'object' || data === null || data.type !== "mesh") {
             throw new Error("Invalid mesh object data format");
         }
 
+        // Cast to SerializedModel after type checking
+        const modelData = data as SerializedModel;
+
         // Validate that either model or rawVertexData is provided (meshData is for tests)
-        if (!data.model && !data.rawVertexData && !data.meshData) {
+        if (!modelData.model && !modelData.rawVertexData && !modelData.meshData) {
             throw new Error("Mesh object must have either a model property or meshData");
         }
 
-        const transform = Transform.fromJSON(data.transform);
+        const transform = Transform.fromJSON(modelData.transform);
         
         // Handle loading from OBJ file if model path is provided
-        if (data.model) {
-            const modelData = await parseObj(data.model, { normalizeSize: true });
+        if (modelData.model) {
+            const objModelData = await parseObj(modelData.model, { normalizeSize: true });
             
             // Get the first object and group
-            const firstObjectKey = Object.keys(modelData.objects)[0];
-            const firstGroupKey = Object.keys(modelData.objects[firstObjectKey].groups)[0];
-            const group = modelData.objects[firstObjectKey].groups[firstGroupKey];
+            const firstObjectKey = Object.keys(objModelData.objects)[0];
+            const firstGroupKey = Object.keys(objModelData.objects[firstObjectKey].groups)[0];
+            const group = objModelData.objects[firstObjectKey].groups[firstGroupKey];
             
             // Create model object using the make method
             const model = await Model.make(gl, {
@@ -614,33 +659,33 @@ export class Model extends GameObject {
                         } 
                     } 
                 },
-                boundingBox: modelData.boundingBox
+                boundingBox: objModelData.boundingBox
             }, transform);
             
             // Set the name and other properties from the JSON data
-            if (data.name) {
-                (model as any).name = data.name;
+            if (modelData.name) {
+                model.name = modelData.name;
             }
-            if (data.enabled !== undefined) {
-                model.enabled = data.enabled;
+            if (modelData.enabled !== undefined) {
+                model.enabled = modelData.enabled;
             }
-            if (data.visible !== undefined) {
-                model.visible = data.visible;
+            if (modelData.visible !== undefined) {
+                model.visible = modelData.visible;
             }
             
             // Handle forward rendering properties for OBJ-loaded models
-            if (data.forwardRendered) {
+            if (modelData.forwardRendered) {
 
                 
                 // Create material for forward rendering
                 const forwardMaterial = new MtlMaterial();
-                if (data.material) {
-                    if (data.material.diffuse) {
-                        forwardMaterial.diffuse = vec3.fromValues(data.material.diffuse[0], data.material.diffuse[1], data.material.diffuse[2]);
+                if (modelData.material) {
+                    if (modelData.material.diffuse) {
+                        forwardMaterial.diffuse = vec3.fromValues(modelData.material.diffuse[0], modelData.material.diffuse[1], modelData.material.diffuse[2]);
                     }
-                    forwardMaterial.specularExponent = data.material.specularExponent ?? 1.0;
-                    if (data.material.diffuseTexture) {
-                        forwardMaterial.map_diffuse = { source: data.material.diffuseTexture };
+                    forwardMaterial.specularExponent = modelData.material.specularExponent ?? 1.0;
+                    if (modelData.material.diffuseTexture) {
+                        forwardMaterial.map_diffuse = { source: modelData.material.diffuseTexture };
                     }
                 } else {
                     // Set default material properties when no material data is provided
@@ -649,10 +694,10 @@ export class Model extends GameObject {
                 }
                 
                 try {
-                    const forwardProgramInfo = await Model.makeForwardProgram(gl, forwardMaterial, data.forwardShaderPaths);
+                    const forwardProgramInfo = await Model.makeForwardProgram(gl, forwardMaterial, modelData.forwardShaderPaths);
                     model.forwardRendered = true;
                     model.forwardProgramInfo = forwardProgramInfo;
-                    model.forwardShaderPaths = data.forwardShaderPaths;
+                    model.forwardShaderPaths = modelData.forwardShaderPaths;
                     model._material = forwardMaterial; // Use the properly parsed material
                 } catch (error) {
                     console.warn('Failed to create forward rendering program for OBJ model:', error);
@@ -663,18 +708,18 @@ export class Model extends GameObject {
         }
         
         // Handle loading from serialized data
-        const vertexData = data.rawVertexData ? new Float32Array(data.rawVertexData) : new Float32Array();
-        const indices = data.rawIndices ? new Uint32Array(data.rawIndices) : new Uint32Array();
+        const vertexData = modelData.rawVertexData ? new Float32Array(modelData.rawVertexData) : new Float32Array();
+        const indices = modelData.rawIndices ? new Uint32Array(modelData.rawIndices) : new Uint32Array();
         
         // Create material from data
         const material = new MtlMaterial();
-        if (data.material) {
-            if (data.material.diffuse) {
-                material.diffuse = vec3.fromValues(data.material.diffuse[0], data.material.diffuse[1], data.material.diffuse[2]);
+        if (modelData.material) {
+            if (modelData.material.diffuse) {
+                material.diffuse = vec3.fromValues(modelData.material.diffuse[0], modelData.material.diffuse[1], modelData.material.diffuse[2]);
             }
-            material.specularExponent = data.material.specularExponent ?? 1.0;
-            if (data.material.diffuseTexture) {
-                material.map_diffuse = { source: data.material.diffuseTexture };
+            material.specularExponent = modelData.material.specularExponent ?? 1.0;
+            if (modelData.material.diffuseTexture) {
+                material.map_diffuse = { source: modelData.material.diffuseTexture };
             }
         } else {
             // Set default material properties when no material data is provided
@@ -683,7 +728,7 @@ export class Model extends GameObject {
         
         const buffers = await Model.makeBuffers(
             gl,
-            data.rawTexturePath ?? "",
+            modelData.rawTexturePath ?? "",
             vertexData,
             indices
         );
@@ -691,7 +736,7 @@ export class Model extends GameObject {
         // Create new program from shader sources or default if rawVertexData is provided
         let programInfo;
         try {
-            programInfo = data.rawShaderSources ? 
+            programInfo = modelData.rawShaderSources ? 
                 await Model.makeProgram(gl, material) : 
                 (vertexData.length > 0 ? await Model.makeProgram(gl, material) : undefined);
         } catch (error) {
@@ -712,15 +757,15 @@ export class Model extends GameObject {
                     uUseDiffuseTexture: gl.getUniformLocation({} as WebGLProgram, 'uUseDiffuseTexture') as WebGLUniformLocation,
                     uDiffuseSampler: gl.getUniformLocation({} as WebGLProgram, 'uDiffuseSampler') as WebGLUniformLocation
                 },
-                shaderSources: data.rawShaderSources || { vs: '// mock vertex shader', fs: '// mock fragment shader' }
+                shaderSources: modelData.rawShaderSources || { vs: '// mock vertex shader', fs: '// mock fragment shader' }
             };
         }
 
         // Create forward program if object is marked for forward rendering
         let forwardProgramInfo;
-        if (data.forwardRendered) {
+        if (modelData.forwardRendered) {
             try {
-                forwardProgramInfo = await Model.makeForwardProgram(gl, material, data.forwardShaderPaths);
+                forwardProgramInfo = await Model.makeForwardProgram(gl, material, modelData.forwardShaderPaths);
             } catch (error) {
                 console.warn('Failed to create forward rendering program, using regular program:', error);
                 forwardProgramInfo = programInfo;
@@ -728,7 +773,7 @@ export class Model extends GameObject {
         }
 
         // Calculate numTris from indices if not provided but rawIndices exist
-        const numTris = data.numTris ?? (indices.length > 0 ? indices.length / 3 : 0);
+        const numTris = modelData.numTris ?? (indices.length > 0 ? indices.length / 3 : 0);
 
         const model = new Model(
             gl,
@@ -737,9 +782,9 @@ export class Model extends GameObject {
             programInfo!,
             numTris,
             material,
-            data.enabled ?? true,
-            data.visible ?? true,
-            data.name
+            modelData.enabled ?? true,
+            modelData.visible ?? true,
+            modelData.name
         );
 
         // Store raw data for future serialization as number[]
@@ -747,14 +792,14 @@ export class Model extends GameObject {
         model._rawIndices = Array.from(indices);
         model._vertexData = new Float32Array(vertexData);
         model._indices = new Uint32Array(indices);
-        model._rawTexturePath = data.rawTexturePath;
-        model._rawShaderSources = data.rawShaderSources;
+        model._rawTexturePath = modelData.rawTexturePath;
+        model._rawShaderSources = modelData.rawShaderSources;
 
         // Set forward rendering properties
-        if (data.forwardRendered) {
+        if (modelData.forwardRendered) {
             model.forwardRendered = true;
             model.forwardProgramInfo = forwardProgramInfo;
-            model.forwardShaderPaths = data.forwardShaderPaths;
+            model.forwardShaderPaths = modelData.forwardShaderPaths;
         }
 
         return model;

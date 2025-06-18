@@ -36,7 +36,7 @@ import { vec3 } from "gl-matrix";
 import { Model } from "./model";
 import { Transform } from "./transform";
 import { GL, GLC } from "../gl";
-import { TextMesh, FilledTextMesh, Font } from "../text";
+import { TextMesh, Font } from "../text";
 import { MtlMaterial } from "../bits/obj";
 
 /**
@@ -63,7 +63,7 @@ export interface TextRenderConfig {
  */
 export async function createTextModel(
     gl: GLC,
-    textMesh: TextMesh | FilledTextMesh,
+    textMesh: TextMesh,
     config: TextRenderConfig,
     text: string,
     filled: boolean,
@@ -117,9 +117,9 @@ export async function createTextModel(
         shaderPaths
     );
     
-    // Create transform (position is already applied to vertices, so use origin)
+    // Create transform - set position from config since vertices are now at origin
     const transform = new Transform();
-    transform.position = vec3.fromValues(0, 0, 0);
+    transform.position = vec3.clone(config.position);
     
     // Calculate number of primitives based on mesh type
     const primitiveCount = filled 
@@ -148,9 +148,8 @@ export async function createTextModel(
     if (filled) {
         textModel.drawMode = "triangles";
         
-        // Disable face culling for text to ensure triangles are visible from both sides
-        // This is important because our fan triangulation might not have consistent winding
-        (textModel as any).cullFace = false;
+        // Note: Face culling is handled by the WebGL state, not per-model
+        // For text rendering, face culling should be disabled globally when needed
         
         // For filled rendering, use the material's diffuse color
     } else {
@@ -160,7 +159,7 @@ export async function createTextModel(
     }
     
     // Store indices for line drawing (Model class needs this)
-    (textModel as any)._indices = new Uint32Array(textMesh.indices);
+    // Note: This is handled by the Model's internal buffer management
     
     // Store raw data for serialization
     textModel.rawVertexData = vertexData;

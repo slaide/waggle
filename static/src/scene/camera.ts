@@ -81,27 +81,29 @@ export class Camera{
         };
     }
 
-    static fromJSON(data: any): Camera {
+    static fromJSON(data: unknown): Camera {
         // Type guard inline
         if (typeof data !== 'object' || data === null) {
             throw new Error("Invalid camera data format");
         }
         
-        if (!Array.isArray(data.position) || data.position.length !== 3) {
+        const cameraData = data as any; // Type assertion after validation
+        
+        if (!Array.isArray(cameraData.position) || cameraData.position.length !== 3) {
             throw new Error("Camera must have valid position array");
         }
         
-        if (!Array.isArray(data.rotation) || data.rotation.length !== 4) {
+        if (!Array.isArray(cameraData.rotation) || cameraData.rotation.length !== 4) {
             throw new Error("Camera must have valid rotation quaternion");
         }
 
         return new Camera(
-            data.fov ?? 45,
-            data.aspect ?? 800/600,
-            data.znear ?? 0.1,
-            data.zfar ?? 100,
-            vec3.fromValues(data.position[0], data.position[1], data.position[2]),
-            quat.fromValues(data.rotation[0], data.rotation[1], data.rotation[2], data.rotation[3])
+            cameraData.fov ?? 45,
+            cameraData.aspect ?? 800/600,
+            cameraData.znear ?? 0.1,
+            cameraData.zfar ?? 100,
+            vec3.fromValues(cameraData.position[0], cameraData.position[1], cameraData.position[2]),
+            quat.fromValues(cameraData.rotation[0], cameraData.rotation[1], cameraData.rotation[2], cameraData.rotation[3])
         );
     }
 }

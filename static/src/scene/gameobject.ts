@@ -9,38 +9,56 @@ type ProgramInfo = {
     shaderSources: { vs: string, fs: string };
 };
 
-// Type for the fromJSON factory function
-type GameObjectFactory = (gl: GLC, data: any) => Promise<GameObject>;
+// Type for serialized transform data (matches Transform.toJSON() output)
+export interface SerializedTransform {
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+}
 
-// Central registry for GameObject types
+// Base serialized GameObject structure
+export interface BaseSerializedGameObject {
+    type: string;
+    name?: string;
+    enabled: boolean;
+    visible: boolean;
+    forwardRendered: boolean;
+    forwardShaderPaths?: { vs: string; fs: string };
+    transform: SerializedTransform;
+    children?: BaseSerializedGameObject[];
+}
+
+// Contract that all serializable GameObjects must implement
+export interface Serializable<TSerializedType> {
+    toJSON(): TSerializedType;
+}
+
+// Type for the fromJSON factory function
+type GameObjectFactory = (gl: GLC, data: BaseSerializedGameObject) => Promise<GameObject>;
+
+// Registry to store GameObject factory functions by type
 export class GameObjectRegistry {
-    private static factories = new Map<string, GameObjectFactory>();
+    private static factories: Map<string, GameObjectFactory> = new Map();
     
-    // Register a GameObject type with its factory function
-    static register(type: string, factory: GameObjectFactory): void {
+    static register(type: string, factory: GameObjectFactory) {
         this.factories.set(type, factory);
     }
     
-    // Create a GameObject instance from JSON data using the registry
-    static async create(gl: GLC, data: any): Promise<GameObject> {
-        // Type guard inline
-        if (typeof data !== 'object' || data === null) {
-            throw new Error("Invalid game object data format");
-        }
-        
-        if (!data.type || typeof data.type !== 'string') {
-            throw new Error("Game object must have a type field");
+    static async create(gl: GLC, data: BaseSerializedGameObject): Promise<GameObject> {
+        if (!data.type) {
+            throw new Error("GameObject data must have a type property");
         }
         
         const factory = this.factories.get(data.type);
         if (!factory) {
-            throw new Error(`Unknown or unregistered object type: ${data.type}`);
+            throw new Error(`Unknown GameObject type: ${data.type}`);
         }
         
+        // Create the main object
         const gameObject = await factory(gl, data);
         
-        // Handle children if they exist
-        if (data.children && Array.isArray(data.children)) {
+        // Recursively create and attach children
+        if (data.children && data.children.length > 0) {
             for (const childData of data.children) {
                 const child = await this.create(gl, childData);
                 gameObject.addChild(child);
@@ -50,7 +68,6 @@ export class GameObjectRegistry {
         return gameObject;
     }
     
-    // Get all registered types (useful for debugging)
     static getRegisteredTypes(): string[] {
         return Array.from(this.factories.keys());
     }
@@ -125,7 +142,7 @@ export async function createShaderProgram(
 }
 
 // Base class for all game objects
-export class GameObject {
+export class GameObject implements Serializable<BaseSerializedGameObject> {
     // Static counter for globally unique IDs
     private static nextId: number = 1;
     
@@ -134,16 +151,16 @@ export class GameObject {
     
     public type: "mesh" | "point_light" | "directional_light";
     public programInfo?: ProgramInfo;
-    public forwardProgramInfo?: ProgramInfo;  // New program info for forward rendering
+    public forwardProgramInfo?: ProgramInfo;
     public children: GameObject[] = [];
     private _parent?: GameObject;
-    private _forwardRendered: boolean = false;  // New flag for forward rendering
-    private _forwardShaderPaths?: { vs: string, fs: string };  // Custom forward shader paths
+    private _forwardRendered: boolean = false;
+    private _forwardShaderPaths?: { vs: string, fs: string };
     
     // Line drawing properties
     private _drawMode: "triangles" | "lines" = "triangles";
     private _lineWidth: number = 1.0;
-    private _lineColor?: vec3;  // Optional override for line color
+    private _lineColor?: vec3;
     
     get material(): any { return undefined; }
     set material(_: any) {}
@@ -198,10 +215,7 @@ export class GameObject {
         public visible: boolean = true,
         public name?: string,
     ) {
-        // Assign globally unique ID
         this.id = GameObject.nextId++;
-        
-        // Type must be set by derived classes
         this.type = "mesh" as const;
     }
 
@@ -289,15 +303,15 @@ export class GameObject {
         // Base implementation does nothing
     }
 
-    // Base serialization
-    toJSON() {
-        const result: any = {
+    // Serialization implementation
+    toJSON(): BaseSerializedGameObject {
+        const result: BaseSerializedGameObject = {
             type: this.type,
             name: this.name,
             enabled: this.enabled,
             visible: this.visible,
-            forwardRendered: this._forwardRendered,  // Include forward rendering flag
-            forwardShaderPaths: this._forwardShaderPaths,  // Include custom shader paths
+            forwardRendered: this._forwardRendered,
+            forwardShaderPaths: this._forwardShaderPaths,
             transform: this.transform.toJSON()
         };
 
@@ -308,8 +322,8 @@ export class GameObject {
         return result;
     }
 
-    // Simplified deserialization using the registry
-    static async fromJSON(gl: GLC, data: any): Promise<GameObject> {
+    // Deserialization
+    static async fromJSON(gl: GLC, data: BaseSerializedGameObject): Promise<GameObject> {
         return GameObjectRegistry.create(gl, data);
     }
 }

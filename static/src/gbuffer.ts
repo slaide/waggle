@@ -1,6 +1,7 @@
 import { GL, GLC } from "./gl";
 import { Camera } from "./scene/camera";
-import { createShaderProgram } from "./scene/gameobject";
+import { Scene } from "./scene/scene";
+import { GameObject, createShaderProgram } from "./scene/gameobject";
 import { PointLight, DirectionalLight } from "./scene/light";
 import { vec3, mat4 } from "gl-matrix";
 
@@ -431,7 +432,7 @@ export class GBuffer {
      * @param y Screen y coordinate (0 to canvas height) 
      * @returns GameObject ID or 0 if no object
      */
-    pickObject(x: number, y: number, scene: any, camera: any): number {
+    pickObject(x: number, y: number, scene: Scene, camera: Camera): number {
         // Ensure coordinates are within bounds
         if (x < 0 || x >= this.size.width || y < 0 || y >= this.size.height) {
             return 0;
@@ -473,7 +474,7 @@ export class GBuffer {
     }
     
     // Raycast against forward-rendered objects
-    private raycastForwardObjects(x: number, y: number, scene: any, camera: any): { objectId: number, depth: number } | null {
+    private raycastForwardObjects(x: number, y: number, scene: Scene, camera: Camera): { objectId: number, depth: number } | null {
         // Convert screen coordinates to normalized device coordinates
         const ndcX = (x / this.size.width) * 2 - 1;
         const ndcY = ((this.size.height - y) / this.size.height) * 2 - 1; // Flip Y for NDC
@@ -486,9 +487,9 @@ export class GBuffer {
         
         // Test all forward-rendered objects
         const allObjects = scene.getAllObjects();
-        const forwardObjects = allObjects.filter((obj: any) => obj.forwardRendered && obj.shouldDraw);
+        const forwardObjects = allObjects.filter((obj: GameObject) => obj.forwardRendered && obj.shouldDraw);
         
-        forwardObjects.forEach((obj: any) => {
+        forwardObjects.forEach((obj: GameObject) => {
             const hit = this.rayBoxIntersect(ray, obj);
             if (hit && hit.distance < closestDistance) {
                 closestDistance = hit.distance;
@@ -503,7 +504,7 @@ export class GBuffer {
     }
     
     // Create a ray from camera through screen pixel
-    private createCameraRay(ndcX: number, ndcY: number, camera: any): { origin: vec3, direction: vec3 } {
+    private createCameraRay(ndcX: number, ndcY: number, camera: Camera): { origin: vec3, direction: vec3 } {
         
         // Get camera matrices
         const viewMatrix = camera.viewMatrix;
@@ -549,7 +550,7 @@ export class GBuffer {
     }
     
     // Ray-box intersection test
-    private rayBoxIntersect(ray: { origin: vec3, direction: vec3 }, obj: any): { distance: number } | null {
+    private rayBoxIntersect(ray: { origin: vec3, direction: vec3 }, obj: GameObject): { distance: number } | null {
         // Get object's world matrix
         const worldMatrix = obj.transform.worldMatrix;
         
@@ -558,8 +559,8 @@ export class GBuffer {
         let max = vec3.fromValues(0.5, 0.5, 0.5);
         
         // If object has a calculateBoundingBox method, use it
-        if (typeof obj.calculateBoundingBox === 'function') {
-            const bounds = obj.calculateBoundingBox();
+        if ('calculateBoundingBox' in obj && typeof obj.calculateBoundingBox === 'function') {
+            const bounds = (obj as any).calculateBoundingBox();
             min = bounds.min;
             max = bounds.max;
         }
