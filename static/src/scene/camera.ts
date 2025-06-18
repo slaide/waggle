@@ -1,4 +1,3 @@
-
 import {vec3,quat,mat4,glMatrix as glm} from "gl-matrix";
 
 export class Camera{
@@ -104,5 +103,51 @@ export class Camera{
             vec3.fromValues(data.position[0], data.position[1], data.position[2]),
             quat.fromValues(data.rotation[0], data.rotation[1], data.rotation[2], data.rotation[3])
         );
+    }
+}
+
+export class OrthographicCamera {
+    constructor(
+        public left: number = -1,
+        public right: number = 1,
+        public bottom: number = -1,
+        public top: number = 1,
+        public znear: number = 0.1,
+        public zfar: number = 100,
+        public position: vec3 = vec3.fromValues(0, 0, 0),
+        public rotation: quat = quat.identity(quat.create()),
+    ) {}
+
+    get viewMatrix() {
+        const camTransform = mat4.fromRotationTranslation(
+            mat4.create(),
+            this.rotation,
+            this.position,
+        );
+        const ret = mat4.invert(mat4.create(), camTransform);
+        if (ret == null) throw `unable to invert matrix`;
+        return ret;
+    }
+
+    get projectionMatrix() {
+        return mat4.ortho(
+            mat4.create(),
+            this.left,
+            this.right,
+            this.bottom,
+            this.top,
+            this.znear,
+            this.zfar
+        );
+    }
+
+    // Update orthographic bounds based on canvas dimensions
+    updateBounds(width: number, height: number) {
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+        this.left = -halfWidth;
+        this.right = halfWidth;
+        this.bottom = -halfHeight;
+        this.top = halfHeight;
     }
 }
