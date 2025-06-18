@@ -7,7 +7,7 @@
  * Configuration for font rendering:
  * - `fontSize`: Font size in world units
  * - `lineWidth`: Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0
- * - `lineColor`: RGB color for lines (vec3)
+ * - `color`: RGB color for text (both wireframe lines and filled triangles) (vec3)
  * - `splineSteps`: Number of interpolation steps per curve segment (default: 0 = no interpolation, just control points)
  * 
  * ### Font Class
@@ -50,7 +50,7 @@
  * const fontOptions: FontOptions = {
  *     fontSize: 1.0,
  *     lineWidth: 3.0,
- *     lineColor: vec3.fromValues(1.0, 0.0, 0.0), // Red
+ *     color: vec3.fromValues(1.0, 0.0, 0.0), // Red
  *     splineSteps: 8 // 8 steps per curve segment for smooth outlines
  * };
  * 
@@ -137,8 +137,8 @@ export interface FontOptions {
     fontSize: number;
     /** Line width for wireframe rendering - NOTE: Most browsers only support 1.0 */
     lineWidth: number;
-    /** RGB color for lines */
-    lineColor: vec3;
+    /** RGB color for text (both wireframe lines and filled triangles) */
+    color: vec3;
     /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
     splineSteps: number;
     /** Whether to generate filled triangulated mesh (true) or wireframe outline (false) */
@@ -425,16 +425,12 @@ class PolygonTriangulator {
      */
     static triangulate(polygon: [number, number][]): Array<[[number, number], [number, number], [number, number]]> {
         if (polygon.length < 3) {
-            console.warn('Polygon must have at least 3 vertices');
             return [];
         }
-
-        console.log(`🔺 Starting triangulation: ${polygon.length} vertices`);
 
         // Clean the polygon - remove consecutive duplicate points
         const cleaned = this.cleanPolygon(polygon);
         if (cleaned.length < 3) {
-            console.warn('Polygon became degenerate after cleaning');
             return [];
         }
 
@@ -442,7 +438,6 @@ class PolygonTriangulator {
         let vertices = [...cleaned];
         if (this.signedArea(vertices) < 0) {
             vertices.reverse();
-            console.log('Fixed polygon winding to counter-clockwise');
         }
 
         const triangles: Array<[[number, number], [number, number], [number, number]]> = [];
@@ -494,13 +489,10 @@ class PolygonTriangulator {
                     }
                     
                     // Found a valid ear! Add triangle with correct winding order
-                    // Double-check triangle orientation
                     const triangleArea = this.signedArea([prev, curr, next]);
                     if (triangleArea > 0) {
                         triangles.push([prev, curr, next]);
                     } else {
-                        // This shouldn't happen with correct winding, but let's be safe
-                        console.warn(`Triangle has wrong orientation, flipping: area=${triangleArea}`);
                         triangles.push([prev, next, curr]);
                     }
                     vertices.splice(i, 1); // Remove the ear vertex
@@ -510,9 +502,6 @@ class PolygonTriangulator {
             }
 
             if (!earFound) {
-                console.warn(`No ear found at iteration ${iterationCount}, remaining vertices: ${vertices.length}`);
-                // Log remaining vertices for debugging
-                console.warn('Remaining vertices:', vertices);
                 break; // Prevent infinite loop
             }
         }
@@ -525,7 +514,6 @@ class PolygonTriangulator {
             }
         }
 
-        console.log(`✅ Triangulation complete: ${triangles.length} triangles generated in ${iterationCount} iterations`);
         return triangles;
     }
 
@@ -534,14 +522,10 @@ class PolygonTriangulator {
      * Bridges holes to outer polygon and then triangulates the merged result
      */
     static triangulateWithHoles(outer: [number, number][], holes: [number, number][][]): Array<[[number, number], [number, number], [number, number]]> {
-        console.log(`🔺 Triangulation with holes: outer=${outer.length} points, holes=${holes.length}`);
-        
         if (holes.length === 0) {
             // No holes, just triangulate the outer polygon
             return this.triangulate(outer);
         }
-        
-        console.log(`   Processing ${holes.length} holes for bridging`);
         
         // Start with the outer polygon
         let mergedPolygon = [...outer];
@@ -549,7 +533,6 @@ class PolygonTriangulator {
         // Ensure outer polygon has correct winding (CCW)
         if (this.signedArea(mergedPolygon) < 0) {
             mergedPolygon.reverse();
-            console.log(`   Fixed outer polygon winding to CCW`);
         }
         
         // Bridge each hole to the merged polygon
@@ -559,14 +542,11 @@ class PolygonTriangulator {
             // Ensure hole has correct winding (CW for holes)
             if (this.signedArea(hole) > 0) {
                 hole.reverse();
-                console.log(`   Fixed hole ${i} winding to CW`);
             }
             
             // Bridge this hole to the current merged polygon
             mergedPolygon = this.bridgeHoleToOuter(mergedPolygon, hole);
         }
-        
-        console.log(`   Final merged polygon: ${mergedPolygon.length} vertices`);
         
         // Triangulate the merged polygon
         return this.triangulate(mergedPolygon);
@@ -734,20 +714,14 @@ class PolygonTriangulator {
         outerPolygon: [number, number][],
         hole: [number, number][]
     ): [number, number][] {
-        console.log(`   🌉 Bridging hole with ${hole.length} vertices to outer polygon`);
-        
         // Find the rightmost vertex of the hole
         const { vertex: holeVertex, index: holeIndex } = this.getRightmostVertex(hole);
-        console.log(`   Hole rightmost vertex at index ${holeIndex}: [${holeVertex[0].toFixed(2)}, ${holeVertex[1].toFixed(2)}]`);
         
         // Find the best bridge point on the outer polygon
         const bridgePoint = this.findBridgePoint(holeVertex, outerPolygon);
         if (!bridgePoint) {
-            console.warn(`   ⚠️ Could not find bridge point for hole`);
             return outerPolygon; // Return original if bridging fails
         }
-        
-        console.log(`   Bridge point at index ${bridgePoint.index}: [${bridgePoint.vertex[0].toFixed(2)}, ${bridgePoint.vertex[1].toFixed(2)}]`);
         
         // Create the merged polygon
         const merged: [number, number][] = [];
@@ -775,7 +749,6 @@ class PolygonTriangulator {
             merged.push(outerPolygon[i]);
         }
         
-        console.log(`   ✅ Merged polygon: ${outerPolygon.length} + ${hole.length} -> ${merged.length} vertices`);
         return merged;
     }
 
@@ -805,8 +778,6 @@ class PolygonTriangulator {
         outerContours: { polygon: [number, number][], index: number }[],
         holes: { polygon: [number, number][], index: number, parentIndex: number }[]
     } {
-        console.log(`   🔍 Classifying ${contours.length} contours using containment analysis`);
-        
         const contourData = contours.map((poly, index) => ({
             polygon: poly,
             area: this.signedArea(poly),
@@ -831,7 +802,6 @@ class PolygonTriangulator {
                 if (this.isPolygonContained(current.polygon, potential_parent.polygon)) {
                     isHole = true;
                     parentIndex = potential_parent.index;
-                    console.log(`     Contour ${current.index} (area=${current.area.toFixed(2)}) is HOLE inside contour ${parentIndex}`);
                     break;
                 }
             }
@@ -843,7 +813,6 @@ class PolygonTriangulator {
                     parentIndex: parentIndex
                 });
             } else {
-                console.log(`     Contour ${current.index} (area=${current.area.toFixed(2)}) is OUTER contour`);
                 outerContours.push({
                     polygon: current.polygon,
                     index: current.index
@@ -851,7 +820,6 @@ class PolygonTriangulator {
             }
         }
         
-        console.log(`   📊 Classification result: ${outerContours.length} outer, ${holes.length} holes`);
         return { outerContours, holes };
     }
 }
@@ -1047,8 +1015,6 @@ export class Font {
      * Generate a filled mesh for a single character using triangulation
      */
     generateFilledCharacterMesh(character: string, position: vec3): FilledTextMesh | null {
-        console.log(`🔤 Generating filled mesh for character: '${character}'`);
-        
         // Get advance width for this character
         const advanceWidth = this.getCharacterAdvanceWidth(character);
 
@@ -1061,23 +1027,18 @@ export class Font {
         const charCode = character.charCodeAt(0);
         const glyphId = getGlyphId(this.ttfFont, charCode);
         if (glyphId === 0) {
-            console.warn(`Character '${character}' not found in font`);
             return null;
         }
         
         // Parse glyph outline
         const outline = parseGlyphOutline(this.ttfFont, glyphId);
         if (!outline) {
-            console.warn(`Could not parse outline for character '${character}'`);
             return null;
         }
 
         if (outline.contours.length === 0) {
-            console.log(`  Character '${character}' has no contours`);
             return this.createEmptyFilledMesh(position, advanceWidth);
         }
-
-        console.log(`  Character '${character}' has ${outline.contours.length} contours`);
 
         // Convert contours to 2D polygons for triangulation
         const contourPolygons: [number, number][][] = [];
@@ -1086,12 +1047,10 @@ export class Font {
             const smoothPoints = CurveGenerator.generateSmoothContour(contour, this.options.splineSteps);
             if (smoothPoints.length >= 3) {
                 contourPolygons.push(smoothPoints);
-                console.log(`    Contour: ${contour.points.length} -> ${smoothPoints.length} points`);
             }
         }
 
         if (contourPolygons.length === 0) {
-            console.log(`  No valid contours after smoothing`);
             return this.createEmptyFilledMesh(position, advanceWidth);
         }
 
@@ -1099,24 +1058,17 @@ export class Font {
 
         // Simple case: single contour
         if (contourPolygons.length === 1) {
-            console.log(`  Simple character: single contour triangulation`);
             triangles = PolygonTriangulator.triangulate(contourPolygons[0]);
         } else {
             // Multiple contours - use containment analysis for proper classification
-            console.log(`  Multiple contours: ${contourPolygons.length} contours`);
-            
-            // Use robust containment-based classification
             const { outerContours, holes } = PolygonTriangulator.classifyContours(contourPolygons);
 
             if (outerContours.length === 0) {
-                console.warn(`  No outer contours found for character '${character}'`);
                 return this.createEmptyFilledMesh(position, advanceWidth);
             }
 
             // Handle multiple outer contours (like 'i' with dot and stem)
             if (outerContours.length > 1) {
-                console.log(`  Character has ${outerContours.length} separate outer contours (e.g., 'i' with dot)`);
-                
                 // Triangulate each outer contour separately with its associated holes
                 triangles = [];
                 
@@ -1126,23 +1078,17 @@ export class Font {
                         .filter(hole => hole.parentIndex === outerContour.index)
                         .map(hole => hole.polygon);
                     
-                    console.log(`   Outer contour ${outerContour.index}: ${outerContour.polygon.length} points, ${associatedHoles.length} holes`);
-                    
                     // Triangulate this outer contour with its holes
                     const contourTriangles = associatedHoles.length > 0 
                         ? PolygonTriangulator.triangulateWithHoles(outerContour.polygon, associatedHoles)
                         : PolygonTriangulator.triangulate(outerContour.polygon);
                     
                     triangles.push(...contourTriangles);
-                    console.log(`   Generated ${contourTriangles.length} triangles for outer contour ${outerContour.index}`);
                 }
             } else {
                 // Single outer contour with holes (like 'd', 'o')
                 const mainOuter = outerContours[0];
                 const allHoles = holes.map(hole => hole.polygon);
-
-                console.log(`   Single outer contour with ${mainOuter.polygon.length} points`);
-                console.log(`   Processing ${allHoles.length} holes with bridging`);
                 
                 // Use proper hole bridging triangulation
                 triangles = PolygonTriangulator.triangulateWithHoles(mainOuter.polygon, allHoles);
@@ -1150,11 +1096,11 @@ export class Font {
         }
 
         if (triangles.length === 0) {
-            console.warn(`  No triangles generated for character '${character}'`);
             return this.createEmptyFilledMesh(position, advanceWidth);
         }
 
-        console.log(`  Generated ${triangles.length} triangles for character '${character}'`);
+        // Print triangle count for this character
+        console.log(`Character '${character}': ${triangles.length} triangles`);
 
         // Convert triangles to mesh data
         const vertices: number[] = [];
@@ -1379,7 +1325,7 @@ export async function generateTextMesh(
         const fontOptions: FontOptions = {
             fontSize: config.fontSize,
             lineWidth: 1.0,
-            lineColor: vec3.fromValues(1.0, 1.0, 1.0),
+            color: vec3.fromValues(1.0, 1.0, 1.0),
             splineSteps: 0
         };
         
@@ -1438,7 +1384,7 @@ export async function generateFilledTextMesh(
         const fontOptions: FontOptions = {
             fontSize: config.fontSize,
             lineWidth: 1.0,
-            lineColor: vec3.fromValues(1.0, 1.0, 1.0),
+            color: vec3.fromValues(1.0, 1.0, 1.0),
             splineSteps: 0
         };
         

@@ -36,7 +36,147 @@ Waggle is a 3D rendering engine that combines the efficiency of deferred shading
 ### Custom File Loaders
 - **OBJ Parser**: Complete Wavefront OBJ file support with material loading
 - **PNG Decoder**: Native TypeScript PNG image decoder with compression support
+- **TTF Font Parser**: Full TrueType font parsing with glyph extraction and curve data
 - **Scene Serialization**: JSON-based scene format with hot-reloading
+
+### Advanced Text Rendering System
+Waggle features a sophisticated text rendering system with full TTF font support, smooth curve interpolation, and robust polygon triangulation for both wireframe and filled text rendering.
+
+#### **Core Features**
+- **TTF Font Support**: Complete TrueType font parsing and glyph extraction
+- **Dual Rendering Modes**: Both wireframe outlines and filled triangle meshes
+- **Smooth Curve Interpolation**: Configurable spline steps for high-quality curves
+- **Robust Triangulation**: Advanced ear clipping with hole bridging support
+- **Multi-Contour Handling**: Proper support for complex characters (i, d, o, etc.)
+
+#### **Technical Implementation**
+
+**Font Processing Pipeline**
+```typescript
+// Load font and create text renderer
+const textRenderer = await TextRenderer.fromFile("./static/resources/Raleway-Regular.ttf");
+
+// Create wireframe text
+const wireframeText = await createTextModelFromRenderer(gl, textRenderer, "Hello", {
+    fontSize: 1.0,
+    lineWidth: 1.0,
+    color: vec3.fromValues(0.0, 1.0, 0.0), // Green
+    position: vec3.fromValues(-3, 0, -1),
+    splineSteps: 8, // Smooth curve interpolation
+    filled: false
+});
+
+// Create filled text
+const filledText = await createTextModelFromRenderer(gl, textRenderer, "World", {
+    fontSize: 1.0,
+    color: vec3.fromValues(1.0, 0.0, 0.0), // Red
+    position: vec3.fromValues(3, 0, -0.5),
+    splineSteps: 8,
+    filled: true
+});
+```
+
+**Triangulation Algorithm**
+- **Containment-Based Classification**: Automatically detects outer contours vs holes
+- **Hole Bridging**: Connects holes to outer contours using rightmost vertex + visibility testing
+- **Robust Ear Clipping**: Enhanced algorithm with centroid validation
+- **Multi-Contour Support**: Handles characters like 'i' with separate dot and stem
+
+**Character Processing Flow**
+1. **Glyph Extraction**: Parse TTF glyph data and control points
+2. **Curve Interpolation**: Generate smooth curves using quadratic Bézier interpolation
+3. **Contour Classification**: Identify outer shapes vs holes using geometric containment
+4. **Hole Bridging**: Connect holes to main contour with minimal bridge connections
+5. **Triangulation**: Robust ear clipping with triangle validation
+6. **Mesh Generation**: Convert triangles to WebGL vertex/index buffers
+
+#### **Font Configuration Options**
+
+```typescript
+interface FontOptions {
+    fontSize: number;        // Font size in world units
+    lineWidth: number;       // Line width for wireframe (most browsers support 1.0 only)
+    color: vec3;             // RGB color for text (both wireframe lines and filled triangles)
+    splineSteps: number;     // Curve interpolation steps (0 = no interpolation)
+    filled?: boolean;        // Generate filled triangles vs wireframe outline
+}
+```
+
+#### **Advanced Features**
+
+**Smooth Curve Generation**
+- **TrueType Specification Compliance**: Proper on-curve and off-curve point handling
+- **Implied Point Generation**: Automatic midpoint calculation between consecutive off-curve points
+- **Configurable Quality**: Adjustable spline steps for performance vs quality balance
+- **Quadratic Bézier Curves**: Mathematical precision for smooth character outlines
+
+**Robust Polygon Triangulation**
+- **Hole Detection**: Geometric containment analysis rather than unreliable winding order
+- **Bridge Optimization**: Rightmost vertex selection with visibility ray casting
+- **Triangle Validation**: Centroid testing ensures triangles are inside valid fill areas
+- **Fallback Strategies**: Multiple approaches for difficult polygon configurations
+
+**Character Support**
+- **Simple Characters**: Single contour letters (l, c, v, etc.)
+- **Characters with Holes**: Proper hole handling (d, o, a, b, etc.)
+- **Multi-Part Characters**: Separate contours (i with dot, j with dot)
+- **Complex Shapes**: Nested contours and irregular geometries
+- **Unicode Support**: Full character set including special symbols (öäüß, punctuation)
+
+#### **Performance Characteristics**
+- **Efficient Caching**: Generated meshes are cached for repeated use
+- **Minimal GPU Impact**: Text rendered in standard forward/deferred pipeline
+- **Scalable Quality**: Spline steps configurable for performance tuning
+- **Memory Efficient**: Shared vertex data and optimized index buffers
+
+#### **Usage Examples**
+
+**Basic Text Creation**
+```typescript
+// Simple filled text
+const text = await createFilledTextMesh(
+    "Hello World",
+    "./static/resources/Raleway-Regular.ttf",
+    {
+        fontSize: 2.0,
+        lineWidth: 1.0,
+        color: vec3.fromValues(1.0, 1.0, 1.0),
+        splineSteps: 8
+    },
+    vec3.fromValues(0, 0, -5)
+);
+```
+
+**Advanced Configuration**
+```typescript
+// High-quality wireframe text with custom styling
+const styledText = await createTextModelFromRenderer(gl, textRenderer, "Waggle", {
+    fontSize: 1.5,
+    lineWidth: 1.0,
+    color: vec3.fromValues(0.2, 0.8, 1.0), // Cyan
+    position: vec3.fromValues(-2, 1, -3),
+    splineSteps: 16, // High quality curves
+    filled: false
+});
+scene.objects.push(styledText);
+```
+
+**Console Output**
+The system provides clean triangle count feedback:
+```
+Character 'H': 52 triangles
+Character 'e': 89 triangles  
+Character 'l': 66 triangles
+Character 'o': 127 triangles
+```
+
+#### **Supported Features**
+- **Font Formats**: TrueType (.ttf) fonts with complete glyph support
+- **Rendering Modes**: Wireframe outlines and filled triangle meshes
+- **Text Layout**: Automatic character spacing and positioning
+- **Material Integration**: Full material system support with lighting
+- **Transform Hierarchy**: Text objects support parent-child relationships
+- **Performance Scaling**: Configurable quality levels for different use cases
 
 ### Comprehensive Testing
 - **Unit Tests**: Complete test coverage for core systems

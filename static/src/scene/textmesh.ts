@@ -47,8 +47,8 @@ export interface TextRenderConfig {
     fontSize: number;
     /** Line width for wireframe rendering (pixels) - NOTE: Most browsers only support 1.0 */
     lineWidth: number;
-    /** RGB color for lines */
-    lineColor: vec3;
+    /** RGB color for text (both wireframe lines and filled triangles) */
+    color: vec3;
     /** Position where text should start (lower-left corner of first character) */
     position: vec3;
     /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
@@ -80,7 +80,7 @@ export class TextRenderer {
         const loadingOptions: FontOptions = {
             fontSize: 1.0,  // Will be overridden during rendering
             lineWidth: 1.0, // Will be overridden during rendering  
-            lineColor: vec3.fromValues(1.0, 1.0, 1.0), // Will be overridden during rendering
+            color: vec3.fromValues(1.0, 1.0, 1.0), // Will be overridden during rendering
             splineSteps: 0, // Will be overridden during rendering
             filled: false // Will be overridden during rendering
         };
@@ -99,7 +99,7 @@ export class TextRenderer {
         // Update font options with the provided configuration
         this.font.options.fontSize = config.fontSize;
         this.font.options.lineWidth = config.lineWidth;
-        this.font.options.lineColor = vec3.clone(config.lineColor);
+        this.font.options.color = vec3.clone(config.color);
         this.font.options.splineSteps = config.splineSteps;
         this.font.options.filled = config.filled;
         
@@ -150,7 +150,7 @@ export async function createTextModel(
     
     // Create material for text rendering
     const textMaterial = new MtlMaterial();
-    textMaterial.diffuse = vec3.clone(config.lineColor);
+    textMaterial.diffuse = vec3.clone(config.color);
     textMaterial.specularExponent = 1;
     
     // For filled text, ensure proper material properties
@@ -222,7 +222,7 @@ export async function createTextModel(
     } else {
         textModel.drawMode = "lines";
         textModel.lineWidth = config.lineWidth;
-        textModel.lineColor = vec3.clone(config.lineColor);
+        textModel.lineColor = vec3.clone(config.color);
         console.log(`📏 Wireframe text model: ${primitiveCount} lines, ${numVertices} vertices`);
     }
     
