@@ -5,7 +5,7 @@
     "main": "index.js",
     "type": "module",
     "scripts": {
-        "bundle": "bun build static/src/main.ts --outfile static/src/bundle.js --target browser --minify --sourcemap",
+        "bundle": "bun build static/src/main.ts --outfile static/resources/bundle.js --target browser --minify --sourcemap",
         "build": "bun run bundle",
         "test": "bun test",
         "test:coverage": "bun test --coverage",
