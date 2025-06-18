@@ -36,7 +36,7 @@ import { vec3 } from "gl-matrix";
 import { Model } from "./model";
 import { Transform } from "./transform";
 import { GL, GLC } from "../gl";
-import { TextMesh, Font, FontOptions } from "../text";
+import { TextMesh, FilledTextMesh, Font, FontOptions } from "../text";
 import { MtlMaterial } from "../bits/obj";
 
 /**
@@ -93,9 +93,9 @@ export class TextRenderer {
      * Generate a text mesh with explicit configuration
      * @param text - Text string to render
      * @param config - Complete rendering configuration (no defaults)
-     * @returns TextMesh with vertices and indices
+     * @returns TextMesh or FilledTextMesh based on config.filled
      */
-    generateTextMesh(text: string, config: TextRenderConfig): TextMesh {
+    generateTextMesh(text: string, config: TextRenderConfig): TextMesh | FilledTextMesh {
         // Update font options with the provided configuration
         this.font.options.fontSize = config.fontSize;
         this.font.options.lineWidth = config.lineWidth;
@@ -103,7 +103,11 @@ export class TextRenderer {
         this.font.options.splineSteps = config.splineSteps;
         this.font.options.filled = config.filled;
         
-        return this.font.generateTextMesh(text, config.position);
+        if (config.filled) {
+            return this.font.generateFilledTextMesh(text, config.position);
+        } else {
+            return this.font.generateTextMesh(text, config.position);
+        }
     }
 
     /**
@@ -115,16 +119,16 @@ export class TextRenderer {
 }
 
 /**
- * Generate a wireframe text Model from a TextMesh
+ * Generate a text Model from a TextMesh or FilledTextMesh
  * @param gl - WebGL context
- * @param textMesh - Text mesh data
+ * @param textMesh - Text mesh data (wireframe or filled)
  * @param config - Rendering configuration
  * @param text - Text string (for naming purposes)
- * @returns Promise<Model> - A Model configured for wireframe text rendering
+ * @returns Promise<Model> - A Model configured for text rendering
  */
 export async function createTextModel(
     gl: GLC,
-    textMesh: TextMesh,
+    textMesh: TextMesh | FilledTextMesh,
     config: TextRenderConfig,
     text: string
 ): Promise<Model> {
@@ -150,7 +154,7 @@ export async function createTextModel(
     textMaterial.specularExponent = 1;
     
     // For filled text, ensure proper material properties
-    if (textMesh.filled) {
+    if (config.filled) {
         textMaterial.ambient = vec3.fromValues(0.1, 0.1, 0.1); // Small ambient component
         textMaterial.specular = vec3.fromValues(0.2, 0.2, 0.2); // Small specular component
     }
@@ -181,7 +185,7 @@ export async function createTextModel(
     transform.position = vec3.fromValues(0, 0, 0);
     
     // Calculate number of primitives based on mesh type
-    const primitiveCount = textMesh.filled 
+    const primitiveCount = config.filled 
         ? textMesh.indices.length / 3  // Triangles
         : textMesh.indices.length / 2; // Lines
     
@@ -195,7 +199,7 @@ export async function createTextModel(
         textMaterial,
         true,  // enabled
         true,  // visible
-        `Text ${textMesh.filled ? '(filled)' : '(wireframe)'}: ${text}`
+        `Text ${config.filled ? '(filled)' : '(wireframe)'}: ${text}`
     );
     
     // Set forward rendering properties
@@ -204,7 +208,7 @@ export async function createTextModel(
     textModel.forwardShaderPaths = shaderPaths;
     
     // Set rendering mode and properties based on mesh type
-    if (textMesh.filled) {
+    if (config.filled) {
         textModel.drawMode = "triangles";
         console.log(`🔺 Filled text model: ${primitiveCount} triangles, ${numVertices} vertices`);
         console.log(`   Material diffuse: [${textMaterial.diffuse[0].toFixed(2)}, ${textMaterial.diffuse[1].toFixed(2)}, ${textMaterial.diffuse[2].toFixed(2)}]`);
@@ -238,7 +242,7 @@ export async function createTextModel(
  * @param textRenderer - Pre-loaded text renderer
  * @param text - Text string to render
  * @param config - Complete rendering configuration (no defaults)
- * @returns Promise<Model> - A Model configured for wireframe text rendering
+ * @returns Promise<Model> - A Model configured for text rendering (wireframe or filled based on config.filled)
  */
 export async function createTextModelFromRenderer(
     gl: GLC,

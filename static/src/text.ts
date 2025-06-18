@@ -1,7 +1,7 @@
 /**
  * Text Rendering System for Waggle WebGL2 Framework
  * 
- * This module provides a text rendering system with smooth contour generation:
+ * This module provides a text rendering system with smooth contour generation and triangulation:
  * 
  * ### FontOptions
  * Configuration for font rendering:
@@ -13,8 +13,37 @@
  * ### Font Class
  * Main class for text rendering:
  * - `Font.fromFile(fontPath, options)`: Create font from TTF file
- * - `font.generateCharacterMesh(char, position)`: Generate single character
- * - `font.generateTextMesh(text, position)`: Generate multi-character text
+ * - `font.generateCharacterMesh(char, position)`: Generate single character wireframe
+ * - `font.generateTextMesh(text, position)`: Generate multi-character text wireframe
+ * - `font.generateFilledCharacterMesh(char, position)`: Generate single character filled mesh
+ * - `font.generateFilledTextMesh(text, position)`: Generate multi-character filled text mesh
+ * 
+ * ### Triangulation Algorithm Roadmap
+ * 🔷 Step-by-Step Hole Bridging + Ear Clipping Implementation:
+ * 
+ * 1. **Ensure Correct Winding**
+ *    - Outer contours: Counter-clockwise (CCW)
+ *    - Inner contours (holes): Clockwise (CW)
+ *    - Use signed area to determine and correct winding
+ * 
+ * 2. **Bridge Each Hole to Outer Polygon**
+ *    a. Find hole's rightmost vertex
+ *    b. Find visible outer vertex using ray casting
+ *    c. Connect hole to outer polygon along bridge
+ *    d. Merge hole into outer polygon
+ * 
+ * 3. **Ear Clipping Triangulation**
+ *    - Identify convex vertices (ears)
+ *    - Check if ear contains other vertices
+ *    - Clip valid ears to create triangles
+ *    - Repeat until polygon is fully triangulated
+ * 
+ * 4. **Workflow Summary**
+ *    - Input: outer contour + holes array
+ *    - Fix windings for all contours
+ *    - Bridge all holes to outer contour
+ *    - Ear clip the merged polygon
+ *    - Output: triangle array for filled rendering
  * 
  * ### Usage Example
  * ```typescript
@@ -26,7 +55,8 @@
  * };
  * 
  * const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', fontOptions);
- * const textMesh = font.generateTextMesh('ABC', vec3.fromValues(0, 0, -1));
+ * const wireframeMesh = font.generateTextMesh('ABC', vec3.fromValues(0, 0, -1));
+ * const filledMesh = font.generateFilledTextMesh('ABC', vec3.fromValues(0, 0, -1));
  * ```
  * 
  * ### Position Specification
@@ -78,6 +108,28 @@ export interface TextMesh {
 }
 
 /**
+ * Filled text mesh data for triangle rendering
+ */
+export interface FilledTextMesh {
+    /** Vertex positions as flat array (x,y,z,x,y,z,...) */
+    vertices: Float32Array;
+    /** Triangle indices for filled rendering */
+    indices: Uint32Array;
+    /** Bounding box of the text mesh */
+    bounds: BoundingBox;
+    /** Advance width for this character/text in world units */
+    advanceWidth: number;
+}
+
+/**
+ * 2D polygon representation for triangulation
+ */
+export interface Polygon2D {
+    /** Array of 2D points [x, y] */
+    points: [number, number][];
+}
+
+/**
  * Font rendering options
  */
 export interface FontOptions {
@@ -89,6 +141,8 @@ export interface FontOptions {
     lineColor: vec3;
     /** Number of interpolation steps per curve segment (0 = no interpolation, just control points) */
     splineSteps: number;
+    /** Whether to generate filled triangulated mesh (true) or wireframe outline (false) */
+    filled?: boolean;
 }
 
 /**
@@ -267,6 +321,252 @@ class CurveGenerator {
         }
         
         return segments;
+    }
+}
+
+/**
+ * Simple and robust polygon triangulation using ear clipping
+ * Focuses on proper winding order and correct triangle orientation
+ */
+class PolygonTriangulator {
+    /**
+     * Calculate signed area of a polygon
+     * Positive area = counter-clockwise, negative area = clockwise
+     */
+    static signedArea(polygon: [number, number][]): number {
+        let area = 0;
+        for (let i = 0; i < polygon.length; i++) {
+            const [x1, y1] = polygon[i];
+            const [x2, y2] = polygon[(i + 1) % polygon.length];
+            area += (x1 * y2 - x2 * y1);
+        }
+        return area / 2;
+    }
+
+    /**
+     * Check if a point is inside a polygon using ray casting algorithm
+     */
+    static pointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
+        const [x, y] = point;
+        let inside = false;
+        
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const [xi, yi] = polygon[i];
+            const [xj, yj] = polygon[j];
+            
+            if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+                inside = !inside;
+            }
+        }
+        
+        return inside;
+    }
+
+    /**
+     * Calculate the centroid of a triangle
+     */
+    static triangleCentroid(a: [number, number], b: [number, number], c: [number, number]): [number, number] {
+        return [
+            (a[0] + b[0] + c[0]) / 3,
+            (a[1] + b[1] + c[1]) / 3
+        ];
+    }
+
+    /**
+     * Check if three consecutive vertices form a convex angle (ear)
+     * Returns true if the angle at vertex b is convex (< 180 degrees)
+     * For a CCW polygon, we want the cross product of edges (a->b) and (b->c)
+     */
+    static isConvex(a: [number, number], b: [number, number], c: [number, number]): boolean {
+        // Calculate vectors: edge1 = b - a, edge2 = c - b
+        const edge1x = b[0] - a[0];
+        const edge1y = b[1] - a[1];
+        const edge2x = c[0] - b[0];
+        const edge2y = c[1] - b[1];
+        
+        // Cross product of edge1 and edge2
+        // For CCW polygon, positive cross product means convex angle (left turn)
+        const cross = edge1x * edge2y - edge1y * edge2x;
+        return cross > 0;
+    }
+
+    /**
+     * Check if a point is inside a triangle using barycentric coordinates
+     */
+    static pointInTriangle(p: [number, number], a: [number, number], b: [number, number], c: [number, number]): boolean {
+        const [px, py] = p;
+        const [ax, ay] = a;
+        const [bx, by] = b;
+        const [cx, cy] = c;
+
+        // Calculate barycentric coordinates
+        const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if (Math.abs(denom) < 1e-10) return false; // Degenerate triangle
+
+        const alpha = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom;
+        const beta = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom;
+        const gamma = 1 - alpha - beta;
+
+        const epsilon = 1e-10;
+        return alpha > epsilon && beta > epsilon && gamma > epsilon;
+    }
+
+    /**
+     * Check if a triangle is degenerate (has zero or near-zero area)
+     */
+    static isDegenerate(a: [number, number], b: [number, number], c: [number, number]): boolean {
+        const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+        return area < 1e-10;
+    }
+
+    /**
+     * Main triangulation function - fills the outer contour only
+     * Input polygon must be a simple polygon (no self-intersections)
+     */
+    static triangulate(polygon: [number, number][]): Array<[[number, number], [number, number], [number, number]]> {
+        if (polygon.length < 3) {
+            console.warn('Polygon must have at least 3 vertices');
+            return [];
+        }
+
+        console.log(`🔺 Starting triangulation: ${polygon.length} vertices`);
+
+        // Clean the polygon - remove consecutive duplicate points
+        const cleaned = this.cleanPolygon(polygon);
+        if (cleaned.length < 3) {
+            console.warn('Polygon became degenerate after cleaning');
+            return [];
+        }
+
+        // Ensure counter-clockwise winding for proper triangle orientation
+        let vertices = [...cleaned];
+        if (this.signedArea(vertices) < 0) {
+            vertices.reverse();
+            console.log('Fixed polygon winding to counter-clockwise');
+        }
+
+        const triangles: Array<[[number, number], [number, number], [number, number]]> = [];
+        let iterationCount = 0;
+        const maxIterations = vertices.length * 2;
+
+        // Ear clipping algorithm
+        while (vertices.length > 3 && iterationCount < maxIterations) {
+            iterationCount++;
+            let earFound = false;
+
+            for (let i = 0; i < vertices.length; i++) {
+                const prev = vertices[(i - 1 + vertices.length) % vertices.length];
+                const curr = vertices[i];
+                const next = vertices[(i + 1) % vertices.length];
+
+                // Check if this vertex forms a convex angle (potential ear)
+                const isConvexAngle = this.isConvex(prev, curr, next);
+                if (!isConvexAngle) {
+                    continue; // Skip reflex vertices
+                }
+
+                // Check if the triangle is degenerate
+                if (this.isDegenerate(prev, curr, next)) {
+                    continue;
+                }
+
+                // Check if any other vertex is inside this triangle
+                let hasInteriorPoint = false;
+                for (let j = 0; j < vertices.length; j++) {
+                    if (j === i || j === (i - 1 + vertices.length) % vertices.length || j === (i + 1) % vertices.length) {
+                        continue; // Skip the triangle's own vertices
+                    }
+                    
+                    if (this.pointInTriangle(vertices[j], prev, curr, next)) {
+                        hasInteriorPoint = true;
+                        break;
+                    }
+                }
+
+                if (!hasInteriorPoint) {
+                    // Additional validation: check if triangle centroid is inside the original polygon
+                    const triangleCentroid = this.triangleCentroid(prev, curr, next);
+                    const centroidInside = this.pointInPolygon(triangleCentroid, cleaned);
+                    
+                    if (!centroidInside) {
+                        // Triangle extends outside the polygon - skip this ear
+                        continue;
+                    }
+                    
+                    // Found a valid ear! Add triangle with correct winding order
+                    // Double-check triangle orientation
+                    const triangleArea = this.signedArea([prev, curr, next]);
+                    if (triangleArea > 0) {
+                        triangles.push([prev, curr, next]);
+                    } else {
+                        // This shouldn't happen with correct winding, but let's be safe
+                        console.warn(`Triangle has wrong orientation, flipping: area=${triangleArea}`);
+                        triangles.push([prev, next, curr]);
+                    }
+                    vertices.splice(i, 1); // Remove the ear vertex
+                    earFound = true;
+                    break;
+                }
+            }
+
+            if (!earFound) {
+                console.warn(`No ear found at iteration ${iterationCount}, remaining vertices: ${vertices.length}`);
+                // Log remaining vertices for debugging
+                console.warn('Remaining vertices:', vertices);
+                break; // Prevent infinite loop
+            }
+        }
+
+        // Add the final triangle if we have exactly 3 vertices left
+        if (vertices.length === 3) {
+            const [a, b, c] = vertices;
+            if (!this.isDegenerate(a, b, c)) {
+                triangles.push([a, b, c]);
+            }
+        }
+
+        console.log(`✅ Triangulation complete: ${triangles.length} triangles generated in ${iterationCount} iterations`);
+        return triangles;
+    }
+
+    /**
+     * Simple triangulation for multiple contours - only triangulates the outer contour
+     * Inner contours (holes) are completely ignored for now
+     */
+    static triangulateWithHoles(outer: [number, number][], holes: [number, number][][]): Array<[[number, number], [number, number], [number, number]]> {
+        console.log(`🔺 Multi-contour triangulation: outer=${outer.length} points, holes=${holes.length}`);
+        
+        if (holes.length > 0) {
+            console.log(`⚠️ Ignoring ${holes.length} hole contours - only triangulating outer contour`);
+        }
+
+        // Only triangulate the outer contour
+        return this.triangulate(outer);
+    }
+
+    /**
+     * Clean polygon by removing consecutive duplicate points
+     */
+    static cleanPolygon(polygon: [number, number][]): [number, number][] {
+        if (polygon.length === 0) return [];
+
+        const cleaned: [number, number][] = [];
+        const epsilon = 1e-8;
+
+        for (let i = 0; i < polygon.length; i++) {
+            const current = polygon[i];
+            const next = polygon[(i + 1) % polygon.length];
+
+            // Only add point if it's not too close to the next point
+            const dx = Math.abs(current[0] - next[0]);
+            const dy = Math.abs(current[1] - next[1]);
+
+            if (dx > epsilon || dy > epsilon) {
+                cleaned.push(current);
+            }
+        }
+
+        return cleaned;
     }
 }
 
@@ -458,6 +758,199 @@ export class Font {
     }
 
     /**
+     * Generate a filled mesh for a single character using triangulation
+     */
+    generateFilledCharacterMesh(character: string, position: vec3): FilledTextMesh | null {
+        console.log(`🔤 Generating filled mesh for character: '${character}'`);
+        
+        // Get advance width for this character
+        const advanceWidth = this.getCharacterAdvanceWidth(character);
+
+        // Handle space character specially - it has no visible geometry
+        if (character === ' ') {
+            return this.createEmptyFilledMesh(position, advanceWidth);
+        }
+
+        // Get character code and glyph ID
+        const charCode = character.charCodeAt(0);
+        const glyphId = getGlyphId(this.ttfFont, charCode);
+        if (glyphId === 0) {
+            console.warn(`Character '${character}' not found in font`);
+            return null;
+        }
+        
+        // Parse glyph outline
+        const outline = parseGlyphOutline(this.ttfFont, glyphId);
+        if (!outline) {
+            console.warn(`Could not parse outline for character '${character}'`);
+            return null;
+        }
+
+        if (outline.contours.length === 0) {
+            console.log(`  Character '${character}' has no contours`);
+            return this.createEmptyFilledMesh(position, advanceWidth);
+        }
+
+        console.log(`  Character '${character}' has ${outline.contours.length} contours`);
+
+        // Convert contours to 2D polygons for triangulation
+        const contourPolygons: [number, number][][] = [];
+        
+        for (const contour of outline.contours) {
+            const smoothPoints = CurveGenerator.generateSmoothContour(contour, this.options.splineSteps);
+            if (smoothPoints.length >= 3) {
+                contourPolygons.push(smoothPoints);
+                console.log(`    Contour: ${contour.points.length} -> ${smoothPoints.length} points`);
+            }
+        }
+
+        if (contourPolygons.length === 0) {
+            console.log(`  No valid contours after smoothing`);
+            return this.createEmptyFilledMesh(position, advanceWidth);
+        }
+
+        let triangles: Array<[[number, number], [number, number], [number, number]]>;
+
+        // Simple case: single contour
+        if (contourPolygons.length === 1) {
+            console.log(`  Simple character: single contour triangulation`);
+            triangles = PolygonTriangulator.triangulate(contourPolygons[0]);
+        } else {
+            // Multiple contours - triangulate all as separate shapes for now
+            console.log(`  Multiple contours: ${contourPolygons.length} contours`);
+            
+            // Analyze each contour for debugging
+            const contourData = contourPolygons.map((poly, index) => {
+                const area = PolygonTriangulator.signedArea(poly);
+                return {
+                    polygon: poly,
+                    area: area,
+                    absArea: Math.abs(area),
+                    winding: area > 0 ? 'CCW' : 'CW',
+                    index: index
+                };
+            });
+
+            // Sort by absolute area (largest first)
+            contourData.sort((a, b) => b.absArea - a.absArea);
+
+            console.log(`   Contour analysis: ${contourData.length} contours`);
+            contourData.forEach((data, i) => {
+                console.log(`     Contour ${data.index}: ${data.polygon.length} points, area=${data.area.toFixed(2)} (${data.winding})`);
+            });
+
+            // For now, triangulate all contours as separate shapes
+            // This avoids holes but ensures all visible parts are rendered
+            triangles = [];
+            console.log(`   Triangulating all ${contourData.length} contours separately`);
+            
+            for (const contour of contourData) {
+                const contourTriangles = PolygonTriangulator.triangulate(contour.polygon);
+                triangles.push(...contourTriangles);
+                console.log(`     Contour ${contour.index}: ${contourTriangles.length} triangles`);
+            }
+        }
+
+        if (triangles.length === 0) {
+            console.warn(`  No triangles generated for character '${character}'`);
+            return this.createEmptyFilledMesh(position, advanceWidth);
+        }
+
+        console.log(`  Generated ${triangles.length} triangles for character '${character}'`);
+
+        // Convert triangles to mesh data
+        const vertices: number[] = [];
+        const indices: number[] = [];
+        const bounds = this.createBounds();
+        
+        let vertexIndex = 0;
+        const vertexMap = new Map<string, number>();
+
+        for (const [a, b, c] of triangles) {
+            for (const point of [a, b, c]) {
+                const key = `${point[0]},${point[1]}`;
+                let index = vertexMap.get(key);
+                
+                if (index === undefined) {
+                    const [finalX, finalY, finalZ] = this.transformPoint(point[0], point[1], position);
+                    vertices.push(finalX, finalY, finalZ);
+                    this.updateBoundsWithPoint(bounds, finalX, finalY, finalZ);
+                    index = vertexIndex++;
+                    vertexMap.set(key, index);
+                }
+                
+                indices.push(index);
+            }
+        }
+
+        return {
+            vertices: new Float32Array(vertices),
+            indices: new Uint32Array(indices),
+            bounds,
+            advanceWidth
+        };
+    }
+
+    /**
+     * Generate a filled mesh for a text string using triangulation
+     */
+    generateFilledTextMesh(text: string, position: vec3): FilledTextMesh {
+        const allVertices: number[] = [];
+        const allIndices: number[] = [];
+        let vertexOffset = 0;
+        
+        const bounds = {
+            min: vec3.fromValues(Infinity, Infinity, Infinity),
+            max: vec3.fromValues(-Infinity, -Infinity, -Infinity)
+        };
+
+        let currentX = position[0];
+        const baseY = position[1];
+        const baseZ = position[2];
+        let totalAdvanceWidth = 0;
+
+        // Process each character
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const charPosition = vec3.fromValues(currentX, baseY, baseZ);
+            
+            const charMesh = this.generateFilledCharacterMesh(char, charPosition);
+            if (charMesh) {
+                // Add vertices
+                for (let j = 0; j < charMesh.vertices.length; j++) {
+                    allVertices.push(charMesh.vertices[j]);
+                }
+                
+                // Add indices with offset
+                for (let j = 0; j < charMesh.indices.length; j++) {
+                    allIndices.push(charMesh.indices[j] + vertexOffset);
+                }
+                
+                vertexOffset += charMesh.vertices.length / 3;
+                
+                // Update bounds
+                this.updateBounds(bounds, charMesh.bounds);
+                
+                // Advance position using proper character advance width
+                currentX += charMesh.advanceWidth;
+                totalAdvanceWidth += charMesh.advanceWidth;
+            } else {
+                // If character mesh generation failed, use fallback advance width
+                const fallbackAdvance = this.getCharacterAdvanceWidth(char);
+                currentX += fallbackAdvance;
+                totalAdvanceWidth += fallbackAdvance;
+            }
+        }
+
+        return {
+            vertices: new Float32Array(allVertices),
+            indices: new Uint32Array(allIndices),
+            bounds,
+            advanceWidth: totalAdvanceWidth
+        };
+    }
+
+    /**
      * Transform a point from font units to world coordinates
      */
     private transformPoint(fontX: number, fontY: number, position: vec3): [number, number, number] {
@@ -475,6 +968,21 @@ export class Font {
      * Create an empty mesh for characters like spaces
      */
     private createEmptyMesh(position: vec3, advanceWidth: number): TextMesh {
+        return {
+            vertices: new Float32Array([]),
+            indices: new Uint32Array([]),
+            bounds: {
+                min: vec3.fromValues(position[0], position[1], position[2]),
+                max: vec3.fromValues(position[0], position[1], position[2])
+            },
+            advanceWidth
+        };
+    }
+
+    /**
+     * Create an empty filled mesh for characters like spaces
+     */
+    private createEmptyFilledMesh(position: vec3, advanceWidth: number): FilledTextMesh {
         return {
             vertices: new Float32Array([]),
             indices: new Uint32Array([]),
@@ -588,3 +1096,115 @@ export async function generateTextMesh(
         return null;
     }
 }
+
+/**
+ * Convenience function to create a filled text mesh from a font file path
+ * @param text - Text string to render
+ * @param fontPath - Path to TTF font file
+ * @param fontOptions - Font rendering options
+ * @param position - Position for the text
+ * @returns Promise<FilledTextMesh | null> - Generated filled text mesh or null if failed
+ */
+export async function createFilledTextMesh(
+    text: string, 
+    fontPath: string, 
+    fontOptions: FontOptions, 
+    position: vec3
+): Promise<FilledTextMesh | null> {
+    try {
+        const font = await Font.fromFile(fontPath, fontOptions);
+        if (text.length === 1) {
+            return font.generateFilledCharacterMesh(text, position);
+        } else {
+            return font.generateFilledTextMesh(text, position);
+        }
+    } catch (error) {
+        console.error(`Failed to create filled text mesh: ${error}`);
+        return null;
+    }
+}
+
+/**
+ * Convenience function to generate filled text mesh from a parsed TTF font
+ * @param ttfFont - Parsed TTF font structure
+ * @param text - Text string to render
+ * @param config - Text configuration
+ * @returns Promise<FilledTextMesh | null> - Generated filled text mesh or null if failed
+ */
+export async function generateFilledTextMesh(
+    ttfFont: any,
+    text: string,
+    config: TextConfig
+): Promise<FilledTextMesh | null> {
+    try {
+        const fontOptions: FontOptions = {
+            fontSize: config.fontSize,
+            lineWidth: 1.0,
+            lineColor: vec3.fromValues(1.0, 1.0, 1.0),
+            splineSteps: 0
+        };
+        
+        const font = new Font(ttfFont, fontOptions);
+        if (text.length === 1) {
+            return font.generateFilledCharacterMesh(text, config.position);
+        } else {
+            return font.generateFilledTextMesh(text, config.position);
+        }
+    } catch (error) {
+        console.error(`Failed to generate filled text mesh: ${error}`);
+        return null;
+    }
+}
+
+/**
+ * Test function for debugging triangulation
+ * Tests the clean triangulation implementation
+ */
+export function testTriangulation(): void {
+    console.log('🧪 Testing clean triangulation implementation...');
+    
+    // Test 1: Simple square (should produce 2 triangles)
+    console.log('\n=== Test 1: Square ===');
+    const square: [number, number][] = [
+        [0, 0], [1, 0], [1, 1], [0, 1]
+    ];
+    
+    console.log('Square vertices:', square);
+    console.log('Square signed area:', PolygonTriangulator.signedArea(square));
+    
+    const squareTriangles = PolygonTriangulator.triangulate(square);
+    console.log('Square triangles:', squareTriangles);
+    
+    // Test 2: Triangle (should produce 1 triangle)
+    console.log('\n=== Test 2: Triangle ===');
+    const triangle: [number, number][] = [
+        [0, 0], [1, 0], [0.5, 1]
+    ];
+    
+    const triangleResult = PolygonTriangulator.triangulate(triangle);
+    console.log('Triangle result:', triangleResult);
+    
+    // Test 3: Pentagon (should produce 3 triangles)
+    console.log('\n=== Test 3: Pentagon ===');
+    const pentagon: [number, number][] = [
+        [0, 1], [0.95, 0.31], [0.59, -0.81], [-0.59, -0.81], [-0.95, 0.31]
+    ];
+    
+    const pentagonResult = PolygonTriangulator.triangulate(pentagon);
+    console.log('Pentagon triangles:', pentagonResult.length);
+    
+    // Summary
+    console.log('\n=== Summary ===');
+    console.log(`Square: ${squareTriangles.length} triangles (expected 2)`);
+    console.log(`Triangle: ${triangleResult.length} triangles (expected 1)`);
+    console.log(`Pentagon: ${pentagonResult.length} triangles (expected 3)`);
+    
+    const allPassed = squareTriangles.length === 2 && 
+                     triangleResult.length === 1 && 
+                     pentagonResult.length === 3;
+    
+    console.log(allPassed ? '✅ All tests passed!' : '❌ Some tests failed');
+}
+
+// Make the test function available globally for debugging
+(globalThis as any).testTriangulation = testTriangulation;
