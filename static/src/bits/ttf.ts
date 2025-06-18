@@ -1,6 +1,11 @@
 import { ByteReader } from "./bytereader";
 
 /**
+ * format spec at:
+ * https://developer.apple.com/fonts/TrueType-Reference-Manual/
+ */
+
+/**
  * TTF Table Directory Entry
  * Each table in the font has a directory entry
  */
