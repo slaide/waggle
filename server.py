@@ -42,7 +42,7 @@ def update_server(request:Request):
         subprocess.run(['git', 'pull'], cwd=PROJROOTDIR, check=True)
 
         # manually execute post-merge commands to keep them tracked in the repo
-        subprocess.run(['bash', '-c', f'source ~/.bashrc && bash {PROJROOTDIR}/server/build.sh'], check=True)
+        subprocess.run(['bash', '-c', f'source ~/.bashrc && bash {PROJROOTDIR}/server/build.sh'], cwd=PROJROOTDIR, check=True)
         subprocess.run(['touch', '/var/www/padraig_eu_pythonanywhere_com_wsgi.py'], check=True)
         subprocess.run(['bash', f'{PROJROOTDIR}/server/reload.sh'], check=True)
 
