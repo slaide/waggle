@@ -530,18 +530,46 @@ class PolygonTriangulator {
     }
 
     /**
-     * Simple triangulation for multiple contours - only triangulates the outer contour
-     * Inner contours (holes) are completely ignored for now
+     * Triangulation with proper hole bridging
+     * Bridges holes to outer polygon and then triangulates the merged result
      */
     static triangulateWithHoles(outer: [number, number][], holes: [number, number][][]): Array<[[number, number], [number, number], [number, number]]> {
-        console.log(`🔺 Multi-contour triangulation: outer=${outer.length} points, holes=${holes.length}`);
+        console.log(`🔺 Triangulation with holes: outer=${outer.length} points, holes=${holes.length}`);
         
-        if (holes.length > 0) {
-            console.log(`⚠️ Ignoring ${holes.length} hole contours - only triangulating outer contour`);
+        if (holes.length === 0) {
+            // No holes, just triangulate the outer polygon
+            return this.triangulate(outer);
         }
-
-        // Only triangulate the outer contour
-        return this.triangulate(outer);
+        
+        console.log(`   Processing ${holes.length} holes for bridging`);
+        
+        // Start with the outer polygon
+        let mergedPolygon = [...outer];
+        
+        // Ensure outer polygon has correct winding (CCW)
+        if (this.signedArea(mergedPolygon) < 0) {
+            mergedPolygon.reverse();
+            console.log(`   Fixed outer polygon winding to CCW`);
+        }
+        
+        // Bridge each hole to the merged polygon
+        for (let i = 0; i < holes.length; i++) {
+            let hole = [...holes[i]];
+            
+            // Ensure hole has correct winding (CW for holes)
+            if (this.signedArea(hole) > 0) {
+                hole.reverse();
+                console.log(`   Fixed hole ${i} winding to CW`);
+            }
+            
+            // Bridge this hole to the current merged polygon
+            mergedPolygon = this.bridgeHoleToOuter(mergedPolygon, hole);
+        }
+        
+        console.log(`   Final merged polygon: ${mergedPolygon.length} vertices`);
+        
+        // Triangulate the merged polygon
+        return this.triangulate(mergedPolygon);
     }
 
     /**
@@ -567,6 +595,264 @@ class PolygonTriangulator {
         }
 
         return cleaned;
+    }
+
+    /**
+     * Find the rightmost vertex in a polygon
+     */
+    static getRightmostVertex(polygon: [number, number][]): { vertex: [number, number], index: number } {
+        let rightmostIndex = 0;
+        let rightmostX = polygon[0][0];
+        
+        for (let i = 1; i < polygon.length; i++) {
+            if (polygon[i][0] > rightmostX) {
+                rightmostX = polygon[i][0];
+                rightmostIndex = i;
+            }
+        }
+        
+        return { vertex: polygon[rightmostIndex], index: rightmostIndex };
+    }
+
+    /**
+     * Check if two line segments intersect
+     */
+    static segmentsIntersect(
+        a1: [number, number], a2: [number, number],
+        b1: [number, number], b2: [number, number]
+    ): boolean {
+        const d1 = this.crossProduct2D(
+            [b1[0] - a1[0], b1[1] - a1[1]],
+            [a2[0] - a1[0], a2[1] - a1[1]]
+        );
+        const d2 = this.crossProduct2D(
+            [b2[0] - a1[0], b2[1] - a1[1]],
+            [a2[0] - a1[0], a2[1] - a1[1]]
+        );
+        const d3 = this.crossProduct2D(
+            [a1[0] - b1[0], a1[1] - b1[1]],
+            [b2[0] - b1[0], b2[1] - b1[1]]
+        );
+        const d4 = this.crossProduct2D(
+            [a2[0] - b1[0], a2[1] - b1[1]],
+            [b2[0] - b1[0], b2[1] - b1[1]]
+        );
+        
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+               ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    }
+
+    /**
+     * Calculate 2D cross product
+     */
+    static crossProduct2D(v1: [number, number], v2: [number, number]): number {
+        return v1[0] * v2[1] - v1[1] * v2[0];
+    }
+
+    /**
+     * Check if a line segment from point to target is visible (doesn't intersect polygon edges)
+     */
+    static isVisible(
+        point: [number, number],
+        target: [number, number],
+        polygon: [number, number][]
+    ): boolean {
+        for (let i = 0; i < polygon.length; i++) {
+            const edgeStart = polygon[i];
+            const edgeEnd = polygon[(i + 1) % polygon.length];
+            
+            // Skip if the edge shares a vertex with our line
+            if ((edgeStart[0] === point[0] && edgeStart[1] === point[1]) ||
+                (edgeStart[0] === target[0] && edgeStart[1] === target[1]) ||
+                (edgeEnd[0] === point[0] && edgeEnd[1] === point[1]) ||
+                (edgeEnd[0] === target[0] && edgeEnd[1] === target[1])) {
+                continue;
+            }
+            
+            if (this.segmentsIntersect(point, target, edgeStart, edgeEnd)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Find the best bridge point on the outer polygon for connecting a hole
+     */
+    static findBridgePoint(
+        holeVertex: [number, number],
+        outerPolygon: [number, number][]
+    ): { vertex: [number, number], index: number } | null {
+        let bestPoint = null;
+        let bestDistance = Infinity;
+        
+        // Try to find a visible vertex on the outer polygon
+        for (let i = 0; i < outerPolygon.length; i++) {
+            const outerVertex = outerPolygon[i];
+            
+            // Check if this vertex is visible from the hole vertex
+            if (this.isVisible(holeVertex, outerVertex, outerPolygon)) {
+                const distance = Math.sqrt(
+                    Math.pow(outerVertex[0] - holeVertex[0], 2) +
+                    Math.pow(outerVertex[1] - holeVertex[1], 2)
+                );
+                
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestPoint = { vertex: outerVertex, index: i };
+                }
+            }
+        }
+        
+        // If no direct visibility, find the closest point to the right
+        if (!bestPoint) {
+            for (let i = 0; i < outerPolygon.length; i++) {
+                const outerVertex = outerPolygon[i];
+                
+                // Only consider vertices to the right of the hole vertex
+                if (outerVertex[0] >= holeVertex[0]) {
+                    const distance = Math.sqrt(
+                        Math.pow(outerVertex[0] - holeVertex[0], 2) +
+                        Math.pow(outerVertex[1] - holeVertex[1], 2)
+                    );
+                    
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestPoint = { vertex: outerVertex, index: i };
+                    }
+                }
+            }
+        }
+        
+        return bestPoint;
+    }
+
+    /**
+     * Bridge a hole to the outer polygon by connecting vertices
+     */
+    static bridgeHoleToOuter(
+        outerPolygon: [number, number][],
+        hole: [number, number][]
+    ): [number, number][] {
+        console.log(`   🌉 Bridging hole with ${hole.length} vertices to outer polygon`);
+        
+        // Find the rightmost vertex of the hole
+        const { vertex: holeVertex, index: holeIndex } = this.getRightmostVertex(hole);
+        console.log(`   Hole rightmost vertex at index ${holeIndex}: [${holeVertex[0].toFixed(2)}, ${holeVertex[1].toFixed(2)}]`);
+        
+        // Find the best bridge point on the outer polygon
+        const bridgePoint = this.findBridgePoint(holeVertex, outerPolygon);
+        if (!bridgePoint) {
+            console.warn(`   ⚠️ Could not find bridge point for hole`);
+            return outerPolygon; // Return original if bridging fails
+        }
+        
+        console.log(`   Bridge point at index ${bridgePoint.index}: [${bridgePoint.vertex[0].toFixed(2)}, ${bridgePoint.vertex[1].toFixed(2)}]`);
+        
+        // Create the merged polygon
+        const merged: [number, number][] = [];
+        
+        // Add outer polygon vertices up to the bridge point
+        for (let i = 0; i <= bridgePoint.index; i++) {
+            merged.push(outerPolygon[i]);
+        }
+        
+        // Add the bridge connection to hole
+        merged.push(bridgePoint.vertex); // Duplicate bridge point
+        
+        // Add hole vertices starting from the rightmost vertex
+        for (let i = 0; i < hole.length; i++) {
+            const holeVertexIndex = (holeIndex + i) % hole.length;
+            merged.push(hole[holeVertexIndex]);
+        }
+        
+        // Add the bridge connection back to outer
+        merged.push(holeVertex); // Duplicate hole vertex
+        merged.push(bridgePoint.vertex); // Return to bridge point
+        
+        // Add remaining outer polygon vertices
+        for (let i = bridgePoint.index + 1; i < outerPolygon.length; i++) {
+            merged.push(outerPolygon[i]);
+        }
+        
+        console.log(`   ✅ Merged polygon: ${outerPolygon.length} + ${hole.length} -> ${merged.length} vertices`);
+        return merged;
+    }
+
+    /**
+     * Check if one polygon is completely contained within another
+     */
+    static isPolygonContained(inner: [number, number][], outer: [number, number][]): boolean {
+        // Test several points from the inner polygon to see if they're all inside the outer
+        const testPoints = Math.min(inner.length, 5); // Test up to 5 points for efficiency
+        let containedCount = 0;
+        
+        for (let i = 0; i < testPoints; i++) {
+            const testIndex = Math.floor(i * inner.length / testPoints);
+            if (this.pointInPolygon(inner[testIndex], outer)) {
+                containedCount++;
+            }
+        }
+        
+        // Consider contained if most test points are inside
+        return containedCount >= Math.ceil(testPoints * 0.6);
+    }
+
+    /**
+     * Classify contours as outer contours vs holes using containment analysis
+     */
+    static classifyContours(contours: [number, number][][]): {
+        outerContours: { polygon: [number, number][], index: number }[],
+        holes: { polygon: [number, number][], index: number, parentIndex: number }[]
+    } {
+        console.log(`   🔍 Classifying ${contours.length} contours using containment analysis`);
+        
+        const contourData = contours.map((poly, index) => ({
+            polygon: poly,
+            area: this.signedArea(poly),
+            absArea: Math.abs(this.signedArea(poly)),
+            index: index
+        }));
+        
+        // Sort by absolute area (largest first) - larger contours are more likely to be outer
+        contourData.sort((a, b) => b.absArea - a.absArea);
+        
+        const outerContours: { polygon: [number, number][], index: number }[] = [];
+        const holes: { polygon: [number, number][], index: number, parentIndex: number }[] = [];
+        
+        for (let i = 0; i < contourData.length; i++) {
+            const current = contourData[i];
+            let isHole = false;
+            let parentIndex = -1;
+            
+            // Check if this contour is contained within any larger contour
+            for (let j = 0; j < i; j++) {
+                const potential_parent = contourData[j];
+                if (this.isPolygonContained(current.polygon, potential_parent.polygon)) {
+                    isHole = true;
+                    parentIndex = potential_parent.index;
+                    console.log(`     Contour ${current.index} (area=${current.area.toFixed(2)}) is HOLE inside contour ${parentIndex}`);
+                    break;
+                }
+            }
+            
+            if (isHole) {
+                holes.push({
+                    polygon: current.polygon,
+                    index: current.index,
+                    parentIndex: parentIndex
+                });
+            } else {
+                console.log(`     Contour ${current.index} (area=${current.area.toFixed(2)}) is OUTER contour`);
+                outerContours.push({
+                    polygon: current.polygon,
+                    index: current.index
+                });
+            }
+        }
+        
+        console.log(`   📊 Classification result: ${outerContours.length} outer, ${holes.length} holes`);
+        return { outerContours, holes };
     }
 }
 
@@ -816,38 +1102,50 @@ export class Font {
             console.log(`  Simple character: single contour triangulation`);
             triangles = PolygonTriangulator.triangulate(contourPolygons[0]);
         } else {
-            // Multiple contours - triangulate all as separate shapes for now
+            // Multiple contours - use containment analysis for proper classification
             console.log(`  Multiple contours: ${contourPolygons.length} contours`);
             
-            // Analyze each contour for debugging
-            const contourData = contourPolygons.map((poly, index) => {
-                const area = PolygonTriangulator.signedArea(poly);
-                return {
-                    polygon: poly,
-                    area: area,
-                    absArea: Math.abs(area),
-                    winding: area > 0 ? 'CCW' : 'CW',
-                    index: index
-                };
-            });
+            // Use robust containment-based classification
+            const { outerContours, holes } = PolygonTriangulator.classifyContours(contourPolygons);
 
-            // Sort by absolute area (largest first)
-            contourData.sort((a, b) => b.absArea - a.absArea);
+            if (outerContours.length === 0) {
+                console.warn(`  No outer contours found for character '${character}'`);
+                return this.createEmptyFilledMesh(position, advanceWidth);
+            }
 
-            console.log(`   Contour analysis: ${contourData.length} contours`);
-            contourData.forEach((data, i) => {
-                console.log(`     Contour ${data.index}: ${data.polygon.length} points, area=${data.area.toFixed(2)} (${data.winding})`);
-            });
+            // Handle multiple outer contours (like 'i' with dot and stem)
+            if (outerContours.length > 1) {
+                console.log(`  Character has ${outerContours.length} separate outer contours (e.g., 'i' with dot)`);
+                
+                // Triangulate each outer contour separately with its associated holes
+                triangles = [];
+                
+                for (const outerContour of outerContours) {
+                    // Find holes that belong to this outer contour
+                    const associatedHoles = holes
+                        .filter(hole => hole.parentIndex === outerContour.index)
+                        .map(hole => hole.polygon);
+                    
+                    console.log(`   Outer contour ${outerContour.index}: ${outerContour.polygon.length} points, ${associatedHoles.length} holes`);
+                    
+                    // Triangulate this outer contour with its holes
+                    const contourTriangles = associatedHoles.length > 0 
+                        ? PolygonTriangulator.triangulateWithHoles(outerContour.polygon, associatedHoles)
+                        : PolygonTriangulator.triangulate(outerContour.polygon);
+                    
+                    triangles.push(...contourTriangles);
+                    console.log(`   Generated ${contourTriangles.length} triangles for outer contour ${outerContour.index}`);
+                }
+            } else {
+                // Single outer contour with holes (like 'd', 'o')
+                const mainOuter = outerContours[0];
+                const allHoles = holes.map(hole => hole.polygon);
 
-            // For now, triangulate all contours as separate shapes
-            // This avoids holes but ensures all visible parts are rendered
-            triangles = [];
-            console.log(`   Triangulating all ${contourData.length} contours separately`);
-            
-            for (const contour of contourData) {
-                const contourTriangles = PolygonTriangulator.triangulate(contour.polygon);
-                triangles.push(...contourTriangles);
-                console.log(`     Contour ${contour.index}: ${contourTriangles.length} triangles`);
+                console.log(`   Single outer contour with ${mainOuter.polygon.length} points`);
+                console.log(`   Processing ${allHoles.length} holes with bridging`);
+                
+                // Use proper hole bridging triangulation
+                triangles = PolygonTriangulator.triangulateWithHoles(mainOuter.polygon, allHoles);
             }
         }
 

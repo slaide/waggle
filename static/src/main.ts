@@ -71,7 +71,7 @@ export async function main() {
         splineSteps: 8, // 8 spline interpolation steps per curve segment for smooth outlines
         filled: false
     };
-    const wireframeText = await createTextModelFromRenderer(gl, textRenderer, "Outline", wireframeTextConfig);
+    const wireframeText = await createTextModelFromRenderer(gl, textRenderer, "Outlined", wireframeTextConfig);
     console.log("✅ Created wireframe text:", wireframeText.name, "- vertices:", wireframeText.rawVertexData?.length ? wireframeText.rawVertexData.length / 8 : 0);
     scene.objects.push(wireframeText);
     
@@ -84,7 +84,7 @@ export async function main() {
         splineSteps: 8, // 8 spline interpolation steps per curve segment for smooth outlines
         filled: true
     };
-    const filledText = await createTextModelFromRenderer(gl, textRenderer, "Filled", filledTextConfig);
+    const filledText = await createTextModelFromRenderer(gl, textRenderer, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", filledTextConfig);
     console.log("✅ Created filled text:", filledText.name, "- vertices:", filledText.rawVertexData?.length ? filledText.rawVertexData.length / 8 : 0);
     console.log("   Draw mode:", filledText.drawMode, "Visible:", filledText.visible, "Enabled:", filledText.enabled);
     console.log("   Material diffuse:", filledText.material.diffuse);
@@ -99,7 +99,7 @@ export async function main() {
         splineSteps: 8, // 8 spline interpolation steps per curve segment for smooth outlines
         filled: true
     };
-    const filledText2 = await createTextModelFromRenderer(gl, textRenderer, "Hello World", filledTextConfig2);
+    const filledText2 = await createTextModelFromRenderer(gl, textRenderer, "abcdefghijklmnopqrstuvwxyz,.-;:_'*!@#$%^&()[]{}öäüß", filledTextConfig2);
     console.log("✅ Created filled text 2:", filledText2.name, "- vertices:", filledText2.rawVertexData?.length ? filledText2.rawVertexData.length / 8 : 0);
     console.log("   Draw mode:", filledText2.drawMode, "Visible:", filledText2.visible, "Enabled:", filledText2.enabled);
     scene.objects.push(filledText2);
