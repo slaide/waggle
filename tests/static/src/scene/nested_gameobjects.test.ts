@@ -14,15 +14,21 @@ describe('Nested GameObjects', () => {
 
     beforeEach(() => {
         // Create transforms
+        const parentRotation = quat.create();
+        quat.fromEuler(parentRotation, 0, 45, 0);
+        
+        const childRotation = quat.create();
+        quat.fromEuler(childRotation, 0, 0, 45);
+        
         parentTransform = new Transform(
             vec3.fromValues(1, 2, 3),
-            quat.fromEuler(quat.create(), 0, 45, 0),
+            parentRotation,
             vec3.fromValues(2, 2, 2)
         );
 
         childTransform = new Transform(
             vec3.fromValues(0.5, 0, 0),
-            quat.fromEuler(quat.create(), 0, 0, 45),
+            childRotation,
             vec3.fromValues(0.5, 0.5, 0.5)
         );
 
@@ -157,21 +163,189 @@ describe('Nested GameObjects', () => {
             expect(json.children![0].type).toBe("mesh");
         });
 
-        // Skip the WebGL-dependent JSON parsing tests since they require Model creation
-        // These would be better as integration tests that run with a real WebGL context
-        it.skip('should parse nested objects from JSON', () => {
-            // This test requires WebGL context for Model creation
-            // Should be moved to integration tests
+        it('should parse nested objects from JSON', async () => {
+            // Create a test GameObject class for testing serialization
+            class TestGameObject extends GameObject {
+                constructor(gl: any, transform: Transform, name?: string) {
+                    super(gl, transform, true, true, name);
+                    this.type = "test" as any;
+                }
+                
+                static async fromJSON(gl: any, data: any): Promise<TestGameObject> {
+                    const transform = Transform.fromJSON(data.transform);
+                    const obj = new TestGameObject(gl, transform, data.name);
+                    obj.enabled = data.enabled ?? true;
+                    obj.visible = data.visible ?? true;
+                    return obj;
+                }
+            }
+
+            // Register the test type temporarily
+            const { GameObjectRegistry } = await import('../../../../static/src/scene/gameobject');
+            GameObjectRegistry.register("test", TestGameObject.fromJSON);
+
+            // Create nested structure with test GameObjects
+            const parent = new TestGameObject(mockGL, parentTransform, "Parent");
+            const child = new TestGameObject(mockGL, childTransform, "Child");
+            parent.addChild(child);
+
+            // Serialize to JSON
+            const json = parent.toJSON();
+            json.type = "test"; // Override type for our test
+            if (json.children) {
+                json.children[0].type = "test";
+            }
+
+            // Parse back from JSON
+            const parsedParent = await GameObject.fromJSON(mockGL, json) as TestGameObject;
+
+            // Verify structure
+            expect(parsedParent.name).toBe("Parent");
+            expect(parsedParent.children).toHaveLength(1);
+            expect(parsedParent.children[0].name).toBe("Child");
+            expect(parsedParent.children[0].parent).toBe(parsedParent);
         });
 
-        it.skip('should handle deeply nested objects', () => {
-            // This test requires WebGL context for Model creation  
-            // Should be moved to integration tests
+        it('should handle deeply nested objects', async () => {
+            // Create a test GameObject class
+            class TestGameObject extends GameObject {
+                constructor(gl: any, transform: Transform, name?: string) {
+                    super(gl, transform, true, true, name);
+                    this.type = "test" as any;
+                }
+                
+                static async fromJSON(gl: any, data: any): Promise<TestGameObject> {
+                    const transform = Transform.fromJSON(data.transform);
+                    const obj = new TestGameObject(gl, transform, data.name);
+                    obj.enabled = data.enabled ?? true;
+                    obj.visible = data.visible ?? true;
+                    return obj;
+                }
+            }
+
+            const { GameObjectRegistry } = await import('../../../../static/src/scene/gameobject');
+            GameObjectRegistry.register("test", TestGameObject.fromJSON);
+
+            // Create deeply nested structure: Root -> Child -> Grandchild -> GreatGrandchild
+            const root = new TestGameObject(mockGL, new Transform(), "Root");
+            const child = new TestGameObject(mockGL, new Transform(), "Child");
+            const grandchild = new TestGameObject(mockGL, new Transform(), "Grandchild");
+            const greatGrandchild = new TestGameObject(mockGL, new Transform(), "GreatGrandchild");
+
+            root.addChild(child);
+            child.addChild(grandchild);
+            grandchild.addChild(greatGrandchild);
+
+            // Serialize to JSON
+            const json = root.toJSON();
+            
+            // Helper function to set types recursively
+            const setTypeRecursively = (obj: any) => {
+                obj.type = "test";
+                if (obj.children) {
+                    obj.children.forEach(setTypeRecursively);
+                }
+            };
+            setTypeRecursively(json);
+
+            // Parse back from JSON
+            const parsedRoot = await GameObject.fromJSON(mockGL, json) as TestGameObject;
+
+            // Verify deeply nested structure
+            expect(parsedRoot.name).toBe("Root");
+            expect(parsedRoot.children).toHaveLength(1);
+            
+            const parsedChild = parsedRoot.children[0];
+            expect(parsedChild.name).toBe("Child");
+            expect(parsedChild.parent).toBe(parsedRoot);
+            expect(parsedChild.children).toHaveLength(1);
+            
+            const parsedGrandchild = parsedChild.children[0];
+            expect(parsedGrandchild.name).toBe("Grandchild");
+            expect(parsedGrandchild.parent).toBe(parsedChild);
+            expect(parsedGrandchild.children).toHaveLength(1);
+            
+            const parsedGreatGrandchild = parsedGrandchild.children[0];
+            expect(parsedGreatGrandchild.name).toBe("GreatGrandchild");
+            expect(parsedGreatGrandchild.parent).toBe(parsedGrandchild);
+            expect(parsedGreatGrandchild.children).toHaveLength(0);
         });
 
-        it.skip('should handle mixed object types as children', () => {
-            // This test requires WebGL context for Model creation
-            // Should be moved to integration tests
+        it('should handle mixed object types as children', async () => {
+            // Import light classes for testing mixed types
+            const { PointLight, DirectionalLight } = await import('../../../../static/src/scene/light');
+            
+            // Create a test GameObject class for the parent
+            class TestGameObject extends GameObject {
+                constructor(gl: any, transform: Transform, name?: string) {
+                    super(gl, transform, true, true, name);
+                    this.type = "test" as any;
+                }
+                
+                static async fromJSON(gl: any, data: any): Promise<TestGameObject> {
+                    const transform = Transform.fromJSON(data.transform);
+                    const obj = new TestGameObject(gl, transform, data.name);
+                    obj.enabled = data.enabled ?? true;
+                    obj.visible = data.visible ?? true;
+                    return obj;
+                }
+            }
+
+            const { GameObjectRegistry } = await import('../../../../static/src/scene/gameobject');
+            GameObjectRegistry.register("test", TestGameObject.fromJSON);
+            
+            // Create parent GameObject
+            const parent = new TestGameObject(mockGL, parentTransform, "Parent");
+            
+            // Create child objects of different types (using mock WebGL context)
+            const pointLight = new PointLight(
+                mockGL,
+                new Transform(),
+                vec3.fromValues(1, 1, 1), // color
+                1.0, // intensity
+                10, // radius
+                true, // enabled
+                true, // visible
+                "PointLight"
+            );
+            
+            const directionalLight = new DirectionalLight(
+                mockGL,
+                new Transform(),
+                vec3.fromValues(1, 1, 1), // color
+                0.5, // intensity
+                vec3.fromValues(0, -1, 0), // direction
+                true, // enabled
+                true, // visible
+                "DirectionalLight"
+            );
+
+            // Add children to parent
+            parent.addChild(pointLight);
+            parent.addChild(directionalLight);
+
+            // Serialize to JSON
+            const json = parent.toJSON();
+            json.type = "test"; // Override type for our test parent
+
+            // Parse back from JSON
+            const parsedParent = await GameObject.fromJSON(mockGL, json);
+
+            // Verify mixed object types
+            expect(parsedParent.name).toBe("Parent");
+            expect(parsedParent.children).toHaveLength(2);
+            
+            // Find the parsed children by type
+            const parsedPointLight = parsedParent.children.find(child => child.type === "point_light");
+            const parsedDirectionalLight = parsedParent.children.find(child => child.type === "directional_light");
+            
+            expect(parsedPointLight).toBeDefined();
+            expect(parsedPointLight?.name).toBe("PointLight");
+            expect(parsedPointLight?.parent).toBe(parsedParent);
+            
+            expect(parsedDirectionalLight).toBeDefined();
+            expect(parsedDirectionalLight?.name).toBe("DirectionalLight");
+            expect(parsedDirectionalLight?.parent).toBe(parsedParent);
         });
     });
 

@@ -1,6 +1,5 @@
 import { ByteReader } from "./bytereader";
 import { getGlobalVFS, Path } from "../vfs";
-import { isBrowser } from "../environment";
 
 /**
  * format spec at:
@@ -177,28 +176,13 @@ export interface TTFFont {
 export async function parseTTF(src: string): Promise<TTFFont> {
     let responseData: ArrayBuffer;
     
-    // Check if we're in a browser environment or Node.js/Bun environment
-    if (isBrowser()) {
-        // Browser environment - use VFS
-        try {
-            const vfs = getGlobalVFS();
-            responseData = await vfs.readBinary(new Path(src));
-        } catch (error) {
-            const errorMsg = `Failed to read TTF file from ${src}: ${(error as Error).message}`;
-            console.error(errorMsg);
-            throw new Error(errorMsg);
-        }
-    } else {
-        // Node.js/Bun environment - use file system
-        try {
-            const fs = await import("fs/promises");
-            const buffer = await fs.readFile(src);
-            responseData = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
-        } catch (error) {
-            const errorMsg = `Failed to read TTF file from ${src}: ${(error as Error).message}`;
-            console.error(errorMsg);
-            throw new Error(errorMsg);
-        }
+    try {
+        const vfs = getGlobalVFS();
+        responseData = await vfs.readBinary(new Path(src));
+    } catch (error) {
+        const errorMsg = `Failed to read TTF file from ${src}: ${(error as Error).message}`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
     }
 
     // Create ByteReader for TTF data (TTF uses big-endian format)

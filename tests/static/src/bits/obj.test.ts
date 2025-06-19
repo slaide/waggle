@@ -147,13 +147,17 @@ Ks 0.8 0.8
             const defaultGroup = defaultObj.groups['default'];
             expect(defaultGroup).toBeDefined();
             expect(defaultGroup.material).toBeDefined();
-            expect(Array.from(defaultGroup.material!.ambient!)).toEqual(expect.arrayContaining([
+                        expect(Array.from(defaultGroup.material!.ambient!)).toEqual(expect.arrayContaining([
                 expect.closeTo(0.2, 2),
-                expect.closeTo(0.2, 2), 
+                expect.closeTo(0.2, 2),
                 expect.closeTo(0.2, 2)
             ])); // Default values
-            expect(defaultGroup.material?.diffuse).toEqual([0.5, 0.5, 0.5]); // Single value expanded
-            expect(defaultGroup.material?.specular).toEqual([0.8, 0.8, 0.8]); // Two values, third defaulted
+            expect(Array.from(defaultGroup.material!.diffuse!)).toEqual([0.5, 0.5, 0.5]); // Single value expanded
+            expect(Array.from(defaultGroup.material!.specular!)).toEqual(expect.arrayContaining([
+                expect.closeTo(0.8, 2),
+                expect.closeTo(0.8, 2),
+                expect.closeTo(0.8, 2)
+            ])); // Two values, third defaulted
         });
 
         it('should handle transparency with d directive', async () => {
@@ -445,7 +449,7 @@ Kd 1 1 0
             expect(cube1).toBeDefined();
             expect(Object.keys(cube1.groups).length).toBe(2); // front, back
             expect(Array.from(cube1.groups['front'].material!.diffuse!)).toEqual([1, 0, 0]);
-            expect(cube1.groups['back'].material?.diffuse).toEqual([0, 0, 1]);
+            expect(Array.from(cube1.groups['back'].material!.diffuse!)).toEqual([0, 0, 1]);
             expect(cube1.groups['front'].indices.length).toBe(3);
             expect(cube1.groups['back'].indices.length).toBe(3);
 
@@ -453,8 +457,8 @@ Kd 1 1 0
             const cube2 = result.objects['cube2'];
             expect(cube2).toBeDefined();
             expect(Object.keys(cube2.groups).length).toBe(2); // top, bottom
-            expect(cube2.groups['top'].material?.diffuse).toEqual([0, 1, 0]);
-            expect(cube2.groups['bottom'].material?.diffuse).toEqual([1, 1, 0]);
+            expect(Array.from(cube2.groups['top'].material!.diffuse!)).toEqual([0, 1, 0]);
+            expect(Array.from(cube2.groups['bottom'].material!.diffuse!)).toEqual([1, 1, 0]);
             expect(cube2.groups['top'].indices.length).toBe(3);
             expect(cube2.groups['bottom'].indices.length).toBe(3);
         });
@@ -566,7 +570,7 @@ f 4 1 5 8
             const group = groups[0];
             
             // Get all vertices that share position (0,0,0)
-            const sharedVertices = [];
+            const sharedVertices: { normal: number[] }[] = [];
             for (let i = 0; i < group.vertexData.length; i += 8) {
                 if (Math.abs(group.vertexData[i]) < 0.001 && 
                     Math.abs(group.vertexData[i+1]) < 0.001 && 

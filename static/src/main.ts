@@ -5,12 +5,14 @@ import { loadScene } from "./scene/scene";
 import { OrthographicCamera } from "./scene/camera";
 import { UIPanel, UIContainer, UILayoutUtils } from "./ui";
 import { Font } from "./text";
+import { createTextModel, TextRenderConfig } from "./scene/textmesh";
 import { Model } from "./scene/model";
 import { GameObject } from "./scene/gameobject";
-import { TextRenderConfig } from "./scene/textmesh";
 import { initializeFetchVFS, getGlobalVFS, Path } from "./vfs";
 // Import these to ensure GameObject types are registered
 import "./scene/light";
+
+const raleway_regular_ttf = "static/resources/fonts/raleway/Raleway-Regular.ttf";
 
 /**
  * Manager class for dynamic UI text that only updates mesh when content changes
@@ -72,9 +74,6 @@ class UITextManager {
      */
     private async recreateModel(): Promise<void> {
         try {
-            // Import the function we need
-            const { createTextModel } = await import("./scene/textmesh");
-            
             // Store the old model's transform
             const oldPosition = this.textModel.transform.position;
             
@@ -180,12 +179,10 @@ export async function main() {
     const scene = await loadScene(gl, sceneDescription);
 
     // Add text demonstrations to the 3D scene
-    const { createTextModel } = await import("./scene/textmesh");
-    const { Font } = await import("./text");
     
     // Create outline (wireframe) font for 3D world space
     const outlineFont = await Font.fromFile(
-        "static/resources/Raleway-Regular.ttf",
+        raleway_regular_ttf,
         8,        // smoothness - 8 steps for smooth curves
         false,    // filled - false for wireframe outline
         0.8,      // fontSize - medium size for 3D world
@@ -203,7 +200,7 @@ export async function main() {
     
     // Create filled font for 3D world space  
     const filledFont = await Font.fromFile(
-        "static/resources/Raleway-Regular.ttf",
+        raleway_regular_ttf,
         8,        // smoothness - 8 steps for smooth curves
         true,     // filled - true for solid triangles
         0.8,      // fontSize - medium size for 3D world
@@ -242,7 +239,7 @@ export async function main() {
     // Create UI font - filled for better readability
     const baseFontSize = Math.min(canvas_size.width, canvas_size.height) / 30; // Responsive base size
     const uiFont = await Font.fromFile(
-        "static/resources/Raleway-Regular.ttf",
+        raleway_regular_ttf,
         8,               // smoothness - 8 steps for smooth UI text
         true,            // filled - true for solid, readable UI text
         baseFontSize,    // fontSize - responsive to screen size
@@ -278,7 +275,7 @@ export async function main() {
     
     // Create smaller UI font for help text
     const smallUIFont = await Font.fromFile(
-        "static/resources/Raleway-Regular.ttf",
+        raleway_regular_ttf,
         6,                    // smoothness - slightly less for small text
         true,                 // filled - true for readable small text
         baseFontSize * 0.8,   // fontSize - smaller for help text

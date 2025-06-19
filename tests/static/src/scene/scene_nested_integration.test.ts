@@ -120,9 +120,50 @@ describe('Scene Nested Integration', () => {
         expect(drawCallCount).toBe(2);
     });
 
-    // Skip the WebGL-dependent test since it requires Model creation
-    it.skip('should draw light children even when light itself is not drawn', () => {
-        // This test requires WebGL context for Model creation
-        // Should be moved to integration tests
+    it('should draw light children even when light itself is not drawn', async () => {
+        // Import light classes
+        const { PointLight } = await import('../../../../static/src/scene/light');
+        
+        const scene = new Scene(mockGL);
+        
+        // Create a point light with a child GameObject
+        const light = new PointLight(
+            mockGL,
+            new Transform(),
+            [1, 1, 1], // color
+            10, // radius
+            1.0, // intensity
+            true, // enabled
+            false, // visible - light itself should not be drawn
+            "TestLight"
+        );
+        
+        // Create a child GameObject that should be drawn
+        const childObject = new GameObject(mockGL, new Transform(), true, true, "LightChild");
+        light.addChild(childObject);
+        
+        scene.objects.push(light);
+        
+        // Track draw calls
+        let lightDrawCalls = 0;
+        let childDrawCalls = 0;
+        
+        light.draw = () => { lightDrawCalls++; };
+        childObject.draw = () => { childDrawCalls++; };
+        
+        // Simulate scene draw traversal
+        scene.traverse((obj) => {
+            if (obj.shouldDraw) {
+                obj.draw();
+            }
+        });
+        
+        // Light should not be drawn (visible = false), but child should be drawn
+        expect(lightDrawCalls).toBe(0); // Light is not visible
+        expect(childDrawCalls).toBe(1); // Child should be drawn
+        
+        // Verify light is not drawn but child is
+        expect(light.shouldDraw).toBe(false); // enabled=true, visible=false
+        expect(childObject.shouldDraw).toBe(true); // enabled=true, visible=true
     });
 }); 
