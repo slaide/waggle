@@ -446,7 +446,7 @@ canvas.addEventListener("click", (event) => {
     "type": "mesh",
     "name": "Forward Rendered Cube",
     "forwardRendered": true,
-    "model": "./static/resources/cube.obj",
+    "model": "./static/resources/models/cube.obj",
     "transform": {
         "position": [0, 2, -5],
         "scale": [0.1, 0.1, 0.1]
@@ -582,7 +582,7 @@ waggle/
 
 ```typescript
 // Load a 3D model
-const modelData = await parseObj('./static/resources/bunny.obj', { 
+const modelData = await parseObj('./static/resources/models/bunny.obj', { 
     normalizeSize: true 
 });
 ```
@@ -618,7 +618,7 @@ The forward rendering system allows objects to be rendered with custom shaders a
     "type": "mesh",
     "name": "Forward Rendered Object",
     "forwardRendered": true,
-    "model": "./static/resources/cube.obj",
+    "model": "./static/resources/models/cube.obj",
     "material": {
         "diffuse": [1.0, 0.5, 0.0],
         "specularExponent": 32
@@ -664,7 +664,7 @@ Waggle uses a flexible JSON-based scene format:
         {
             "type": "mesh",
             "name": "3D Model",
-            "model": "./static/resources/bunny.obj",
+            "model": "./static/resources/models/bunny.obj",
             "transform": {
                 "position": [0, 0, -5],
                 "rotation": [0, 0, 0, 1],
@@ -675,7 +675,7 @@ Waggle uses a flexible JSON-based scene format:
                     "type": "mesh",
                     "name": "Child Object",
                     "forwardRendered": true,
-                    "model": "./static/resources/cube.obj",
+                    "model": "./static/resources/models/cube.obj",
                     "transform": {
                         "position": [0, 1, 0],
                         "scale": [0.5, 0.5, 0.5]
