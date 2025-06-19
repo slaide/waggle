@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
-import { SceneDescription, loadScene } from '../../../../static/src/scene/scene';
+import { SerializedScene, loadScene } from '../../../../static/src/scene/scene';
 import { Scene } from '../../../../static/src/scene/scene';
 import { GameObject } from '../../../../static/src/scene/gameobject';
 // Import these to ensure registration happens
@@ -10,6 +10,10 @@ import * as ObjModule from '../../../../static/src/bits/obj';
 import { vec3 } from 'gl-matrix';
 import * as PngModule from '../../../../static/src/bits/png';
 import { PointLight, DirectionalLight } from '../../../../static/src/scene/light';
+import { initializeStaticVFS } from '../../../../static/src/vfs';
+
+// Type alias for backward compatibility with test
+type SceneDescription = SerializedScene;
 
 // Mock WebGL context
 const mockGL = {
@@ -114,6 +118,24 @@ afterEach(() => {
 
 describe('Scene Format', () => {
     beforeEach(() => {
+        // Set up VFS with mock shader files for the test environment
+        initializeStaticVFS({
+            'static/src/shaders/geometry.vert': `#version 300 es
+                in vec4 aVertexPosition;
+                void main() { gl_Position = aVertexPosition; }`,
+            'static/src/shaders/geometry.frag': `#version 300 es
+                precision mediump float;
+                out vec4 fragColor;
+                void main() { fragColor = vec4(1.0, 0.0, 0.0, 1.0); }`,
+            'static/src/shaders/forward.vert': `#version 300 es
+                in vec4 aVertexPosition;
+                void main() { gl_Position = aVertexPosition; }`,
+            'static/src/shaders/forward.frag': `#version 300 es
+                precision mediump float;
+                out vec4 fragColor;
+                void main() { fragColor = vec4(1.0, 0.0, 0.0, 1.0); }`,
+        });
+        
         // Clear all mocks - Bun doesn't have a direct equivalent, but individual mocks can be cleared
     });
 

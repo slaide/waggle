@@ -8,6 +8,7 @@ import { Font } from "./text";
 import { Model } from "./scene/model";
 import { GameObject } from "./scene/gameobject";
 import { TextRenderConfig } from "./scene/textmesh";
+import { initializeFetchVFS, getGlobalVFS, Path } from "./vfs";
 // Import these to ensure GameObject types are registered
 import "./scene/light";
 
@@ -106,6 +107,33 @@ export async function main() {
         throw error;
     }
 
+    // Initialize the VFS system with fetch backend
+    const resourcesManifest = {
+        "static/resources": [
+            "current_scene.json",
+            "Raleway-Regular.ttf",
+            "armadillo.obj",
+            "bunny.obj",
+            "cow.obj",
+            "cube.mtl",
+            "cube.obj",
+            "cubetexture.png",
+        ],
+        "static/src/shaders": [
+            "deferred_lighting.vert",
+            "deferred_lighting.frag",
+            "geometry.vert",
+            "geometry.frag",
+            "forward.vert",
+            "forward.frag",
+            "flat_forward.vert",
+            "flat_forward.frag",
+            "wireframe_forward.vert",
+            "wireframe_forward.frag",
+        ],
+    };
+    initializeFetchVFS(".", resourcesManifest);
+
     const gl = el.getContext("webgl2", {
         depth: true,
         desynchronized: false,
@@ -146,8 +174,9 @@ export async function main() {
     uiCamera.znear = -10;
     uiCamera.zfar = 10;
     
-    // Load scene from description
-    const sceneDescription = await fetch("./static/resources/current_scene.json").then(r => r.json());
+    // Load scene from description using VFS
+    const vfs = getGlobalVFS();
+    const sceneDescription = await vfs.readJSON(new Path("static/resources/current_scene.json"));
     const scene = await loadScene(gl, sceneDescription);
 
     // Add text demonstrations to the 3D scene
@@ -156,7 +185,7 @@ export async function main() {
     
     // Create outline (wireframe) font for 3D world space
     const outlineFont = await Font.fromFile(
-        "./static/resources/Raleway-Regular.ttf",
+        "static/resources/Raleway-Regular.ttf",
         8,        // smoothness - 8 steps for smooth curves
         false,    // filled - false for wireframe outline
         0.8,      // fontSize - medium size for 3D world
@@ -174,7 +203,7 @@ export async function main() {
     
     // Create filled font for 3D world space  
     const filledFont = await Font.fromFile(
-        "./static/resources/Raleway-Regular.ttf",
+        "static/resources/Raleway-Regular.ttf",
         8,        // smoothness - 8 steps for smooth curves
         true,     // filled - true for solid triangles
         0.8,      // fontSize - medium size for 3D world
@@ -213,7 +242,7 @@ export async function main() {
     // Create UI font - filled for better readability
     const baseFontSize = Math.min(canvas_size.width, canvas_size.height) / 30; // Responsive base size
     const uiFont = await Font.fromFile(
-        "./static/resources/Raleway-Regular.ttf",
+        "static/resources/Raleway-Regular.ttf",
         8,               // smoothness - 8 steps for smooth UI text
         true,            // filled - true for solid, readable UI text
         baseFontSize,    // fontSize - responsive to screen size
@@ -249,7 +278,7 @@ export async function main() {
     
     // Create smaller UI font for help text
     const smallUIFont = await Font.fromFile(
-        "./static/resources/Raleway-Regular.ttf",
+        "static/resources/Raleway-Regular.ttf",
         6,                    // smoothness - slightly less for small text
         true,                 // filled - true for readable small text
         baseFontSize * 0.8,   // fontSize - smaller for help text

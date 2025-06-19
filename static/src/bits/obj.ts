@@ -1,4 +1,5 @@
 import { vec3, Vec3Like } from "gl-matrix";
+import { getGlobalVFS, Path } from "../vfs";
 
 class MtlTexture {
     constructor(
@@ -282,7 +283,13 @@ export async function parseObj(filepath: string, options?: {
     mockContent?: string,
     mockMtlContent?: string,
 }): Promise<ObjFile> {
-    let filedata = options?.mockContent ?? await fetch(filepath, {}).then(v => v.text()) ?? "";
+    let filedata: string;
+    if (options?.mockContent) {
+        filedata = options.mockContent;
+    } else {
+        const vfs = getGlobalVFS();
+        filedata = await vfs.readText(new Path(filepath));
+    }
     filedata = filedata.replace(/\\\n/g, " ");
 
     // Initialize material file
@@ -293,7 +300,8 @@ export async function parseObj(filepath: string, options?: {
         // Try to load material file if it exists
         const mtlPath = filepath.replace(/\.obj$/i, ".mtl");
         try {
-            const mtlContent = await fetch(mtlPath).then(v => v.text());
+            const vfs = getGlobalVFS();
+            const mtlContent = await vfs.readText(new Path(mtlPath));
             materialFile = parseMtl(mtlPath, mtlContent);
         } catch {
             // Material file not found or invalid, continue without materials

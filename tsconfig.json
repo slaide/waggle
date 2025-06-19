@@ -15,5 +15,5 @@
         "checkJs": false
     },
     "include": ["static/src/**/*.ts"],
-    "exclude": ["static/dep/**/*", "static/src/bundle.js"]
+    "exclude": ["static/dep/**/*", "static/resources/main.js"]
 }

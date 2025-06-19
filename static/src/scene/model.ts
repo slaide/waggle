@@ -5,6 +5,8 @@ import { vec3, Vec3Like } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct } from "../struct";
 import { GameObject, GameObjectRegistry, BaseSerializedGameObject, Serializable } from "./gameobject";
+import { getGlobalVFS, Path } from "../vfs";
+import { isTestEnvironment, isMockWebGL } from "../environment";
 
 // Define vector types for reuse
 const Vec3 = TYPE_REGISTRY.f32.array(3);
@@ -831,11 +833,9 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         let fsSource = "";
         
         // Check if we're in a test environment (no real WebGL context)
-        const isTestEnvironment = typeof window === "undefined" || 
-                                 (typeof window !== "undefined" && !window.fetch) || 
-                                 gl.constructor.name === "Object";
+        const isTestEnv = isTestEnvironment() || isMockWebGL(gl);
         
-        if (isTestEnvironment) {
+        if (isTestEnv) {
             // Use minimal default shaders for testing
             vsSource = `#version 300 es
                 in vec4 aVertexPosition;
@@ -854,19 +854,12 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                 }`;
         } else {
             try {
-                const [vsResponse, fsResponse] = await Promise.all([
-                    fetch("/static/src/shaders/geometry.vert"),
-                    fetch("/static/src/shaders/geometry.frag"),
-                ]);
+                const vfs = getGlobalVFS();
                 
-                if (vsResponse.ok && fsResponse.ok) {
-                    vsSource = await vsResponse.text();
-                    fsSource = await fsResponse.text();
-                } else {
-                    throw new Error(`Failed to load geometry shaders: VS=${vsResponse.status} (${vsResponse.statusText}), FS=${fsResponse.status} (${fsResponse.statusText})`);
-                }
+                vsSource = await vfs.readText(new Path("static/src/shaders/geometry.vert"));
+                fsSource = await vfs.readText(new Path("static/src/shaders/geometry.frag"));
             } catch (error) {
-                throw new Error(`Failed to fetch geometry shaders: ${error instanceof Error ? error.message : String(error)}`);
+                throw new Error(`Failed to load geometry shaders: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
 
@@ -920,11 +913,9 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         let fsSource = "";
         
         // Check if we're in a test environment (no real WebGL context)
-        const isTestEnvironment = typeof window === "undefined" || 
-                                 (typeof window !== "undefined" && !window.fetch) || 
-                                 gl.constructor.name === "Object";
+        const isTestEnv = isTestEnvironment() || isMockWebGL(gl);
         
-        if (isTestEnvironment) {
+        if (isTestEnv) {
             // Use minimal default shaders for testing
             vsSource = `#version 300 es
                 in vec4 aVertexPosition;
@@ -957,19 +948,12 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             const normalizedFsPath = fsPath.startsWith("/") ? fsPath.substring(1) : fsPath;
             
             try {
-                const [vsResponse, fsResponse] = await Promise.all([
-                    fetch(normalizedVsPath),
-                    fetch(normalizedFsPath),
-                ]);
+                const vfs = getGlobalVFS();
                 
-                if (vsResponse.ok && fsResponse.ok) {
-                    vsSource = await vsResponse.text();
-                    fsSource = await fsResponse.text();
-                } else {
-                    throw new Error(`Failed to load forward shaders from ${normalizedVsPath}, ${normalizedFsPath}: VS=${vsResponse.status} (${vsResponse.statusText}), FS=${fsResponse.status} (${fsResponse.statusText})`);
-                }
+                vsSource = await vfs.readText(new Path(normalizedVsPath));
+                fsSource = await vfs.readText(new Path(normalizedFsPath));
             } catch (error) {
-                throw new Error(`Failed to fetch forward shaders from ${normalizedVsPath}, ${normalizedFsPath}: ${error instanceof Error ? error.message : String(error)}`);
+                throw new Error(`Failed to load forward shaders from ${normalizedVsPath}, ${normalizedFsPath}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
 
@@ -1039,20 +1023,13 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         // Load texture or create default
         if (diffuseTexturePath && diffuseTexturePath.length > 0) {
             // Check if we're in a test environment
-            const isTestEnvironment = typeof window === "undefined" || 
-                                     (typeof window !== "undefined" && !window.fetch) || 
-                                     gl.constructor.name === "Object";
+            const isTestEnv = isTestEnvironment() || isMockWebGL(gl);
             
-            if (isTestEnvironment) {
+            if (isTestEnv) {
                 // Create a 1x1 white texture for testing
                 gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
             } else {
                 try {
-                    const response = await fetch(diffuseTexturePath);
-                    if (!response.ok) {
-                        throw new Error(`Failed to load texture: ${response.statusText}`);
-                    }
-                    await response.arrayBuffer(); // Buffer not used, but fetch is needed
                     // time the parsepng time
                     const start = performance.now();
                     const imageData = await parsePng(diffuseTexturePath);

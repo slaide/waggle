@@ -1,18 +1,28 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach } from "bun:test";
 import { Font } from "../../../static/src/text";
 import { vec3 } from "gl-matrix";
+import { initializeStaticVFS, StaticVFS } from "../../../static/src/vfs";
+import { readFileSync } from "fs";
 
 describe("Font Error Handling", () => {
+    beforeEach(() => {
+        // Set up VFS with real font file for testing
+        const fontBuffer = readFileSync('./static/resources/Raleway-Regular.ttf');
+        initializeStaticVFS({
+            'static/resources/Raleway-Regular.ttf': fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength) as ArrayBuffer,
+        });
+    });
+
     describe("Valid Font Operations", () => {
         test("should load valid font successfully", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             expect(font).toBeDefined();
             expect(font.config.fontSize).toBe(1.0);
             expect(font.config.filled).toBe(true);
         });
 
         test("should handle space character with proper TTF advance width", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             
             const spaceText = font.generateText(' ', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));
             
@@ -24,7 +34,7 @@ describe("Font Error Handling", () => {
         });
 
         test("should handle normal character with proper TTF advance width", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             
             const normalText = font.generateText('A', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));
             
@@ -36,7 +46,7 @@ describe("Font Error Handling", () => {
         });
 
         test("should handle missing character using .notdef glyph", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             
             // Use a Unicode character likely not in the font
             const missingText = font.generateText('🦄', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));
@@ -51,7 +61,7 @@ describe("Font Error Handling", () => {
 
     describe("Error Cases", () => {
         test("should throw error for non-existent font file", async () => {
-            await expect(Font.fromFile('./nonexistent-font.ttf', 5, true, 1.0, 1.0))
+            await expect(Font.fromFile('nonexistent-font.ttf', 5, true, 1.0, 1.0))
                 .rejects
                 .toThrow(/Failed to read TTF file/);
         });
@@ -63,7 +73,7 @@ describe("Font Error Handling", () => {
         });
 
         test("should throw descriptive error for glyph parsing failures", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             
             // This test would require a way to mock parseGlyphOutline to return null
             // For now, we verify that the error message format is correct by checking
@@ -102,7 +112,7 @@ describe("Font Error Handling", () => {
         });
 
         test("should cache glyphs properly", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             
             // Generate same character multiple times
             const text1 = font.generateText('A', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));
@@ -118,7 +128,7 @@ describe("Font Error Handling", () => {
         });
 
         test("should clear cache properly", async () => {
-            const font = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const font = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
             
             // Generate a character to populate cache
             font.generateText('A', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));
@@ -137,8 +147,8 @@ describe("Font Error Handling", () => {
 
     describe("Font Configuration", () => {
         test("should respect font configuration parameters", async () => {
-            const filledFont = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 10, true, 2.0, 3.0);
-            const wireframeFont = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, false, 1.5, 2.0);
+            const filledFont = await Font.fromFile('static/resources/Raleway-Regular.ttf', 10, true, 2.0, 3.0);
+            const wireframeFont = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, false, 1.5, 2.0);
             
             expect(filledFont.config.smoothness).toBe(10);
             expect(filledFont.config.filled).toBe(true);
@@ -152,8 +162,8 @@ describe("Font Error Handling", () => {
         });
 
         test("should generate different mesh types based on filled flag", async () => {
-            const filledFont = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
-            const wireframeFont = await Font.fromFile('./static/resources/Raleway-Regular.ttf', 5, false, 1.0, 1.0);
+            const filledFont = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, true, 1.0, 1.0);
+            const wireframeFont = await Font.fromFile('static/resources/Raleway-Regular.ttf', 5, false, 1.0, 1.0);
             
             const filledText = filledFont.generateText('A', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));
             const wireframeText = wireframeFont.generateText('A', vec3.fromValues(0, 0, 0), vec3.fromValues(1, 1, 1));

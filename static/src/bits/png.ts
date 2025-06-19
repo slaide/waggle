@@ -6,6 +6,7 @@ import {
 
 import { zlibDecode } from "./zlib";
 import { ByteReader } from "./bytereader";
+import { getGlobalVFS, Path } from "../vfs";
 
 /** from png spec https://www.w3.org/TR/png-3/#9Filter-type-4-Paeth */
 function paethPredictor(a: number, b: number, c: number): number {
@@ -69,14 +70,17 @@ const PNG_START = new Uint8Array([
 export async function parsePng(
     src: string,
 ): Promise<{ width: number; height: number; data: Uint8Array }> {
-    const responseData = await fetch(src, { method: "GET" })
-        .then(async (e) => {
-            return await e.arrayBuffer();
-        })
-        .catch((e) => {
-            alert("failed to fetch png");
-            throw e;
-        });
+    const vfs = getGlobalVFS();
+    
+    let responseData: ArrayBuffer;
+    try {
+        responseData = await vfs.readBinary(new Path(src));
+    } catch (error) {
+        const errorMsg = `Failed to read PNG file from ${src}: ${error instanceof Error ? error.message : String(error)}`;
+        console.error(errorMsg);
+        alert("failed to fetch png");
+        throw new Error(errorMsg);
+    }
 
     let IHDR: IHDR_chunk | null = null;
     let IDAT: Uint8Array | null = null;

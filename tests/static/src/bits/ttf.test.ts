@@ -13,6 +13,8 @@ import {
     TTFNameTable,
     TTFCmapTable
 } from '../../../../static/src/bits/ttf';
+import { initializeStaticVFS } from '../../../../static/src/vfs';
+import { readFileSync } from "fs";
 
 /**
  * Debug function to print font information
@@ -48,8 +50,14 @@ describe('TTF Parser', () => {
     let font: TTFFont;
     
     beforeAll(async () => {
+        // Set up VFS with real font file for testing
+        const fontBuffer = readFileSync('./static/resources/Raleway-Regular.ttf');
+        initializeStaticVFS({
+            'static/resources/Raleway-Regular.ttf': fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength) as ArrayBuffer,
+        });
+        
         // Parse the font once for all tests
-        font = await parseTTF('./static/resources/Raleway-Regular.ttf');
+        font = await parseTTF('static/resources/Raleway-Regular.ttf');
     });
 
     test('should parse Raleway font header and table directory', async () => {

@@ -1,4 +1,6 @@
 import { ByteReader } from "./bytereader";
+import { getGlobalVFS, Path } from "../vfs";
+import { isBrowser } from "../environment";
 
 /**
  * format spec at:
@@ -176,20 +178,16 @@ export async function parseTTF(src: string): Promise<TTFFont> {
     let responseData: ArrayBuffer;
     
     // Check if we're in a browser environment or Node.js/Bun environment
-    if (typeof window !== "undefined" && typeof fetch !== "undefined") {
-        // Browser environment - use fetch
-        responseData = await fetch(src, { method: "GET" })
-            .then(async (response) => {
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch TTF file: ${response.status} ${response.statusText}`);
-                }
-                return await response.arrayBuffer();
-            })
-            .catch((error) => {
-                const errorMsg = `Failed to fetch TTF file from ${src}: ${error.message}`;
-                console.error(errorMsg);
-                throw new Error(errorMsg);
-            });
+    if (isBrowser()) {
+        // Browser environment - use VFS
+        try {
+            const vfs = getGlobalVFS();
+            responseData = await vfs.readBinary(new Path(src));
+        } catch (error) {
+            const errorMsg = `Failed to read TTF file from ${src}: ${(error as Error).message}`;
+            console.error(errorMsg);
+            throw new Error(errorMsg);
+        }
     } else {
         // Node.js/Bun environment - use file system
         try {

@@ -4,12 +4,13 @@ import { Scene } from "./scene/scene";
 import { GameObject, createShaderProgram } from "./scene/gameobject";
 import { PointLight, DirectionalLight } from "./scene/light";
 import { vec3, mat4, Vec3Like, Vec3 } from "gl-matrix";
+import { getGlobalVFS, Path } from "./vfs";
 
 const POINTLIGHTBLOCKBINDING = 1;
 const DIRECTIONALLIGHTBLOCKBINDING = 2;
 
 const MAX_NUM_POINTLIGHTS = 32;
-const MAX_NUM_SPOTLIGHTS = 1;
+// const MAX_NUM_SPOTLIGHTS = 1; // Reserved for future use
 const MAX_NUM_DIRECTIONALLIGHTS = 1;
 
 export class GBuffer {
@@ -46,9 +47,10 @@ export class GBuffer {
     }
 
     static async make(gl: GLC, size: { width: number; height: number }) {
+        const vfs = getGlobalVFS();
         const fsq = await createShaderProgram(gl, {
-            vs: await fetch("/static/src/shaders/deferred_lighting.vert").then(r => r.text()),
-            fs: await fetch("/static/src/shaders/deferred_lighting.frag").then(r => r.text()),
+            vs: await vfs.readText(new Path("static/src/shaders/deferred_lighting.vert")),
+            fs: await vfs.readText(new Path("static/src/shaders/deferred_lighting.frag")),
         });
 
         // create with default size
