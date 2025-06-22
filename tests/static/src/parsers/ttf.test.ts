@@ -16,36 +16,6 @@ import {
 import { initializeStaticVFS } from '../../../../static/src/vfs';
 import { readFileSync } from "fs";
 
-/**
- * Debug function to print font information
- * @param font - TTF font structure
- */
-function debugTTFFont(font: TTFFont): void {
-    console.log("=== TTF Font Debug Info ===");
-    console.log(`SFNT Version: 0x${font.header.sfntVersion.toString(16).padStart(8, '0')}`);
-    console.log(`Number of Tables: ${font.header.numTables}`);
-    console.log(`Search Range: ${font.header.searchRange}`);
-    console.log(`Entry Selector: ${font.header.entrySelector}`);
-    console.log(`Range Shift: ${font.header.rangeShift}`);
-    console.log(`Total File Size: ${font.rawData.length} bytes`);
-    
-    console.log("\n=== Table Directory ===");
-    const sortedTables = Array.from(font.tables.entries()).sort(([a], [b]) => a.localeCompare(b));
-    
-    for (const [tag, entry] of sortedTables) {
-        console.log(`${tag}: offset=${entry.offset}, length=${entry.length}, checksum=0x${entry.checkSum.toString(16).padStart(8, '0')}`);
-    }
-    
-    // List common/important tables
-    const importantTables = ['head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post', 'cmap', 'glyf', 'loca'];
-    console.log("\n=== Important Tables Present ===");
-    
-    for (const table of importantTables) {
-        const present = font.tables.has(table);
-        console.log(`${table}: ${present ? '✓' : '✗'}`);
-    }
-}
-
 describe('TTF Parser', () => {
     let font: TTFFont;
     
@@ -90,10 +60,6 @@ describe('TTF Parser', () => {
         expect(headTable!.offset).toBeGreaterThan(0);
         expect(headTable!.length).toBeGreaterThan(0);
         expect(typeof headTable!.checkSum).toBe('number'); // checkSum can be any 32-bit value
-        
-        // Debug output for manual inspection
-        console.log('\n=== TTF Parser Test Results ===');
-        debugTTFFont(font);
     });
 
     test('should provide unified table access API', () => {
@@ -140,8 +106,6 @@ describe('TTF Parser', () => {
         expect(allTables).toContain('hhea');
         expect(allTables).toContain('hmtx');
         expect(allTables.length).toBe(font.header.numTables);
-        
-        console.log('Unified API test passed. Available tables:', allTables);
     });
     
     test('should parse head table correctly', () => {
@@ -168,18 +132,6 @@ describe('TTF Parser', () => {
         expect(headTable!.indexToLocFormat).toBeGreaterThanOrEqual(0);
         expect(headTable!.indexToLocFormat).toBeLessThanOrEqual(1);
         expect(headTable!.glyphDataFormat).toBe(0); // Current format
-        
-        console.log('Head table parsed:', {
-            unitsPerEm: headTable!.unitsPerEm,
-            created: headTable!.created.toISOString(),
-            modified: headTable!.modified.toISOString(),
-            boundingBox: {
-                xMin: headTable!.xMin,
-                yMin: headTable!.yMin,
-                xMax: headTable!.xMax,
-                yMax: headTable!.yMax
-            }
-        });
     });
     
     test('should parse hhea table correctly', () => {
@@ -202,14 +154,6 @@ describe('TTF Parser', () => {
         // Number of horizontal metrics should be reasonable
         expect(hheaTable!.numberOfHMetrics).toBeGreaterThan(0);
         expect(hheaTable!.numberOfHMetrics).toBeLessThan(10000);
-        
-        console.log('Hhea table parsed:', {
-            ascender: hheaTable!.ascender,
-            descender: hheaTable!.descender,
-            lineGap: hheaTable!.lineGap,
-            advanceWidthMax: hheaTable!.advanceWidthMax,
-            numberOfHMetrics: hheaTable!.numberOfHMetrics
-        });
     });
     
     test('should parse maxp table correctly', () => {
@@ -232,13 +176,6 @@ describe('TTF Parser', () => {
             expect(maxpTable!.maxPoints!).toBeGreaterThan(0);
             expect(maxpTable!.maxContours!).toBeGreaterThan(0);
         }
-        
-        console.log('Maxp table parsed:', {
-            version: '0x' + maxpTable!.version.toString(16),
-            numGlyphs: maxpTable!.numGlyphs,
-            maxPoints: maxpTable!.maxPoints,
-            maxContours: maxpTable!.maxContours
-        });
     });
     
     test('should parse name table correctly', () => {
@@ -264,13 +201,6 @@ describe('TTF Parser', () => {
         const fullName = nameTable!.nameRecords.find(r => r.nameID === 4);
         expect(fullName).toBeDefined();
         expect(fullName!.value).toBeDefined();
-        
-        console.log('Name table parsed:', {
-            familyName: familyName!.value,
-            styleName: styleName!.value,
-            fullName: fullName!.value,
-            totalRecords: nameTable!.count
-        });
     });
     
     test('should parse cmap table correctly', () => {
@@ -297,13 +227,6 @@ describe('TTF Parser', () => {
             expect(data.startCode.length).toBe(data.endCode.length);
             expect(data.idDelta.length).toBe(data.endCode.length);
             expect(data.idRangeOffset.length).toBe(data.endCode.length);
-            
-            console.log('Cmap table parsed:', {
-                version: cmapTable!.version,
-                numSubtables: cmapTable!.numTables,
-                format4SegmentCount: data.segCountX2 / 2,
-                glyphIdArrayLength: data.glyphIdArray.length
-            });
         }
     });
     
@@ -348,12 +271,6 @@ describe('TTF Parser', () => {
             const segmentCount = data.segCountX2 / 2;
             expect(segmentCount).toBeGreaterThan(1);
             expect(segmentCount).toBeLessThan(1000); // Reasonable upper bound
-            
-            console.log('Character mapping validation:', {
-                segmentCount: segmentCount,
-                lastEndCode: '0x' + lastSegment.toString(16),
-                totalGlyphs: maxpTable!.numGlyphs
-            });
         }
     });
 }); 
