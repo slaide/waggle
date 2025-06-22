@@ -12,7 +12,7 @@ import {
     TTFMaxpTable,
     TTFNameTable,
     TTFCmapTable
-} from '../../../../static/src/bits/ttf';
+} from '../../../../static/src/parsers/ttf';
 import { initializeStaticVFS } from '../../../../static/src/vfs';
 import { readFileSync } from "fs";
 

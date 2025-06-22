@@ -11,7 +11,7 @@ import { vec3, type Vec3Like } from "gl-matrix";
 import { Model } from "./scene/model";
 import { Transform } from "./scene/transform";
 import { GL, GLC } from "./gl";
-import { MtlMaterial } from "./bits/obj";
+import { MtlMaterial } from "./parsers/obj";
 import { Font } from "./text";
 import { createTextModel } from "./scene/textmesh";
 

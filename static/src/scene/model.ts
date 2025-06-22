@@ -1,6 +1,6 @@
 import { GL, GLC } from "../gl";
-import { parsePng } from "../bits/png";
-import { MtlMaterial, ObjFile, parseObj } from "../bits/obj";
+import { parsePng } from "../parsers/png";
+import { MtlMaterial, ObjFile, parseObj } from "../parsers/obj";
 import { vec3, Vec3Like } from "gl-matrix";
 import { Transform } from "./transform";
 import { TYPE_REGISTRY, makeStruct } from "../struct";

@@ -70,7 +70,7 @@ import {
     GlyphOutline, 
     GlyphContour,
     TTFHeadTable,
-} from "./bits/ttf";
+} from "./parsers/ttf";
 
 /**
  * 3D point for text rendering

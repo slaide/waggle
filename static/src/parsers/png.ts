@@ -2,10 +2,10 @@
 
 import {
     arrayBeginsWith,
-} from "./bits";
+} from "../bits/bits";
 
-import { zlibDecode } from "./zlib";
-import { ByteReader } from "./bytereader";
+import { zlibDecode } from "../bits/zlib";
+import { ByteReader } from "../bits/bytereader";
 import { getGlobalVFS, Path } from "../vfs";
 
 /** from png spec https://www.w3.org/TR/png-3/#9Filter-type-4-Paeth */

@@ -1,4 +1,4 @@
-import { ByteReader } from "./bytereader";
+import { ByteReader } from "../bits/bytereader";
 import { getGlobalVFS, Path } from "../vfs";
 
 /**

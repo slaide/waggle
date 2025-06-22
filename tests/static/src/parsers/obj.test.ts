@@ -1,4 +1,4 @@
-import { parseObj } from '../../../../static/src/bits/obj';
+import { parseObj } from '../../../../static/src/parsers/obj';
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
 
 describe('OBJ Parser', () => {

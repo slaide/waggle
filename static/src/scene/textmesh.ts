@@ -37,7 +37,7 @@ import { Model } from "./model";
 import { Transform } from "./transform";
 import { GLC } from "../gl";
 import { TextMesh } from "../text";
-import { MtlMaterial } from "../bits/obj";
+import { MtlMaterial } from "../parsers/obj";
 
 /**
  * Text rendering configuration for Model generation

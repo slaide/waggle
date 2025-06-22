@@ -6,9 +6,9 @@ import { GameObject } from '../../../../static/src/scene/gameobject';
 import '../../../../static/src/scene/model';
 import '../../../../static/src/scene/light';
 import { Model } from '../../../../static/src/scene/model';
-import * as ObjModule from '../../../../static/src/bits/obj';
+import * as ObjModule from '../../../../static/src/parsers/obj';
 import { vec3 } from 'gl-matrix';
-import * as PngModule from '../../../../static/src/bits/png';
+import * as PngModule from '../../../../static/src/parsers/png';
 import { PointLight, DirectionalLight } from '../../../../static/src/scene/light';
 import { initializeStaticVFS } from '../../../../static/src/vfs';
 
