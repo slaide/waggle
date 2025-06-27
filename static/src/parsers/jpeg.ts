@@ -391,6 +391,24 @@ function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
     return out;
 }
 
+// Pre-calculate YCbCr to RGB conversion tables
+const YCbCrToRGB_R = new Int16Array(256 * 256); // Y * Cr lookup table
+const YCbCrToRGB_G = new Int16Array(256 * 256 * 2); // Y * (Cb,Cr) lookup table
+const YCbCrToRGB_B = new Int16Array(256 * 256); // Y * Cb lookup table
+
+for (let y = 0; y < 256; y++) {
+    for (let c = 0; c < 256; c++) {
+        YCbCrToRGB_R[y * 256 + c] = Math.round(y + 1.402 * (c - 128));
+        YCbCrToRGB_B[y * 256 + c] = Math.round(y + 1.772 * (c - 128));
+    }
+}
+
+for (let cb = 0; cb < 256; cb++) {
+    for (let cr = 0; cr < 256; cr++) {
+        YCbCrToRGB_G[cb * 256 + cr] = Math.round(-0.344136 * (cb - 128) - 0.714136 * (cr - 128));
+    }
+}
+
 export async function parseJpeg(
     source: string | Uint8Array,
 ): Promise<ImageDataLike> {
@@ -435,6 +453,8 @@ export async function parseJpegFromBuffer(
     let scanData: Int16Array[] = [];
 
     let soiFound = false;
+
+    console.time("parseSegments");
 
     parseSegments: while (reader.getRemainingBytes() > 0) {
         const ff = reader.readUint8();
@@ -833,6 +853,8 @@ export async function parseJpegFromBuffer(
         }
     }
 
+    console.timeEnd("parseSegments");
+
     const imageData = new Uint8Array(width * height * 4);
 
     let maxHFactor = 0;
@@ -869,6 +891,8 @@ export async function parseJpegFromBuffer(
     // Reusable arrays for IDCT processing
     const block = new Int16Array(64);
     const idctBlock = new Int16Array(64);
+
+    console.time("idct");
 
     let mcuIndex = 0;
     for (let mcuY = 0; mcuY < numMCUsV; mcuY++) {
@@ -912,31 +936,46 @@ export async function parseJpegFromBuffer(
         }
     }
 
-    // YCbCr to RGB conversion
-    // For 4:4:4 images, all components have the same dimensions and no subsampling
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            // All components have the same stride for 4:4:4 images
-            const componentWidth = numMCUsH * 8; // Same for all components since hFactor=1
-            const componentIndex = y * componentWidth + x;
+    console.timeEnd("idct");
 
-            // Level shift by +128 for all components since IDCT output is in [-128, 127]
+    console.time("ycbcr");
+
+    function clamp(value: number, min: number, max: number): number {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    // YCbCr to RGB conversion using lookup tables
+    for (let y = 0; y < height; y++) {
+        const yOffset = y * width;
+        for (let x = 0; x < width; x++) {
+            const componentWidth = numMCUsH * 8;
+            const componentIndex = y * componentWidth + x;
+            const outIndex = (yOffset + x) * 4;
+
+            // Level shift by +128 for all components
             const Y = componentData[0][componentIndex] + 128;
             const Cb = componentData[1][componentIndex] + 128;
             const Cr = componentData[2][componentIndex] + 128;
 
-            // Standard JPEG YCbCr to RGB conversion
-            const r = Y + 1.402 * (Cr - 128);
-            const g = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128);
-            const b = Y + 1.772 * (Cb - 128);
+            // Clamp Y, Cb, Cr to [0, 255]
+            const yc = clamp(Y, 0, 255);
+            const cbc = clamp(Cb, 0, 255);
+            const crc = clamp(Cr, 0, 255);
 
-            const i = (y * width + x) * 4;
-            imageData[i] = Math.max(0, Math.min(255, Math.round(r)));
-            imageData[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
-            imageData[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
-            imageData[i + 3] = 255;
+            // Use lookup tables for RGB conversion
+            const r = YCbCrToRGB_R[yc * 256 + crc];
+            const g = yc + YCbCrToRGB_G[cbc * 256 + crc];
+            const b = YCbCrToRGB_B[yc * 256 + cbc];
+
+            // Clamp RGB values and write to output
+            imageData[outIndex] = clamp(r, 0, 255);
+            imageData[outIndex + 1] = clamp(g, 0, 255);
+            imageData[outIndex + 2] = clamp(b, 0, 255);
+            imageData[outIndex + 3] = 255;
         }
     }
+
+    console.timeEnd("ycbcr");
 
     return {
         width: width,

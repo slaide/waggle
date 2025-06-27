@@ -400,7 +400,13 @@ export async function main() {
         const filepath = "static/resources/images/test_images/bunny-atlas.jpg";
         console.log(`Loading ${filepath}...`);
         const file=await vfs.readBinary(new Path(filepath));
+
+
+        console.time("parse jpeg");
         const jpegResult = await parseJpeg(new Uint8Array(file));
+        console.timeEnd("parse jpeg");
+
+
         console.log(`JPEG parsed: ${jpegResult.width}x${jpegResult.height} pixels`);
         
         // Calculate scale to fit image nicely in the scene
