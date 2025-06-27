@@ -11,35 +11,25 @@ export class ByteReader {
     
     /** Whether the data is little-endian (false = big-endian) */
     private dataLittleEndian: boolean;
-    
-    /** Whether the host system is little-endian */
-    private static readonly hostLittleEndian = (() => {
-        const buffer = new ArrayBuffer(2);
-        const uint16View = new Uint16Array(buffer);
-        const uint8View = new Uint8Array(buffer);
-        uint16View[0] = 0x0102;
-        return uint8View[0] === 0x02; // If first byte is 0x02, system is little-endian
-    })();
 
     /**
      * Create a new ByteReader
-     * @param buffer - ArrayBuffer containing the binary data
+     * @param buffer - ArrayBuffer or SharedArrayBuffer containing the binary data
      * @param dataLittleEndian - Whether the data is stored in little-endian format
-     * @param startOffset - Optional starting offset in bytes (default: 0)
+     * @param byteOffset - Optional starting offset in the buffer (default: 0)
+     * @param byteLength - Optional length of the data view (default: buffer.byteLength)
      */
     constructor(
-        buffer: ArrayBuffer, 
+        buffer: ArrayBufferLike,
         dataLittleEndian: boolean = true,
-        startOffset: number = 0,
+        byteOffset: number = 0,
+        byteLength?: number,
     ) {
-        this.dataView = new DataView(buffer);
+        this.dataView = new DataView(buffer, byteOffset, byteLength);
         this.dataLittleEndian = dataLittleEndian;
-        this.position = startOffset;
-        
-        // Validate start offset
-        if (startOffset < 0 || startOffset >= buffer.byteLength) {
-            throw new Error(`Invalid start offset: ${startOffset} (buffer size: ${buffer.byteLength})`);
-        }
+        this.position = 0; // Position is relative to the start of the DataView
+
+        // No validation needed here as the DataView constructor handles it
     }
 
     /**
@@ -48,7 +38,7 @@ export class ByteReader {
      * @returns New ByteReader instance
      */
     readerAt(newOffset: number): ByteReader {
-        return new ByteReader(this.dataView.buffer as ArrayBuffer, this.dataLittleEndian, newOffset);
+        return new ByteReader(this.dataView.buffer, this.dataLittleEndian, this.dataView.byteOffset + newOffset);
     }
 
     /**
@@ -57,8 +47,8 @@ export class ByteReader {
      * @returns This ByteReader for chaining
      */
     skip(bytes: number): ByteReader {
+        this.checkBounds(bytes);
         this.position += bytes;
-        this.checkBounds(0); // Check if position is still valid
         return this;
     }
 
@@ -67,6 +57,17 @@ export class ByteReader {
      */
     getPosition(): number {
         return this.position;
+    }
+
+    /**
+     * Set current position
+     * @param position - New position in bytes
+     */
+    seek(position: number): void {
+        if (position < 0 || position > this.dataView.byteLength) {
+            throw new Error(`Invalid seek position: ${position}`);
+        }
+        this.position = position;
     }
 
     /**
@@ -87,7 +88,7 @@ export class ByteReader {
      * Check if we have enough bytes remaining for a read operation
      */
     private checkBounds(bytesNeeded: number): void {
-        if (this.position + bytesNeeded > this.dataView.byteLength) {
+        if (bytesNeeded > this.getRemainingBytes()) {
             throw new Error(
                 `Not enough bytes: need ${bytesNeeded} at position ${this.position}, ` +
                 `but only ${this.getRemainingBytes()} bytes remaining`,
@@ -181,7 +182,10 @@ export class ByteReader {
      */
     readBytes(length: number): Uint8Array {
         this.checkBounds(length);
-        const bytes = new Uint8Array(this.dataView.buffer, this.position, length);
+        const bytes = new Uint8Array(length);
+        for (let i = 0; i < length; i++) {
+            bytes[i] = this.dataView.getUint8(this.position + i);
+        }
         this.position += length;
         return bytes;
     }
@@ -214,7 +218,7 @@ export class ByteReader {
     /**
      * Read a fixed-length string (useful for TTF table tags)
      * @param length - Exact number of bytes to read
-     * @param encoding - Text encoding (default: 'ascii')
+     * @param encoding - Text encoding used for TextDecoder (default: 'ascii')
      */
     readFixedString(length: number, encoding: string = "ascii"): string {
         this.checkBounds(length);

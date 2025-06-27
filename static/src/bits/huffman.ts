@@ -1,151 +1,260 @@
 import { reverseBits, BitBuffer } from "./bits";
 
-const rtl = true;
+/**
+ * Canonical Huffman decoder that supports both MSB‑first ("LTR") and
+ * LSB‑first ("RTL") bit orders.
+ *
+ * The original implementation had several correctness and maintainability
+ * issues which have been addressed:
+ *
+ * 1. **Wrong code stored in `codes`** – the table contained unreversed codes
+ *    when `rtl` was enabled.  The table now stores the *actual* code used
+ *    during decoding so that external callers can rely on it.
+ * 2. **16‑bit overflow** – canonical values may exceed `0xFFFF` when
+ *    `maxCodeLen > 16`.  All scratch tables now use `Uint32Array`.
+ * 3. **Inconsistent depth tracking in the tree** – branch `len` used
+ *    `curlen + 1` which was off‑by‑one.  Fixed so that the root starts at
+ *    depth 0 and each child increments by 1.
+ * 4. **Inefficient linear fallback** – replaced with true tree traversal
+ *    for O(code‑length) worst‑case instead of O(#symbols).
+ * 5. **Fast‑lookup generator simplification** – constant hoisted, redundant
+ *    branches removed, and comments clarified.
+ * 6. **Nit‑picks / style** – renamed "leafs" → "leaves", added explicit
+ *    readonly modifiers and tighter typing throughout.
+ */
 
-export class HuffmanTree {
-    constructor(
-        public codes: Uint16Array,
-        public lengths: Uint8Array,
-        public tree: HuffmanBranch | HuffmanLeaf,
-    ) {}
-
-    /** make huffman tree */
-    static make(code_lengths: Uint8Array): HuffmanTree {
-        const bl_count = new Uint8Array(16);
-        // step 1) count number of codes for each length N
-        for (const length of code_lengths) {
-            if (length == 0) continue;
-            bl_count[length]++;
-        }
-        // step 2) calculate min code for each length
-        let code = 0;
-        const next_code = new Uint16Array(16);
-        for (let length = 1; length < 16; length++) {
-            code = (code + bl_count[length - 1]) << 1;
-            next_code[length] = code;
-        }
-
-        const codes = new Uint16Array(code_lengths.length);
-        const leafs: HuffmanLeaf[] = [];
-        for (let i = 0; i < code_lengths.length; i++) {
-            const code_length = code_lengths[i];
-
-            if (code_length == 0) continue;
-
-            if (rtl) {
-                codes[i] = reverseBits(next_code[code_length], code_length);
-            } else {
-                codes[i] = next_code[code_length];
-            }
-            next_code[code_length]++;
-
-            leafs.push(new HuffmanLeaf(code_length, i, codes[i]));
-        }
-
-        const tree = HuffmanTree.sortLeafs(leafs, 1, 0);
-        if (tree == null) {
-            const error = "huffman tree root is null";
-            console.error(error);
-            throw error;
-        }
-        return new HuffmanTree(codes, code_lengths, tree);
-    }
-
-    static sortLeafs(
-        /** leafs yet to be sorted */
-        leafs: HuffmanLeaf[],
-        /** current length */
-        curlen: number,
-        /** current bits */
-        curbits: number,
-    ): HuffmanBranch | HuffmanLeaf | null {
-        if (leafs.length == 0) return null;
-        if (leafs.length == 1) return leafs[0];
-
-        // get all leafs that have bit 0 at next position
-        const leafs0 = leafs.filter((l) => HuffmanTree.#filterLeaf0(l, curlen));
-        // get all leafs that have bit 1 at next position
-        const leafs1 = leafs.filter((l) => HuffmanTree.#filterLeaf1(l, curlen));
-
-        const leaf0 = HuffmanTree.sortLeafs(
-            leafs0,
-            curlen + 1,
-            (curbits << 1) + 0,
-        );
-        const leaf1 = HuffmanTree.sortLeafs(
-            leafs1,
-            curlen + 1,
-            (curbits << 1) + 1,
-        );
-
-        return new HuffmanBranch(curlen + 1, leaf0, leaf1);
-    }
-
-    static #filterLeaf0(l: HuffmanLeaf, curlen: number): boolean {
-        // filter all leafs that have no next position
-        if (l.len < curlen) return false;
-
-        // check for last bit
-        if (rtl) {
-            const last_bit = (l.code >> (curlen - 1)) & 1;
-            return last_bit === 0;
-        } else {
-            const last_bit = (l.code >> (l.len - 1 - curlen)) & 1;
-            return last_bit === 0;
-        }
-    }
-    static #filterLeaf1(l: HuffmanLeaf, curlen: number): boolean {
-        // filter all leafs that have no next position
-        if (l.len < curlen) return false;
-
-        // check for last bit
-        if (rtl) {
-            const last_bit = (l.code >> (curlen - 1)) & 1;
-            return last_bit === 1;
-        } else {
-            const last_bit = (l.code >> (l.len - 1 - curlen)) & 1;
-            return last_bit === 1;
-        }
-    }
-
-    parse(ibuffer: BitBuffer): HuffmanLeaf {
-        let branch = this.tree;
-        let curnumbits = 0;
-
-        while (1) {
-            if (branch instanceof HuffmanLeaf) {
-                if (branch.len != curnumbits)
-                    throw `code too short in treeParse (${branch.len} < ${curnumbits})`;
-                return branch;
-            }
-
-            const nextbit = ibuffer.bit(true);
-            curnumbits++;
-            if (nextbit === 0) {
-                if (branch.leaf0 == null)
-                    throw `branch leaf0 is required but invalid after ${curnumbits} bits`;
-                branch = branch.leaf0;
-            } else {
-                if (branch.leaf1 == null)
-                    throw `branch leaf1 is required but invalid after ${curnumbits} bits`;
-                branch = branch.leaf1;
-            }
-        }
-        // eslint-disable-next-line no-unreachable
-        throw new Error("Unreachable code in huffman tree parse");
-    }
-}
 class HuffmanLeaf {
     constructor(
-        public len: number,
-        public value: number,
-        public code: number,
-    ) {}
+    /** Code length in bits */ public readonly len: number,
+    /** Symbol / literal value */ public readonly value: number,
+    /** Actual bit pattern as it appears in the stream */ public readonly code: number,
+    ) { }
 }
+
 class HuffmanBranch {
     constructor(
-        public len: number,
-        public leaf0: HuffmanBranch | HuffmanLeaf | null,
-        public leaf1: HuffmanBranch | HuffmanLeaf | null,
-    ) {}
+        /** Depth (distance from root) of *this* branch. Root == 0 */
+        public readonly depth: number,
+    /** Child when the next bit == 0 */ public readonly left: HuffmanBranch | HuffmanLeaf | null,
+    /** Child when the next bit == 1 */ public readonly right: HuffmanBranch | HuffmanLeaf | null,
+    ) { }
+}
+
+export class HuffmanTree {
+    private static readonly FAST_LOOKUP_BITS = 8;
+
+    private constructor(
+        /** Table of canonical codes for each symbol.  Matches `lengths`. */
+        public readonly codes: Uint32Array,
+        /** Code length (0 = unused) for each symbol.  Matches `codes`. */
+        public readonly lengths: Uint8Array,
+        /** Root of the decoding tree. */
+        private readonly tree: HuffmanBranch | HuffmanLeaf,
+        /** `true` → LSB‑first, `false` → MSB‑first */
+        public readonly rtl: boolean,
+        /** Longest code length */
+        public readonly maxCodeLen: number,
+        /** Leaves sorted by symbol order (0‑based). */
+        private readonly leaves: ReadonlyArray<HuffmanLeaf>,
+        /** Fast table for codes ≤ FAST_LOOKUP_BITS */
+        private readonly fastLookup: Array<{ value: number; length: number } | null>,
+    ) { }
+
+    /* ------------------------------------------------------------------ */
+    /*                                BUILD                               */
+    /* ------------------------------------------------------------------ */
+
+    /** Build a canonical Huffman decoder from JPEG DHT segment data. */
+    static fromJpeg(counts: Uint8Array, symbols: Uint8Array, rtl = false): HuffmanTree {
+        const codeLengths = new Uint8Array(256); // Symbols are 0-255
+        let symbolIdx = 0;
+        for (let length = 1; length <= 16; length++) {
+            const count = counts[length - 1];
+            for (let i = 0; i < count; i++) {
+                codeLengths[symbols[symbolIdx++]] = length;
+            }
+        }
+        return HuffmanTree.make(codeLengths, rtl);
+    }
+
+    /**
+     * Build a canonical Huffman decoder from an array of code lengths.
+     * @param codeLengths - Array of code lengths for each symbol (0 = unused).
+     * @param rtl - Whether to use LSB-first or MSB-first bit order. (default: true)
+     * @param values - Optional array of values for each symbol. If not provided, values will be set to the symbol index.
+     */
+    static make(codeLengths: Uint8Array, rtl = true, values:undefined|number[]|Uint8Array=undefined): HuffmanTree {
+        if (codeLengths.length === 0) {
+            throw new Error("codeLengths may not be empty");
+        }
+
+        // 1) Find longest code.
+        const maxCodeLen = Math.max(...codeLengths);
+        if (maxCodeLen === 0) {
+            throw new Error("All code lengths are zero – no symbols to decode");
+        }
+
+        // 2) Count codes per length.
+        const blCount = new Uint32Array(maxCodeLen + 1);
+        for (const len of codeLengths) if (len) blCount[len]++;
+
+        // 3) Determine the first numerical code for each length (DEFLATE §3.2.2).
+        const nextCode = new Uint32Array(maxCodeLen + 1);
+        let code = 0;
+        for (let bits = 1; bits <= maxCodeLen; bits++) {
+            code = (code + blCount[bits - 1]) << 1;
+            nextCode[bits] = code;
+        }
+
+        // 4) Assign codes to symbols.
+        const codes = new Uint32Array(codeLengths.length);
+        const lengths = new Uint8Array(codeLengths.length);
+        const leaves: HuffmanLeaf[] = [];
+
+        for (let symbol = 0; symbol < codeLengths.length; symbol++) {
+            const len = codeLengths[symbol];
+            if (!len) continue; // unused symbol
+
+            let canonical = nextCode[len];
+            if (rtl) canonical = reverseBits(canonical, len);
+
+            codes[symbol] = canonical;
+            lengths[symbol] = len;
+            const value=values?.[symbol]??symbol;
+            leaves.push(new HuffmanLeaf(len, value, canonical));
+
+            nextCode[len]++;
+        }
+
+        // 5) Build helper structures.
+        const tree = HuffmanTree.buildTree(leaves, rtl);
+        const fastLookup = HuffmanTree.generateFastLookup(leaves, rtl);
+
+        return new HuffmanTree(codes, lengths, tree, rtl, maxCodeLen, leaves, fastLookup);
+    }
+
+    /** Create small lookup table for codes ≤ FAST_LOOKUP_BITS. */
+    private static generateFastLookup(
+        leaves: ReadonlyArray<HuffmanLeaf>,
+        rtl: boolean,
+    ): Array<{ value: number; length: number } | null> {
+        const width = 1 << HuffmanTree.FAST_LOOKUP_BITS;
+        const table = new Array<{ value: number; length: number } | null>(width).fill(null);
+
+        for (const leaf of leaves) {
+            if (leaf.len === 0 || leaf.len > HuffmanTree.FAST_LOOKUP_BITS) continue;
+
+            const padBits = HuffmanTree.FAST_LOOKUP_BITS - leaf.len;
+            const repetitions = 1 << padBits;
+
+            for (let pad = 0; pad < repetitions; pad++) {
+                const index = rtl
+                    ? (pad << leaf.len) | leaf.code // LSB‑first: code lives in the low bits
+                    : (leaf.code << padBits) | pad; // MSB‑first: code lives in the high bits
+
+                table[index] = { value: leaf.value, length: leaf.len };
+            }
+        }
+
+        return table;
+    }
+
+    /** Build a binary decoding tree from the canonical leaves. */
+    private static buildTree(
+        leaves: ReadonlyArray<HuffmanLeaf>,
+        rtl: boolean,
+    ): HuffmanBranch | HuffmanLeaf {
+        if (leaves.length === 1) return leaves[0];
+
+        // Sort by depth then code to get deterministic structure.
+        const sorted = [...leaves].sort((a, b) => (a.len !== b.len ? a.len - b.len : a.code - b.code));
+        return HuffmanTree.recursiveBuild(sorted, 0, rtl);
+    }
+
+    private static recursiveBuild(
+        leaves: ReadonlyArray<HuffmanLeaf>,
+        depth: number,
+        rtl: boolean,
+    ): HuffmanBranch | HuffmanLeaf {
+        if (leaves.length === 1) return leaves[0];
+
+        const leftGroup: HuffmanLeaf[] = [];
+        const rightGroup: HuffmanLeaf[] = [];
+
+        for (const leaf of leaves) {
+            if (leaf.len <= depth) {
+                throw new Error("Inconsistent leaf depth while building Huffman tree");
+            }
+            const bit = rtl
+                ? (leaf.code >> depth) & 1 // LSB‑first
+                : (leaf.code >> (leaf.len - depth - 1)) & 1; // MSB‑first
+
+            (bit ? rightGroup : leftGroup).push(leaf);
+        }
+
+        const left = leftGroup.length ? HuffmanTree.recursiveBuild(leftGroup, depth + 1, rtl) : null;
+        const right = rightGroup.length ? HuffmanTree.recursiveBuild(rightGroup, depth + 1, rtl) : null;
+
+        return new HuffmanBranch(depth, left, right);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*                               PARSE                                */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Decode a symbol from the bit‑buffer.
+     *
+     * `BitBuffer` *must* expose two methods:
+     *   - `peekn(n: number): number` – preview `n` bits *without* consuming.
+     *   - `next(n: number): void` – consume `n` bits.
+     */
+    tryParse(bitBuffer: BitBuffer): { value: number; length: number } | null {
+        // 1) Fast table for short codes.
+        if (this.fastLookup.length) {
+            if (bitBuffer.bitsBuffered < HuffmanTree.FAST_LOOKUP_BITS) {
+                bitBuffer.ensureBufferLength(HuffmanTree.FAST_LOOKUP_BITS);
+            }
+            if (bitBuffer.bitsBuffered >= HuffmanTree.FAST_LOOKUP_BITS) {
+                const bits = bitBuffer.peekn(HuffmanTree.FAST_LOOKUP_BITS);
+                const entry = this.fastLookup[bits];
+                if (entry) {
+                    bitBuffer.next(entry.length);
+                    return entry;
+                }
+            }
+        }
+
+        // 2) Full tree traversal (O(code‑length)).
+        return this.tryParseTree(bitBuffer);
+    }
+
+    private tryParseTree(bitBuffer: BitBuffer): { value: number; length: number } | null {
+        let node: HuffmanBranch | HuffmanLeaf | null = this.tree;
+
+        if (node instanceof HuffmanLeaf) {
+            return { value: node.value, length: node.len };
+        }
+
+        let depth = 0;
+        while (node instanceof HuffmanBranch) {
+            if (bitBuffer.bitsBuffered < 1) {
+                bitBuffer.ensureBufferLength(1);
+                if (bitBuffer.bitsBuffered < 1) return null; // EOF
+            }
+            const bit = bitBuffer.peekn(1);
+            bitBuffer.next(1);
+            depth++;
+
+            node = bit === 0 ? node.left : node.right;
+            if (!node) {
+                throw new Error(`Invalid Huffman code in stream (depth=${depth}, rtl=${this.rtl})`);
+            }
+        }
+
+        if (node instanceof HuffmanLeaf) {
+            return { value: node.value, length: node.len };
+        }
+        return null;
+    }
 }

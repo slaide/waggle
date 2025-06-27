@@ -476,7 +476,7 @@ export function parseNameTable(font: TTFFont): TTFNameTable | null {
                 const decoder = new TextDecoder("utf-16be");
                 record.value = decoder.decode(stringBytes);
             } else if (record.platformID === 1) {
-                // Macintosh platform
+                // Macintosh platform - may not be supported in all environments
                 const decoder = new TextDecoder("macintosh");
                 record.value = decoder.decode(stringBytes);
             } else {
@@ -484,10 +484,16 @@ export function parseNameTable(font: TTFFont): TTFNameTable | null {
                 const decoder = new TextDecoder("ascii");
                 record.value = decoder.decode(stringBytes);
             }
-        } catch {
-            // Fallback to ASCII if decoding fails
-            const decoder = new TextDecoder("ascii");
-            record.value = decoder.decode(stringBytes);
+        } catch (decodingError) {
+            // Fallback to ASCII if decoding fails (e.g., unsupported encoding)
+            try {
+                const fallbackDecoder = new TextDecoder("ascii");
+                record.value = fallbackDecoder.decode(stringBytes);
+            } catch (fallbackError) {
+                // If even ASCII fails, convert to empty string or basic representation
+                record.value = `[encoding-error-${record.platformID}-${record.encodingID}]`;
+                throw new Error(`Failed to decode TTF name record: ${decodingError} (fallback also failed: ${fallbackError})`);
+            }
         }
     }
 
@@ -532,70 +538,65 @@ export function parseCmapTable(font: TTFFont): TTFCmapTable | null {
 
     // Parse subtables (focus on format 4 which is most common)
     for (const subtable of subtables) {
-        try {
-            const subtableReader = new ByteReader(tableData.buffer.slice(tableData.byteOffset, tableData.byteOffset + tableData.byteLength) as ArrayBuffer, false);
-            subtableReader.skip(subtable.offset);
-            
-            const format = subtableReader.readUint16();
-            subtable.format = format;
-            
-            if (format === 4) {
-                // Parse format 4 subtable
-                const length = subtableReader.readUint16();
-                const language = subtableReader.readUint16();
-                const segCountX2 = subtableReader.readUint16();
-                const segCount = segCountX2 / 2;
-                const searchRange = subtableReader.readUint16();
-                const entrySelector = subtableReader.readUint16();
-                const rangeShift = subtableReader.readUint16();
+        const subtableReader = new ByteReader(tableData.buffer.slice(tableData.byteOffset, tableData.byteOffset + tableData.byteLength) as ArrayBuffer, false);
+        subtableReader.skip(subtable.offset);
+        
+        const format = subtableReader.readUint16();
+        subtable.format = format;
+        
+        if (format === 4) {
+            // Parse format 4 subtable
+            const length = subtableReader.readUint16();
+            const language = subtableReader.readUint16();
+            const segCountX2 = subtableReader.readUint16();
+            const segCount = segCountX2 / 2;
+            const searchRange = subtableReader.readUint16();
+            const entrySelector = subtableReader.readUint16();
+            const rangeShift = subtableReader.readUint16();
 
-                const endCode: number[] = [];
-                for (let i = 0; i < segCount; i++) {
-                    endCode.push(subtableReader.readUint16());
-                }
-                
-                subtableReader.skip(2); // Reserved pad
-
-                const startCode: number[] = [];
-                for (let i = 0; i < segCount; i++) {
-                    startCode.push(subtableReader.readUint16());
-                }
-
-                const idDelta: number[] = [];
-                for (let i = 0; i < segCount; i++) {
-                    idDelta.push(subtableReader.readInt16());
-                }
-
-                const idRangeOffset: number[] = [];
-                for (let i = 0; i < segCount; i++) {
-                    idRangeOffset.push(subtableReader.readUint16());
-                }
-
-                // Read remaining glyph ID array
-                const glyphIdArray: number[] = [];
-                const remainingBytes = subtableReader.getRemainingBytes();
-                for (let i = 0; i < remainingBytes / 2; i++) {
-                    glyphIdArray.push(subtableReader.readUint16());
-                }
-
-                subtable.data = {
-                    format,
-                    length,
-                    language,
-                    segCountX2,
-                    searchRange,
-                    entrySelector,
-                    rangeShift,
-                    endCode,
-                    startCode,
-                    idDelta,
-                    idRangeOffset,
-                    glyphIdArray,
-                };
+            const endCode: number[] = [];
+            for (let i = 0; i < segCount; i++) {
+                endCode.push(subtableReader.readUint16());
             }
-        } catch (error) {
-            // Skip subtables that fail to parse
-            console.warn(`Failed to parse cmap subtable: ${error}`);
+            
+            subtableReader.skip(2); // Reserved pad
+
+            const startCode: number[] = [];
+            for (let i = 0; i < segCount; i++) {
+                startCode.push(subtableReader.readUint16());
+            }
+
+            const idDelta: number[] = [];
+            for (let i = 0; i < segCount; i++) {
+                idDelta.push(subtableReader.readInt16());
+            }
+
+            const idRangeOffset: number[] = [];
+            for (let i = 0; i < segCount; i++) {
+                idRangeOffset.push(subtableReader.readUint16());
+            }
+
+            // Read remaining glyph ID array
+            const glyphIdArray: number[] = [];
+            const remainingBytes = subtableReader.getRemainingBytes();
+            for (let i = 0; i < remainingBytes / 2; i++) {
+                glyphIdArray.push(subtableReader.readUint16());
+            }
+
+            subtable.data = {
+                format,
+                length,
+                language,
+                segCountX2,
+                searchRange,
+                entrySelector,
+                rangeShift,
+                endCode,
+                startCode,
+                idDelta,
+                idRangeOffset,
+                glyphIdArray,
+            };
         }
     }
 

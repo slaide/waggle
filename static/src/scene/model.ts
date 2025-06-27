@@ -60,7 +60,6 @@ function createShaderStage(
 
     if (!gl.getShaderParameter(shader, GL.COMPILE_STATUS)) {
         const error = `error compiling shader ${gl.getShaderInfoLog(shader)}`;
-        alert(error);
         throw error;
     }
 
@@ -86,20 +85,17 @@ async function createShaderProgram(
 
     if (!gl.getProgramParameter(shaderProgram, GL.LINK_STATUS)) {
         const error = `failed to create shader because ${gl.getProgramInfoLog(shaderProgram)}`;
-        alert(error);
         throw error;
     }
 
     const vsinfo = gl.getShaderInfoLog(vsShader);
     if (vsinfo?.length ?? 0 > 0) {
         const error = `vs shader info: ${vsinfo}`;
-        alert(error);
         throw error;
     }
     const fsinfo = gl.getShaderInfoLog(fsShader);
     if (fsinfo?.length ?? 0 > 0) {
         const error = `fs shader info: ${fsinfo}`;
-        alert(error);
         throw error;
     }
 
@@ -506,15 +502,10 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         }
 
         // Bind light uniform buffer objects only if the shader uses them
-        try {
-            const POINTLIGHTBLOCKBINDING = 1;
-            const DIRECTIONALLIGHTBLOCKBINDING = 2;
-            gl.bindBufferBase(gl.UNIFORM_BUFFER, POINTLIGHTBLOCKBINDING, lightUBOs.pointLightUBO);
-            gl.bindBufferBase(gl.UNIFORM_BUFFER, DIRECTIONALLIGHTBLOCKBINDING, lightUBOs.directionalLightUBO);
-        } catch (error) {
-            // Some shaders might not use uniform buffer objects
-            console.warn("Could not bind light UBOs (shader might not use them):", error);
-        }
+        const POINTLIGHTBLOCKBINDING = 1;
+        const DIRECTIONALLIGHTBLOCKBINDING = 2;
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, POINTLIGHTBLOCKBINDING, lightUBOs.pointLightUBO);
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, DIRECTIONALLIGHTBLOCKBINDING, lightUBOs.directionalLightUBO);
 
         // Bind vertex and index buffers
         gl.bindBuffer(GL.ARRAY_BUFFER, buffers.vertexData);
@@ -682,15 +673,11 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                     forwardMaterial.specularExponent = 1.0;
                 }
                 
-                try {
-                    const forwardProgramInfo = await Model.makeForwardProgram(gl, forwardMaterial, modelData.forwardShaderPaths);
-                    model.forwardRendered = true;
-                    model.forwardProgramInfo = forwardProgramInfo;
-                    model.forwardShaderPaths = modelData.forwardShaderPaths;
-                    model._material = forwardMaterial; // Use the properly parsed material
-                } catch (error) {
-                    console.warn("Failed to create forward rendering program for OBJ model:", error);
-                }
+                const forwardProgramInfo = await Model.makeForwardProgram(gl, forwardMaterial, modelData.forwardShaderPaths);
+                model.forwardRendered = true;
+                model.forwardProgramInfo = forwardProgramInfo;
+                model.forwardShaderPaths = modelData.forwardShaderPaths;
+                model._material = forwardMaterial; // Use the properly parsed material
             }
             
             return model;
@@ -733,12 +720,7 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
         // Create forward program if object is marked for forward rendering
         let forwardProgramInfo;
         if (modelData.forwardRendered) {
-            try {
-                forwardProgramInfo = await Model.makeForwardProgram(gl, material, modelData.forwardShaderPaths);
-            } catch (error) {
-                console.warn("Failed to create forward rendering program, using regular program:", error);
-                forwardProgramInfo = programInfo;
-            }
+            forwardProgramInfo = await Model.makeForwardProgram(gl, material, modelData.forwardShaderPaths);
         }
 
         // Calculate numTris from indices if not provided but rawIndices exist
@@ -853,14 +835,10 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                     fragColor = vec4(1.0, 0.0, 0.0, 1.0);
                 }`;
         } else {
-            try {
-                const vfs = getGlobalVFS();
-                
-                vsSource = await vfs.readText(new Path("static/src/shaders/geometry.vert"));
-                fsSource = await vfs.readText(new Path("static/src/shaders/geometry.frag"));
-            } catch (error) {
-                throw new Error(`Failed to load geometry shaders: ${error instanceof Error ? error.message : String(error)}`);
-            }
+            const vfs = getGlobalVFS();
+            
+            vsSource = await vfs.readText(new Path("static/src/shaders/geometry.vert"));
+            fsSource = await vfs.readText(new Path("static/src/shaders/geometry.frag"));
         }
 
         const shaderProgram = await createShaderProgram(gl, {
@@ -947,14 +925,10 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
             const normalizedVsPath = vsPath.startsWith("/") ? vsPath.substring(1) : vsPath;
             const normalizedFsPath = fsPath.startsWith("/") ? fsPath.substring(1) : fsPath;
             
-            try {
-                const vfs = getGlobalVFS();
-                
-                vsSource = await vfs.readText(new Path(normalizedVsPath));
-                fsSource = await vfs.readText(new Path(normalizedFsPath));
-            } catch (error) {
-                throw new Error(`Failed to load forward shaders from ${normalizedVsPath}, ${normalizedFsPath}: ${error instanceof Error ? error.message : String(error)}`);
-            }
+            const vfs = getGlobalVFS();
+            
+            vsSource = await vfs.readText(new Path(normalizedVsPath));
+            fsSource = await vfs.readText(new Path(normalizedFsPath));
         }
 
         const shaderProgram = await createShaderProgram(gl, {
@@ -1029,17 +1003,13 @@ export class Model extends GameObject implements Serializable<SerializedModel> {
                 // Create a 1x1 white texture for testing
                 gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
             } else {
-                try {
-                    // time the parsepng time
-                    const start = performance.now();
-                    const imageData = await parsePng(diffuseTexturePath);
-                    const end = performance.now();
-                    console.log(`parsePng took ${end - start}ms`);
-                    
-                    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
-                } catch (error) {
-                    throw new Error(`Failed to load texture from ${diffuseTexturePath}: ${error instanceof Error ? error.message : String(error)}`);
-                }
+                // time the parsepng time
+                const start = performance.now();
+                const imageData = await parsePng(diffuseTexturePath);
+                const end = performance.now();
+                console.log(`parsePng took ${end - start}ms`);
+                
+                gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
             }
         } else {
             // Create a 1x1 white texture

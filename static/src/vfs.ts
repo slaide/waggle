@@ -267,7 +267,7 @@ export class FetchVFS extends VFS {
 
     async write(path: Path, _content: FileContent): Promise<void> {
         // No-op for fetch-based VFS - it's read-only
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         _content; // Explicitly acknowledge the unused parameter
         throw new ReadOnlyError(path);
     }

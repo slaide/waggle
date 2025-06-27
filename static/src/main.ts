@@ -9,10 +9,116 @@ import { createTextModel, TextRenderConfig } from "./scene/textmesh";
 import { Model } from "./scene/model";
 import { GameObject } from "./scene/gameobject";
 import { initializeFetchVFS, getGlobalVFS, Path } from "./vfs";
+import { parseJpeg } from "./parsers/jpeg";
+import { MtlMaterial } from "./parsers/obj";
+import { Transform } from "./scene/transform";
 // Import these to ensure GameObject types are registered
 import "./scene/light";
 
-const raleway_regular_ttf = "static/resources/fonts/raleway/Raleway-Regular.ttf";
+const raleway_regular_ttf = "static/resources/fonts/raleway/Raleway-Regular.ttf" as const;
+
+interface ImageDataLike {
+    width: number;
+    height: number;
+    data: Uint8Array;
+}
+
+/**
+ * Create a textured quad for displaying images in UI space
+ */
+async function createTexturedQuad(
+    gl: GLC, 
+    width: number, 
+    height: number, 
+    imageData: ImageDataLike,
+    position: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 },
+): Promise<Model> {
+    // Create quad vertices (two triangles)
+    // Fix texture coordinates - (0,0) should be bottom-left in OpenGL
+    const vertexData = new Float32Array([
+        // Position (x,y,z), Normal (x,y,z), TexCoord (u,v)
+        // Triangle 1
+        0,     0,      0,  0, 0, 1,  0, 0,  // bottom-left
+        width, 0,      0,  0, 0, 1,  1, 0,  // bottom-right  
+        width, height, 0,  0, 0, 1,  1, 1,  // top-right
+        
+        // Triangle 2
+        0,     0,      0,  0, 0, 1,  0, 0,  // bottom-left
+        width, height, 0,  0, 0, 1,  1, 1,  // top-right
+        0,     height, 0,  0, 0, 1,  0, 1,  // top-left
+    ]);
+    
+    const indices = new Uint32Array([0, 1, 2, 3, 4, 5]);
+    
+    // Create transform
+    const transform = new Transform();
+    transform.position = vec3.fromValues(position.x, position.y, position.z);
+    
+    // Create material
+    const material = new MtlMaterial();
+    material.diffuse = vec3.fromValues(1.0, 1.0, 1.0); // White to show texture as-is
+    material.ambient = vec3.fromValues(0.1, 0.1, 0.1);
+    material.specular = vec3.fromValues(0.1, 0.1, 0.1);
+    material.specularExponent = 1;
+    
+    // Create vertex and index buffers
+    const vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(GL.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(GL.ARRAY_BUFFER, vertexData, GL.STATIC_DRAW);
+
+    const indexBuffer = gl.createBuffer();
+    gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, indices, GL.STATIC_DRAW);
+
+    // Create texture from image data
+    const texture = gl.createTexture();
+    gl.bindTexture(GL.TEXTURE_2D, texture);
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imageData.width, imageData.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, imageData.data);
+    
+    // Set texture parameters
+    gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+    gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+    gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
+    gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
+
+    const buffers = {
+        vertexData: vertexBuffer,
+        indices: indexBuffer,
+        texture: texture,
+    };
+    
+    // Set up material to use the texture
+    material.map_diffuse = { source: "jpeg_texture" }; // Placeholder path
+    
+    // Create forward program for textured rendering (use flat_forward for simple texture display)
+    const shaderPaths = {
+        vs: "/static/src/shaders/flat_forward.vert",
+        fs: "/static/src/shaders/flat_forward.frag",
+    };
+    
+    const programInfo = await Model.makeForwardProgram(gl, material, shaderPaths);
+    
+    // Create the model
+    const model = new Model(
+        gl,
+        transform,
+        buffers,
+        programInfo,
+        indices.length / 3, // triangles
+        material,
+        true,  // enabled
+        true,  // visible
+        `JPEG Textured Quad (${imageData.width}x${imageData.height})`,
+    );
+    
+    // Set up for forward rendering
+    model.forwardRendered = true;
+    model.forwardProgramInfo = programInfo;
+    model.forwardShaderPaths = shaderPaths;
+    model.drawMode = "triangles";
+    
+    return model;
+}
 
 /**
  * Manager class for dynamic UI text that only updates mesh when content changes
@@ -73,26 +179,22 @@ class UITextManager {
      * Recreate the entire text model with new content
      */
     private async recreateModel(): Promise<void> {
-        try {
-            // Store the old model's transform
-            const oldPosition = this.textModel.transform.position;
-            
-            // Generate the text mesh first
-            const textMesh = this.font.generateText(this.currentText, this.config.position, this.config.color);
-            
-            // Create a completely new text model
-            const fontConfig = this.font.config;
-            const newTextModel = await createTextModel(this.gl, textMesh, this.config, this.currentText, fontConfig.filled, fontConfig.lineWidth);
-            
-            // Restore the position
-            newTextModel.transform.position = oldPosition;
-            
-            // Replace the old model in the uiObjects array
-            this.uiObjects[this.modelIndex] = newTextModel;
-            this.textModel = newTextModel;
-        } catch (error) {
-            console.error("Failed to recreate text model:", error);
-        }
+        // Store the old model's transform
+        const oldPosition = this.textModel.transform.position;
+        
+        // Generate the text mesh first
+        const textMesh = this.font.generateText(this.currentText, this.config.position, this.config.color);
+        
+        // Create a completely new text model
+        const fontConfig = this.font.config;
+        const newTextModel = await createTextModel(this.gl, textMesh, this.config, this.currentText, fontConfig.filled, fontConfig.lineWidth);
+        
+        // Restore the position
+        newTextModel.transform.position = oldPosition;
+        
+        // Replace the old model in the uiObjects array
+        this.uiObjects[this.modelIndex] = newTextModel;
+        this.textModel = newTextModel;
     }
 }
 
@@ -102,7 +204,6 @@ export async function main() {
     const el = document.getElementById(canvas_element_id);
     if (!(el instanceof HTMLCanvasElement)) {
         const error = `element #${canvas_element_id} not found`;
-        alert(error);
         throw error;
     }
 
@@ -117,6 +218,9 @@ export async function main() {
             "cube.mtl",
             "cube.obj",
             "cubetexture.png",
+        ],
+        "static/resources/images/test_images": [
+            "bunny-atlas.jpg",
         ],
         "static/src/shaders": [
             "deferred_lighting.vert",
@@ -143,7 +247,6 @@ export async function main() {
     });
     if (!gl) {
         const error = "could not create webgl2 context";
-        alert(error);
         throw error;
     }
 
@@ -152,8 +255,8 @@ export async function main() {
     gl.depthFunc(GL.LEQUAL);
     // enable face culling
     gl.enable(GL.CULL_FACE);
-    gl.cullFace(GL.FRONT);
-    gl.frontFace(GL.CW);
+    gl.cullFace(GL.BACK);
+    gl.frontFace(GL.CCW);
     // set clear color
     gl.clearColor(0, 0, 0, 1);
     gl.clearDepth(1);
@@ -292,6 +395,51 @@ export async function main() {
     uiControls.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, -canvas_size.height/2 + baseFontSize * 2, 0);
     uiObjects.push(uiControls);
     
+    try{
+        // Load and display JPEG textured quad
+        const filepath = "static/resources/images/test_images/bunny-atlas.jpg";
+        console.log(`Loading ${filepath}...`);
+        const file=await vfs.readBinary(new Path(filepath));
+        const jpegResult = await parseJpeg(new Uint8Array(file));
+        console.log(`JPEG parsed: ${jpegResult.width}x${jpegResult.height} pixels`);
+        
+        // Calculate scale to fit image nicely in the scene
+        const maxDimension = Math.max(jpegResult.width, jpegResult.height);
+        const scaleFactor = 3.0 / maxDimension; // Scale so largest dimension is 3 units
+        const quadWidth = jpegResult.width * scaleFactor;
+        const quadHeight = jpegResult.height * scaleFactor;
+        
+        // Create textured quad positioned to the left of center
+        const texturedQuad = await createTexturedQuad(
+            gl,
+            quadWidth,
+            quadHeight,
+            jpegResult,
+            { x: -6, y: -1, z: -2 }, // Position to the left in 3D space
+        );
+        
+        // Add to the scene
+        scene.objects.push(texturedQuad);
+        console.log("JPEG textured quad added to scene");
+        
+        // Also create a UI version (smaller) in screen space
+        const uiQuadWidth = 200;
+        const uiQuadHeight = (jpegResult.height / jpegResult.width) * uiQuadWidth;
+        
+        const uiTexturedQuad = await createTexturedQuad(
+            gl,
+            uiQuadWidth,
+            uiQuadHeight,
+            jpegResult,
+            { x: canvas_size.width/2 - uiQuadWidth - 20, y: canvas_size.height/2 - uiQuadHeight - 20, z: 0 },
+        );
+        
+        uiObjects.push(uiTexturedQuad);
+        console.log("JPEG UI quad added to UI layer");
+    } catch (e) {
+        console.error(e);
+    }
+
     // Ensure all transforms are properly calculated after loading
     scene.updateAllTransforms();
 
@@ -411,13 +559,9 @@ export async function main() {
                 
                 // Create dynamic wireframe bounding box for mesh objects
                 if (selectedObject.type === "mesh" && "createBoundingBoxWireframe" in selectedObject) {
-                    try {
-                        const meshObject = selectedObject as Model;
-                        dynamicWireframe = await meshObject.createBoundingBoxWireframe();
-                        selectedObject.addChild(dynamicWireframe);
-                    } catch (error) {
-                        console.warn("Failed to create wireframe bounding box:", error);
-                    }
+                    const meshObject = selectedObject as Model;
+                    dynamicWireframe = await meshObject.createBoundingBoxWireframe();
+                    selectedObject.addChild(dynamicWireframe);
                 }
             }
         } else {

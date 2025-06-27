@@ -95,7 +95,6 @@ function createShaderStage(
 
     if (!gl.getShaderParameter(shader, GL.COMPILE_STATUS)) {
         const error = `error compiling shader ${gl.getShaderInfoLog(shader)}`;
-        alert(error);
         throw error;
     }
 
@@ -121,20 +120,17 @@ export async function createShaderProgram(
 
     if (!gl.getProgramParameter(shaderProgram, GL.LINK_STATUS)) {
         const error = `failed to create shader because ${gl.getProgramInfoLog(shaderProgram)}`;
-        alert(error);
         throw error;
     }
 
     const vsinfo = gl.getShaderInfoLog(vsShader);
     if (vsinfo?.length ?? 0 > 0) {
         const error = `vs shader info: ${vsinfo}`;
-        alert(error);
         throw error;
     }
     const fsinfo = gl.getShaderInfoLog(fsShader);
     if (fsinfo?.length ?? 0 > 0) {
         const error = `fs shader info: ${fsinfo}`;
-        alert(error);
         throw error;
     }
 

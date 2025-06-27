@@ -9,3 +9,6 @@
 !/eslint.config.js
 # do not ignore any dependency contents
 !/static/dep/**
+/static/resources/images
+/static/resources/fonts
+/static/resources/models

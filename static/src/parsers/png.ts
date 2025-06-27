@@ -47,7 +47,7 @@ const IHDR_INTERLACEMETHOD_ENUMS: { [i: number]: IHDRInterlacemethod } = {
     1: "Adam7",
 };
 
-type IHDR_chunk = {
+interface IHDR_chunk {
     width: number;
     height: number;
     bitdepth: number;
@@ -78,21 +78,25 @@ export async function parsePng(
     } catch (error) {
         const errorMsg = `Failed to read PNG file from ${src}: ${error instanceof Error ? error.message : String(error)}`;
         console.error(errorMsg);
-        alert("failed to fetch png");
         throw new Error(errorMsg);
     }
 
+    return parsePngFromBuffer(new Uint8Array(responseData));
+}
+
+export async function parsePngFromBuffer(
+    responseData: Uint8Array
+): Promise<{ width: number; height: number; data: Uint8Array }> {
     let IHDR: IHDR_chunk | null = null;
     let IDAT: Uint8Array | null = null;
 
     // Create ByteReader with big-endian format (PNG uses big-endian)
-    const reader = new ByteReader(responseData, false);
+    const reader = new ByteReader(responseData.buffer as ArrayBuffer, false);
 
     // Check PNG signature
     const pngSignature = reader.readBytes(PNG_START.length);
     if (!arrayBeginsWith(pngSignature, PNG_START)) {
         const error = "png start invalid";
-        alert(error);
         throw error;
     }
 
@@ -128,12 +132,10 @@ export async function parsePng(
             const colortype = IHDR_COLORTYPE_ENUMS[colortype_raw];
             if (compressionmethod != 0) {
                 const error = `compressionmethod ${compressionmethod}!=0`;
-                alert(error);
                 throw error;
             }
             if (filtermethod != 0) {
                 const error = `filtermethod ${filtermethod}!=0`;
-                alert(error);
                 throw error;
             }
             const interlacemethod =
@@ -274,6 +276,50 @@ export async function parsePng(
         }
     }
 
-    const ret = { width, height, data: outdata };
+    // Convert to RGBA format (4 bytes per pixel) regardless of source format
+    const rgbaData = new Uint8Array(width * height * 4);
+    
+    if (IHDR.colortype === "G") {
+        // Grayscale -> RGBA
+        for (let i = 0; i < width * height; i++) {
+            const gray = outdata[i];
+            rgbaData[i * 4] = gray;     // R
+            rgbaData[i * 4 + 1] = gray; // G
+            rgbaData[i * 4 + 2] = gray; // B
+            rgbaData[i * 4 + 3] = 255;  // A
+        }
+    } else if (IHDR.colortype === "GA") {
+        // Grayscale + Alpha -> RGBA
+        for (let i = 0; i < width * height; i++) {
+            const gray = outdata[i * 2];
+            const alpha = outdata[i * 2 + 1];
+            rgbaData[i * 4] = gray;     // R
+            rgbaData[i * 4 + 1] = gray; // G
+            rgbaData[i * 4 + 2] = gray; // B
+            rgbaData[i * 4 + 3] = alpha; // A
+        }
+    } else if (IHDR.colortype === "RGB") {
+        // RGB -> RGBA
+        for (let i = 0; i < width * height; i++) {
+            rgbaData[i * 4] = outdata[i * 3];     // R
+            rgbaData[i * 4 + 1] = outdata[i * 3 + 1]; // G
+            rgbaData[i * 4 + 2] = outdata[i * 3 + 2]; // B
+            rgbaData[i * 4 + 3] = 255;            // A
+        }
+    } else if (IHDR.colortype === "RGBA") {
+        // RGBA -> RGBA (no conversion needed)
+        rgbaData.set(outdata);
+    } else if (IHDR.colortype === "Indexed") {
+        // Indexed color -> treat as grayscale for now
+        for (let i = 0; i < width * height; i++) {
+            const indexed = outdata[i];
+            rgbaData[i * 4] = indexed;     // R
+            rgbaData[i * 4 + 1] = indexed; // G
+            rgbaData[i * 4 + 2] = indexed; // B
+            rgbaData[i * 4 + 3] = 255;     // A
+        }
+    }
+
+    const ret = { width, height, data: rgbaData };
     return ret;
 }
