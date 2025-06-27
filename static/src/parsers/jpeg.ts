@@ -346,16 +346,34 @@ const tempRow = new Float32Array(8);
 const tempCol = new Float32Array(8);
 
 function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
+    // Find last non-zero coefficient in zigzag order.
+    // also, start at back because most blocks will have lots of non-zeros followed by a few zeros.
+    // (this is a heuristic, but it's a good one, which also shows that using lastNonZero to skip the accumulator does _not_ work)
+    let lastNonZero = 63;
+    while (lastNonZero < 0 && block[UNZIGZAG[lastNonZero]] === 0) {
+        lastNonZero--;
+    }
+
+    // If only DC coefficient is non-zero, fast path
+    if (lastNonZero === 0) {
+        const dc = block[0] / 8; // Correct scaling for DC-only case
+        const dcRounded = Math.round(dc);
+        for (let i = 0; i < 64; i++) {
+            out[i] = dcRounded;
+        }
+        return out;
+    }
+
     // First pass - 1D IDCT on rows
     for (let y = 0; y < 8; y++) {
         const rowOffset = y * 8;
-
+        
         // Process each row
         for (let x = 0; x < 8; x++) {
             let sum = 0;
             for (let u = 0; u < 8; u++) {
                 const val = block[rowOffset + u];
-                if (val !== 0) { // Skip zero coefficients
+                if (val !== 0) {
                     sum += val * IDCT_COSINE_CACHE[u * 8 + x];
                 }
             }
@@ -375,7 +393,7 @@ function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
             let sum = 0;
             for (let v = 0; v < 8; v++) {
                 const val = out[v * 8 + x];
-                if (val !== 0) { // Skip zero coefficients
+                if (val !== 0) {
                     sum += val * IDCT_COSINE_CACHE[v * 8 + y];
                 }
             }
