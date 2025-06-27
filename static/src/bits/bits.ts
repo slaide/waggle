@@ -67,7 +67,7 @@ export function binstr(b: number, n: number): string {
 /** Bit‑mask with the lowest *n* bits set. */
 export function bitmask(n: number): number {
     if (n === 0) return 0;
-    return ((1 << n) - 1);
+    return (1 << n) - 1;
 }
 
 /**

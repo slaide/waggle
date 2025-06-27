@@ -5,7 +5,7 @@
  * @see https://github.com/jpeg-js/jpeg-js/blob/master/lib/decoder.js
  */
 import { HuffmanTree } from '../bits/huffman.js';
-import { BitBuffer } from '../bits/bits.js';
+import { BitBuffer, bitmask } from '../bits/bits.js';
 import { ByteReader } from '../bits/bytereader.js';
 import { getGlobalVFS, Path } from '../vfs.js';
 
@@ -32,42 +32,42 @@ interface StartOfScanComponent {
     /** ac huffman table id */
     acId: number;
     /** image component corresponding to this scan component */
-    imageComponent:ImageComponent;
+    imageComponent: ImageComponent;
 }
 
 /** JPEG uses little-endian byte order (which is 'false' in the ByteReader constructor) */
-const JPEG_ENDIAN=false;
+const JPEG_ENDIAN = false;
 
-export function parseCOM(data:Uint8Array):string{
-    const reader=new ByteReader(data.buffer,JPEG_ENDIAN);
-    const len=reader.readUint16()-2;
-    const comment=reader.readFixedString(len,"ascii");
+export function parseCOM(data: Uint8Array): string {
+    const reader = new ByteReader(data.buffer, JPEG_ENDIAN);
+    const len = reader.readUint16() - 2;
+    const comment = reader.readFixedString(len, "ascii");
     return comment;
 }
 
-export enum JFIFUnits{
-    NoUnits=0,
-    Inch=1,
-    Cm=2,
+export enum JFIFUnits {
+    NoUnits = 0,
+    Inch = 1,
+    Cm = 2,
 }
-export interface JFIFData{
-    majorVersion:number;
-    minorVersion:number;
-    units:JFIFUnits;
-    xDensity:number;
-    yDensity:number;
-    xThumbnail:number;
-    yThumbnail:number;
+export interface JFIFData {
+    majorVersion: number;
+    minorVersion: number;
+    units: JFIFUnits;
+    xDensity: number;
+    yDensity: number;
+    xThumbnail: number;
+    yThumbnail: number;
     /** Uncompressed 24 bit RGB (8 bits per color channel) raster thumbnail data in the order R0, G0, B0, ... */
-    thumbnailData:Uint8Array|null;
+    thumbnailData: Uint8Array | null;
 }
 /** parse the JFIF segment, usually from APP0 */
-export function parseJFIF(data:Uint8Array):JFIFData{
-    const reader=new ByteReader(data.buffer,JPEG_ENDIAN);
+export function parseJFIF(data: Uint8Array): JFIFData {
+    const reader = new ByteReader(data.buffer, JPEG_ENDIAN);
 
-    const JFIF_IDENTIFIER="JFIF\0";
-    const jfif_head=reader.readFixedString(JFIF_IDENTIFIER.length,"ascii");
-    if(jfif_head!==JFIF_IDENTIFIER){
+    const JFIF_IDENTIFIER = "JFIF\0";
+    const jfif_head = reader.readFixedString(JFIF_IDENTIFIER.length, "ascii");
+    if (jfif_head !== JFIF_IDENTIFIER) {
         throw new CorruptError(`Expected JFIF identifier but got ${jfif_head} instead`);
     }
 
@@ -78,13 +78,13 @@ export function parseJFIF(data:Uint8Array):JFIFData{
     const yDensity = reader.readUint16();
     const xThumbnail = reader.readUint8();
     const yThumbnail = reader.readUint8();
-    
+
     let thumbnailData: Uint8Array | null = null;
     if (xThumbnail > 0 && yThumbnail > 0) {
         const thumbnailSize = xThumbnail * yThumbnail * 3; // RGB thumbnail
         thumbnailData = reader.readBytes(thumbnailSize);
     }
-    
+
     return {
         majorVersion,
         minorVersion,
@@ -102,23 +102,23 @@ export interface ImageDataLike {
     width: number;
     height: number;
     data: Uint8Array;
-    optionalSegments:Map<JpegMarker,Uint8Array>;
+    optionalSegments: Map<JpegMarker, Uint8Array>;
 }
 
-const ZIGZAG=new Uint8Array([
-    0,  1,  5,  6,  14, 15, 27, 28,
-    2,  4,  7,  13, 16, 26, 29, 42,
-    3,  8,  12, 17, 25, 30, 41, 43,
-    9,  11, 18, 24, 31, 40, 44, 53,
+const ZIGZAG = new Uint8Array([
+    0, 1, 5, 6, 14, 15, 27, 28,
+    2, 4, 7, 13, 16, 26, 29, 42,
+    3, 8, 12, 17, 25, 30, 41, 43,
+    9, 11, 18, 24, 31, 40, 44, 53,
     10, 19, 23, 32, 39, 45, 52, 54,
     20, 22, 33, 38, 46, 51, 55, 60,
     21, 34, 37, 47, 50, 56, 59, 61,
 ]);
-const UNZIGZAG=new Uint8Array([
-    0,  1,  8,  16, 9,  2,  3,  10,
-    17, 24, 32, 25, 18, 11, 4,  5,
+const UNZIGZAG = new Uint8Array([
+    0, 1, 8, 16, 9, 2, 3, 10,
+    17, 24, 32, 25, 18, 11, 4, 5,
     12, 19, 26, 33, 40, 48, 41, 34,
-    27, 20, 13, 6,  7,  14, 21, 28,
+    27, 20, 13, 6, 7, 14, 21, 28,
     35, 42, 49, 56, 57, 50, 43, 36,
     29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46,
@@ -208,8 +208,8 @@ enum JpegMarker {
     /** Comment */
     COM = 0xfe,
 }
-function markerName(marker:JpegMarker):string{
-    switch(marker){
+function markerName(marker: JpegMarker): string {
+    switch (marker) {
         case JpegMarker.SOI:
             return "SOI";
         case JpegMarker.EOI:
@@ -293,17 +293,17 @@ function markerName(marker:JpegMarker):string{
     }
 }
 
-interface ImageComponent{
-    id:number;
+interface ImageComponent {
+    id: number;
     /** horizontal sampling factor, i.e. 1 value covers this many pixels */
-    hFactor:number;
+    hFactor: number;
     /** vertical sampling factor, i.e. 1 value covers this many pixels */
-    vFactor:number;
+    vFactor: number;
     /** quantization table id */
-    quantId:number;
+    quantId: number;
 }
 
-type QuantizationTable=Int16Array;
+type QuantizationTable = Int16Array;
 
 /**
 calculate custom-width twos complement (for an integer)
@@ -313,9 +313,9 @@ Params:
    bit_width = number of bits to take into account for the calculation
 Returns: signed twos complement representation of `v`
  */
-function twos_complement(v:number,bit_width:number){
+function twos_complement(v: number, bit_width: number) {
     if (bit_width === 0) return 0;
-    
+
     const threshold = 1 << (bit_width - 1);
     if (v >= threshold) {
         // Positive values: unchanged
@@ -325,24 +325,19 @@ function twos_complement(v:number,bit_width:number){
         return v - ((1 << bit_width) - 1);
     }
 }
-function bitmask(num_bits:number){
-    if(num_bits===0)return 0;
-    return (1<<num_bits)-1;
-}
 
-function idct_spec_1d(spectrum:number,x:number){
-    const freq=(2*x+1)*spectrum*Math.PI/16;
-    const alpha=spectrum===0?1/Math.SQRT2:1;
-    const value=alpha*Math.cos(freq);
+function idct_spec_1d(spectrum: number, x: number) {
+    const freq = (2 * x + 1) * spectrum * Math.PI / 16;
+    const alpha = spectrum === 0 ? 1 / Math.SQRT2 : 1;
+    const value = alpha * Math.cos(freq);
     return value;
 }
 
-// Pre-calculate cosine values for IDCT with alpha factor included
+/** Pre-calculate cosine values for IDCT with alpha factor included */
 const IDCT_COSINE_CACHE = new Float32Array(64);
 for (let i = 0; i < 8; i++) {
-    const alpha = i === 0 ? 1/Math.SQRT2 : 1;
     for (let j = 0; j < 8; j++) {
-        IDCT_COSINE_CACHE[i * 8 + j] = alpha * Math.cos((2 * j + 1) * i * Math.PI / 16);
+        IDCT_COSINE_CACHE[i * 8 + j] = idct_spec_1d(i, j);
     }
 }
 
@@ -354,7 +349,7 @@ function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
     // First pass - 1D IDCT on rows
     for (let y = 0; y < 8; y++) {
         const rowOffset = y * 8;
-        
+
         // Process each row
         for (let x = 0; x < 8; x++) {
             let sum = 0;
@@ -366,7 +361,7 @@ function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
             }
             tempRow[x] = sum;
         }
-        
+
         // Store row results
         for (let x = 0; x < 8; x++) {
             out[rowOffset + x] = tempRow[x];
@@ -386,7 +381,7 @@ function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
             }
             tempCol[y] = sum * 0.25; // Include the 1/4 scale factor here
         }
-        
+
         // Store column results
         for (let y = 0; y < 8; y++) {
             out[y * 8 + x] = Math.round(tempCol[y]);
@@ -429,48 +424,48 @@ export async function parseJpegFromBuffer(
 
     console.log(`source.length=${source.length}`);
 
-    let width=0;
-    let height=0;
-    let restartInterval=0;
-    const optionalSegments=new Map<JpegMarker,Uint8Array>();
-    const quantizationTables=new Map<number,QuantizationTable>();
-    const imageComponents:ImageComponent[]=[];
-    const acHuffmanTables=new Map<number,HuffmanTree>();
-    const dcHuffmanTables=new Map<number,HuffmanTree>();
+    let width = 0;
+    let height = 0;
+    let restartInterval = 0;
+    const optionalSegments = new Map<JpegMarker, Uint8Array>();
+    const quantizationTables = new Map<number, QuantizationTable>();
+    const imageComponents: ImageComponent[] = [];
+    const acHuffmanTables = new Map<number, HuffmanTree>();
+    const dcHuffmanTables = new Map<number, HuffmanTree>();
     let scanData: Int16Array[] = [];
 
-    let soiFound=false;
+    let soiFound = false;
 
-    parseSegments: while(reader.getRemainingBytes()>0){
-        const ff=reader.readUint8();
-        if(ff!==0xFF){
+    parseSegments: while (reader.getRemainingBytes() > 0) {
+        const ff = reader.readUint8();
+        if (ff !== 0xFF) {
             throw new CorruptError(`Expected FF but got ${ff.toString(16)}`);
         }
 
-        const marker=reader.readUint8();
+        const marker = reader.readUint8();
         console.log(`Marker: ${marker.toString(16)} ${markerName(marker)}`);
 
-        if(marker==JpegMarker.SOI){
-            if(soiFound){
+        if (marker == JpegMarker.SOI) {
+            if (soiFound) {
                 throw new CorruptError("Multiple SOI markers");
             }
-            soiFound=true;
+            soiFound = true;
             continue;
-        }else if(!soiFound){
+        } else if (!soiFound) {
             throw new CorruptError(`SOI marker must be first marker, but instead got ${marker}`);
         }
-        
-        switch(marker){
+
+        switch (marker) {
             case JpegMarker.EOI:
                 break parseSegments;
             case JpegMarker.DRI:
                 // B 2.4.4
                 {
-                    const len=reader.readUint16()-2;
-                    if(len!==2){
+                    const len = reader.readUint16() - 2;
+                    if (len !== 2) {
                         throw new CorruptError("Expected DRI length of 2");
                     }
-                    restartInterval=reader.readUint16();
+                    restartInterval = reader.readUint16();
                     console.log(`DRI: restart interval=${restartInterval}`);
                     break;
                 }
@@ -479,25 +474,25 @@ export async function parseJpegFromBuffer(
             case JpegMarker.SOF2:
                 // B 2.2.2
                 {
-                    const len=reader.readUint16()-2;
+                    const len = reader.readUint16() - 2;
 
-                    const p=reader.readUint8();
-                    if(p!==8){
+                    const p = reader.readUint8();
+                    if (p !== 8) {
                         throw new UnsupportedError(`Only 8-bit precision is supported for SOF`);
                     }
-                    height=reader.readUint16();
-                    width=reader.readUint16();
+                    height = reader.readUint16();
+                    width = reader.readUint16();
                     console.log(`${marker === JpegMarker.SOF0 ? 'SOF0' : 'SOF2'}: ${width}x${height}`);
 
-                    const numComponents=reader.readUint8();
-                    for(let i=0;i<numComponents;i++){
-                        const compId=reader.readUint8();
-                        const hv=reader.readUint8();
-                        const hFactor=hv>>4;
-                        const vFactor=hv&0xF;
-                        const quantId=reader.readUint8();
+                    const numComponents = reader.readUint8();
+                    for (let i = 0; i < numComponents; i++) {
+                        const compId = reader.readUint8();
+                        const hv = reader.readUint8();
+                        const hFactor = hv >> 4;
+                        const vFactor = hv & 0xF;
+                        const quantId = reader.readUint8();
                         imageComponents.push({
-                            id:compId,
+                            id: compId,
                             hFactor,
                             vFactor,
                             quantId,
@@ -506,16 +501,16 @@ export async function parseJpegFromBuffer(
                     }
                     break;
                 }
-            
+
             case JpegMarker.APP0:
                 // B 2.4.6
                 {
-                    const len=reader.readUint16()-2;
-                    const bytes=reader.readBytes(len);
-                    try{
-                        const jfifData=parseJFIF(bytes);
+                    const len = reader.readUint16() - 2;
+                    const bytes = reader.readBytes(len);
+                    try {
+                        const jfifData = parseJFIF(bytes);
                         console.log(jfifData);
-                    }catch{
+                    } catch {
                         console.log(`found APP0, which is not a JFIF segment`);
                     }
                     break;
@@ -538,9 +533,9 @@ export async function parseJpegFromBuffer(
             case JpegMarker.COM:
                 // 2.4.5
                 {
-                    const len=reader.readUint16()-2;
+                    const len = reader.readUint16() - 2;
                     console.log(`bytes in segment ${len}`);
-                    for(let i=0;i<len;i++){
+                    for (let i = 0; i < len; i++) {
                         reader.readUint8();
                     }
                     break;
@@ -548,37 +543,37 @@ export async function parseJpegFromBuffer(
             case JpegMarker.DHT:
                 // B 2.4.2
                 {
-                    const len=reader.readUint16()-2;
-                    let remaining=len;
-                    while(remaining>0){
-                        const tcth=reader.readUint8();
-                        const tc=tcth>>4;
-                        const th=tcth&0xF;
+                    const len = reader.readUint16() - 2;
+                    let remaining = len;
+                    while (remaining > 0) {
+                        const tcth = reader.readUint8();
+                        const tc = tcth >> 4;
+                        const th = tcth & 0xF;
                         // number of codes for each length
-                        const numLengths=reader.readBytes(16);
+                        const numLengths = reader.readBytes(16);
 
-                        remaining-=16+1;
+                        remaining -= 16 + 1;
 
-                        const numCodes=numLengths.reduce((acc,len)=>acc+len,0);
-                        const codeLengths=new Uint8Array(numCodes);
-                        let codeIndex=0;
-                        for(let i=0;i<16;i++){
-                            for(let j=0;j<numLengths[i];j++){
-                                codeLengths[codeIndex++]=i+1;
+                        const numCodes = numLengths.reduce((acc, len) => acc + len, 0);
+                        const codeLengths = new Uint8Array(numCodes);
+                        let codeIndex = 0;
+                        for (let i = 0; i < 16; i++) {
+                            for (let j = 0; j < numLengths[i]; j++) {
+                                codeLengths[codeIndex++] = i + 1;
                             }
                         }
 
-                        const codeValues=new Uint8Array(numCodes);
-                        for(let i=0;i<numCodes;i++){
-                            codeValues[i]=reader.readUint8();
+                        const codeValues = new Uint8Array(numCodes);
+                        for (let i = 0; i < numCodes; i++) {
+                            codeValues[i] = reader.readUint8();
                         }
-                        remaining-=numCodes;
+                        remaining -= numCodes;
 
-                        const huffmanTable=HuffmanTree.make(codeLengths,JPEG_ENDIAN,codeValues);
-                        if(tc===0){
-                            dcHuffmanTables.set(th,huffmanTable);
-                        }else{
-                            acHuffmanTables.set(th,huffmanTable);
+                        const huffmanTable = HuffmanTree.make(codeLengths, JPEG_ENDIAN, codeValues);
+                        if (tc === 0) {
+                            dcHuffmanTables.set(th, huffmanTable);
+                        } else {
+                            acHuffmanTables.set(th, huffmanTable);
                         }
                         console.log(`read DHT table ${th} class ${tc} with ${numCodes} entries`);
                     }
@@ -588,19 +583,19 @@ export async function parseJpegFromBuffer(
             case JpegMarker.DQT:
                 // B 2.4.1
                 {
-                    const len=reader.readUint16()-2;
-                    let remaining=len;
-                    while(remaining>0){
-                        const pqtq=reader.readUint8();
+                    const len = reader.readUint16() - 2;
+                    let remaining = len;
+                    while (remaining > 0) {
+                        const pqtq = reader.readUint8();
                         /** pq is the precision of the table, 0 for 8 bit, 1 for 16 bit */
-                        const pq=pqtq>>4;
-                        if(pq!==0){
+                        const pq = pqtq >> 4;
+                        if (pq !== 0) {
                             throw new UnsupportedError(`Precision of quantization table must be 8 bits, but got ${pq}`);
                         }
-                        const tq=pqtq&0xF;
-                        const tableData:QuantizationTable=new Int16Array(reader.readBytes(64));
-                        quantizationTables.set(tq,tableData);
-                        remaining-=64+1;
+                        const tq = pqtq & 0xF;
+                        const tableData: QuantizationTable = new Int16Array(reader.readBytes(64));
+                        quantizationTables.set(tq, tableData);
+                        remaining -= 64 + 1;
 
                         console.log(`read DQT table ${tq} with ${tableData.length} bytes`);
                     }
@@ -613,45 +608,45 @@ export async function parseJpegFromBuffer(
                     // Read length but don't use it for validation since SOS parsing is more complex
                     reader.readUint16(); // skip length
 
-                    const numScanComponents=reader.readUint8();
-                    console.log(`numScanComponents=${numScanComponents}`);
+                    const numScanComponents = reader.readUint8();
+                    // console.log(`numScanComponents=${numScanComponents}`);
 
-                    const scanComponents:StartOfScanComponent[]=[];
+                    const scanComponents: StartOfScanComponent[] = [];
 
-                    for(let i=0;i<numScanComponents;i++){
-                        const scanCompId=reader.readUint8();
-                        const tdta=reader.readUint8();
-                        const acId=tdta&0xF;
-                        const dcId=tdta>>4;
+                    for (let i = 0; i < numScanComponents; i++) {
+                        const scanCompId = reader.readUint8();
+                        const tdta = reader.readUint8();
+                        const acId = tdta & 0xF;
+                        const dcId = tdta >> 4;
 
-                        console.log(`scanCompId=${scanCompId}, tdta=${tdta}, acId=${acId}, dcId=${dcId}`);
+                        // console.log(`scanCompId=${scanCompId}, tdta=${tdta}, acId=${acId}, dcId=${dcId}`);
 
-                        const imageComponent=imageComponents.find(c=>c.id===scanCompId);
-                        if(!imageComponent){
+                        const imageComponent = imageComponents.find(c => c.id === scanCompId);
+                        if (!imageComponent) {
                             throw new CorruptError(`Scan component ${scanCompId} does not match any image component`);
                         }
 
-                        if(!dcHuffmanTables.has(dcId)){
+                        if (!dcHuffmanTables.has(dcId)) {
                             throw new CorruptError(`DC Huffman table ${dcId} not found`);
                         }
                         // AC table validation will be done later when actually needed
 
                         scanComponents.push({
-                            id:scanCompId,
+                            id: scanCompId,
                             dcId,
                             acId,
                             imageComponent,
                         });
                     }
 
-                    const Ss=reader.readUint8();
-                    const Se=reader.readUint8();
-                    const ahal=reader.readUint8();
-                    const ah=ahal>>4;
-                    const al=ahal&0xF;
+                    const Ss = reader.readUint8();
+                    const Se = reader.readUint8();
+                    const ahal = reader.readUint8();
+                    const ah = ahal >> 4;
+                    const al = ahal & 0xF;
 
-                    console.log(`Ss=${Ss}, Se=${Se}, ah=${ah}, al=${al}`);
-                    
+                    // console.log(`Ss=${Ss}, Se=${Se}, ah=${ah}, al=${al}`);
+
                     // Progressive JPEG handling
                     if (Ss !== 0 || Se !== 63) {
                         throw new UnsupportedError(`Progressive JPEG scans not fully supported. This implementation requires baseline/sequential JPEGs with Ss=0, Se=63. Found Ss=${Ss}, Se=${Se}`);
@@ -659,56 +654,55 @@ export async function parseJpegFromBuffer(
 
                     // allocate data for all scans
                     // per component
-                    scanData=[
-                        new Int16Array(width*height),
-                        new Int16Array(width*height),
-                        new Int16Array(width*height),
+                    scanData = [
+                        new Int16Array(width * height),
+                        new Int16Array(width * height),
+                        new Int16Array(width * height),
                     ];
 
-                    const numScanLines=Math.ceil(height/8);
-                    const numMCUsPerScanline=Math.ceil(width/8);
+                    const numScanLines = Math.ceil(height / 8);
+                    const numMCUsPerScanline = Math.ceil(width / 8);
                     // -1 because we increment before checking the restart interval
-                    let totalMcuIndex=-1;
-                    let numRestarts=0;
+                    let totalMcuIndex = -1;
+                    let numRestarts = 0;
 
-                    let eob_run=0;
-                    let diffdc=[0,0,0,0];
-                    
+                    let eob_run = 0;
+                    let diffdc = [0, 0, 0, 0];
 
-                    let chunkData:number[]=[];
-                    let chunkBitReader=new BitBuffer(new Uint8Array(chunkData),0,0,0,JPEG_ENDIAN);
-                    for(let scanlineIndex=0;scanlineIndex<numScanLines;scanlineIndex++){
-                        console.log(`scanlineIndex=${scanlineIndex}, numScanLines=${numScanLines}`);
-                        for(let mcuIndex=0;mcuIndex<numMCUsPerScanline;mcuIndex++){
+
+                    let chunkData: number[] = [];
+                    let chunkBitReader = new BitBuffer(new Uint8Array(chunkData), 0, 0, 0, JPEG_ENDIAN);
+                    for (let scanlineIndex = 0; scanlineIndex < numScanLines; scanlineIndex++) {
+                        for (let mcuIndex = 0; mcuIndex < numMCUsPerScanline; mcuIndex++) {
 
                             totalMcuIndex++;
 
-                            if(restartInterval>0 && totalMcuIndex%restartInterval===0){
-                                eob_run=0;
-                                diffdc=[0,0,0,0];
+                            if (restartInterval > 0 && totalMcuIndex % restartInterval === 0) {
+                                eob_run = 0;
+                                diffdc = [0, 0, 0, 0];
 
-                                if(totalMcuIndex>0){
+                                if (totalMcuIndex > 0) {
                                     // expect a restart marker next: 0xFFDn
-                                    const v0=reader.readUint8();
-                                    const v1=reader.readUint8();
-                                    if(v0!==0xFF){
+                                    const v0 = reader.readUint8();
+                                    const v1 = reader.readUint8();
+                                    if (v0 !== 0xFF) {
                                         throw new CorruptError(`Expected 0xFF but got ${v0.toString(16)}`);
                                     }
-                                    console.log(`v1=${markerName(v1)}`);
-                                    if(numRestarts%8!==(v1-JpegMarker.RST0)){
-                                        console.error(`Expected restart marker ${JpegMarker.RST0+numRestarts%8} but got ${v1}`);
+                                    // console.log(`v1=${markerName(v1)}`);
+                                    if (numRestarts % 8 !== (v1 - JpegMarker.RST0)) {
+                                        throw new CorruptError(`Expected restart marker ${JpegMarker.RST0 + numRestarts % 8} but got ${v1}`);
                                     }
                                     numRestarts++;
-                                    if((v1&0xf0)!==JpegMarker.RST0){
+                                    if ((v1 & 0xf0) !== JpegMarker.RST0) {
                                         throw new CorruptError(`Expected restart marker but got ${v1.toString(16)}`);
                                     }
                                 }
 
                                 // read the entropy coded data until the next restart marker, while removing stuffed bytes
-                                chunkData=[];
+                                chunkData = [];
                                 while (true) {
                                     const byte = reader.readUint8();
-                                    
+
                                     // Check for restart markers (0xFF followed by 0xD0-0xD7)
                                     if (byte === 0xFF) {
                                         const nextByte = reader.readUint8();
@@ -717,7 +711,7 @@ export async function parseJpegFromBuffer(
                                             // Found restart marker, stop reading
                                             break;
                                         }
-                                        if(nextByte==JpegMarker.EOI){
+                                        if (nextByte == JpegMarker.EOI) {
                                             reader.skip(-2);
                                             // Found EOI marker, stop reading
                                             break;
@@ -733,101 +727,101 @@ export async function parseJpegFromBuffer(
                                             continue;
                                         }
                                     }
-                                    
+
                                     // Regular byte, add to chunk data
                                     chunkData.push(byte);
                                 }
-                                console.log(`chunkData.length=${chunkData.length}`);
-                                console.log(`old bitreader exhaustion: ${chunkBitReader.dataIndex} of ${chunkBitReader.data.length} (left in bufer: ${chunkBitReader.bufferLen})`);
-                                if(chunkBitReader.dataIndex!==chunkBitReader.data.length){
-                                    console.error(`chunkBitReader NOT exhausted`);
+                                // console.log(`chunkData.length=${chunkData.length}`);
+                                // console.log(`old bitreader exhaustion: ${chunkBitReader.dataIndex} of ${chunkBitReader.data.length} (left in bufer: ${chunkBitReader.bufferLen})`);
+                                if (chunkBitReader.dataIndex !== chunkBitReader.data.length) {
+                                    throw new CorruptError(`chunkBitReader NOT exhausted`);
                                 }
-                                chunkBitReader=new BitBuffer(new Uint8Array(chunkData),0,0,0,JPEG_ENDIAN);
+                                chunkBitReader = new BitBuffer(new Uint8Array(chunkData), 0, 0, 0, JPEG_ENDIAN);
                             }
 
-                            for(let componentIndex=0;componentIndex<numScanComponents;componentIndex++){
-                                const component=scanComponents[componentIndex];
+                            for (let componentIndex = 0; componentIndex < numScanComponents; componentIndex++) {
+                                const component = scanComponents[componentIndex];
 
                                 // check dc table (only required if Ss is 0)
-                                const dcTable=dcHuffmanTables.get(component.dcId);
-                                if(!dcTable && Ss===0){
+                                const dcTable = dcHuffmanTables.get(component.dcId);
+                                if (!dcTable && Ss === 0) {
                                     throw new CorruptError(`DC Huffman table ${component.dcId} not found`);
                                 }
 
                                 // check ac table (only required if Se > 0 or not progressive)
-                                const acTable=acHuffmanTables.get(component.acId);
-                                if(!acTable && Se>0){
+                                const acTable = acHuffmanTables.get(component.acId);
+                                if (!acTable && Se > 0) {
                                     throw new CorruptError(`AC Huffman table ${component.acId} not found`);
                                 }
-                                
-                                const numBlocksPerMcu=component.imageComponent.hFactor*component.imageComponent.vFactor;
-                                const base_index=(numMCUsPerScanline*scanlineIndex*numBlocksPerMcu+mcuIndex)*64;
 
-                                let spectrum=Ss;
-                                if(spectrum===0){
-                                    let dc_value=diffdc[componentIndex];
+                                const numBlocksPerMcu = component.imageComponent.hFactor * component.imageComponent.vFactor;
+                                const base_index = (numMCUsPerScanline * scanlineIndex * numBlocksPerMcu + mcuIndex) * 64;
 
-                                    const dc_magnitude=dcTable!.tryParse(chunkBitReader);
-                                    if(!dc_magnitude){
+                                let spectrum = Ss;
+                                if (spectrum === 0) {
+                                    let dc_value = diffdc[componentIndex];
+
+                                    const dc_magnitude = dcTable!.tryParse(chunkBitReader);
+                                    if (!dc_magnitude) {
                                         throw new CorruptError(`Invalid DC magnitude: ${dc_magnitude}`);
                                     }
 
-                                    if(dc_magnitude.value===0){}else if(dc_magnitude.value>=1 && dc_magnitude.value<=11){
-                                        const diff_bits=chunkBitReader.nbits(dc_magnitude.value);
-                                        const diff_value = twos_complement(diff_bits,dc_magnitude.value);
-                                        dc_value+=diff_value;
-                                    }else{
+                                    if (dc_magnitude.value === 0) { } else if (dc_magnitude.value >= 1 && dc_magnitude.value <= 11) {
+                                        const diff_bits = chunkBitReader.nbits(dc_magnitude.value);
+                                        const diff_value = twos_complement(diff_bits, dc_magnitude.value);
+                                        dc_value += diff_value;
+                                    } else {
                                         throw new CorruptError(`Invalid DC magnitude: ${dc_magnitude.value}`);
                                     }
-                                    diffdc[componentIndex]=dc_value;
+                                    diffdc[componentIndex] = dc_value;
 
-                                    scanData[componentIndex][base_index]=dc_value<<al;
-                                    
-                                    spectrum+=1;
+                                    scanData[componentIndex][base_index] = dc_value << al;
+
+                                    spectrum += 1;
                                 }
 
-								if(spectrum<=Se && eob_run>0){
-									eob_run--;
-									continue;
-								}
+                                if (spectrum <= Se && eob_run > 0) {
+                                    eob_run--;
+                                    continue;
+                                }
 
-                                for(;spectrum<=Se;spectrum++){
-                                    const ac_bits=acTable!.tryParse(chunkBitReader);
-                                    if(!ac_bits){
+                                for (; spectrum <= Se; spectrum++) {
+                                    const ac_bits = acTable!.tryParse(chunkBitReader);
+                                    if (!ac_bits) {
                                         throw new CorruptError(`Invalid AC magnitude: ${ac_bits}`);
                                     }
 
-                                    if(ac_bits.value===0)break;
+                                    if (ac_bits.value === 0) break;
 
-                                    const num_zeros=ac_bits.value>>4;
-                                    const ac_magnitude=ac_bits.value&0xF;
+                                    const num_zeros = ac_bits.value >> 4;
+                                    const ac_magnitude = ac_bits.value & 0xF;
 
-                                    if(ac_magnitude===0){
-                                        if(num_zeros===15){
-                                            spectrum+=15;
+                                    if (ac_magnitude === 0) {
+                                        if (num_zeros === 15) {
+                                            spectrum += 15;
                                             continue;
-                                        }else{
-											eob_run=0;
-											if(num_zeros>0){
-												eob_run=bitmask(num_zeros)+chunkBitReader.nbits(num_zeros);
-											}
-											break;
-										}
+                                        } else {
+                                            eob_run = 0;
+                                            if (num_zeros > 0) {
+                                                eob_run = bitmask(num_zeros) + chunkBitReader.nbits(num_zeros);
+                                            }
+                                            break;
+                                        }
                                     }
 
-                                    spectrum+=num_zeros;
-                                    if(spectrum>Se)break;
+                                    spectrum += num_zeros;
+                                    if (spectrum > Se) break;
 
-                                    if(ac_magnitude>=1 && ac_magnitude<=10){
+                                    if (ac_magnitude >= 1 && ac_magnitude <= 10) {
                                         ;// empty
-                                    }else{
+                                    } else {
                                         throw new CorruptError(`Invalid AC magnitude: ${ac_magnitude}`);
                                     }
 
-									const ac_val_bits=chunkBitReader.nbits(ac_magnitude);
-									const sample=twos_complement(ac_val_bits,ac_magnitude);
-					
-									scanData[componentIndex][base_index+spectrum]=sample<<al;
+                                    const ac_val_bits = chunkBitReader.nbits(ac_magnitude);
+                                    const sample = twos_complement(ac_val_bits, ac_magnitude);
+
+                                    scanData[componentIndex][base_index + spectrum] = sample << al;
                                 }
                             }
                         }
@@ -839,7 +833,7 @@ export async function parseJpegFromBuffer(
         }
     }
 
-    const imageData=new Uint8Array(width*height*4);
+    const imageData = new Uint8Array(width * height * 4);
 
     let maxHFactor = 0;
     let maxVFactor = 0;
@@ -871,7 +865,7 @@ export async function parseJpegFromBuffer(
         const componentHeight = numMCUsV * vFactor * 8;
         componentData.push(new Int16Array(componentWidth * componentHeight));
     }
-    
+
     // Reusable arrays for IDCT processing
     const block = new Int16Array(64);
     const idctBlock = new Int16Array(64);
@@ -896,14 +890,14 @@ export async function parseJpegFromBuffer(
                             const zigZagIndex = UNZIGZAG[i];
                             block[zigZagIndex] = componentIn[srcOffset + i] * quantTable[i];
                         }
-                        
+
                         // Reuse idctBlock array
                         fastIdct(block, idctBlock);
 
                         const componentWidth = numMCUsH * component.hFactor * 8;
                         const dstX = mcuX * component.hFactor * 8 + h * 8;
                         const dstY = mcuY * component.vFactor * 8 + v * 8;
-                        
+
                         // Copy block to output using a single loop to improve cache locality
                         for (let i = 0; i < 64; i++) {
                             const x = i & 7;  // i % 8
@@ -925,7 +919,7 @@ export async function parseJpegFromBuffer(
             // All components have the same stride for 4:4:4 images
             const componentWidth = numMCUsH * 8; // Same for all components since hFactor=1
             const componentIndex = y * componentWidth + x;
-            
+
             // Level shift by +128 for all components since IDCT output is in [-128, 127]
             const Y = componentData[0][componentIndex] + 128;
             const Cb = componentData[1][componentIndex] + 128;
@@ -937,7 +931,7 @@ export async function parseJpegFromBuffer(
             const b = Y + 1.772 * (Cb - 128);
 
             const i = (y * width + x) * 4;
-            imageData[i]     = Math.max(0, Math.min(255, Math.round(r)));
+            imageData[i] = Math.max(0, Math.min(255, Math.round(r)));
             imageData[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
             imageData[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
             imageData[i + 3] = 255;
