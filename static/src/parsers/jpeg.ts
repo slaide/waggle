@@ -303,6 +303,8 @@ interface ImageComponent {
     quantId: number;
 }
 
+// Quantisation tables remain 8-bit so Int16 is fine, but decoded coefficients can exceed
+// the 16-bit range.  Keep the table itself in Int16 but store coefficients in Int32.
 type QuantizationTable = Int16Array;
 
 /**
@@ -345,7 +347,7 @@ for (let i = 0; i < 8; i++) {
 const tempRow = new Float32Array(8);
 const tempCol = new Float32Array(8);
 
-function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
+function fastIdct(block: Float32Array, out: Int16Array = new Int16Array(64)) {
     // Find last non-zero coefficient in zigzag order.
     // also, start at back because most blocks will have lots of non-zeros followed by a few zeros.
     // (this is a heuristic, but it's a good one, which also shows that using lastNonZero to skip the accumulator does _not_ work)
@@ -367,7 +369,7 @@ function fastIdct(block: Int16Array, out: Int16Array = new Int16Array(64)) {
     // First pass - 1D IDCT on rows
     for (let y = 0; y < 8; y++) {
         const rowOffset = y * 8;
-        
+
         // Process each row
         for (let x = 0; x < 8; x++) {
             let sum = 0;
@@ -427,6 +429,38 @@ for (let cb = 0; cb < 256; cb++) {
     }
 }
 
+/** Calculate block index for a component based on MCU position and block position within MCU */
+function getCoefficientBlockIndex(
+    scanlineIndex: number,
+    mcuIndex: number,
+    vBlock: number,
+    hBlock: number,
+    hSamples: number,
+    vSamples: number,
+    numMcuPerScanline: number,
+    interleaved: boolean
+): number {
+    if (interleaved) {
+        const blocksPerMcu = vSamples * hSamples;
+        const numBlocksBeforeCurrentScanline = scanlineIndex * numMcuPerScanline * blocksPerMcu;
+        const indexIntoMcu = vBlock * hSamples + hBlock;
+        return numBlocksBeforeCurrentScanline + mcuIndex * blocksPerMcu + indexIntoMcu;
+    } else {
+        const iMcuIndex = Math.floor((mcuIndex * hSamples + vBlock) % numMcuPerScanline);
+        const iVBlock = Math.floor((mcuIndex * hSamples + vBlock) / numMcuPerScanline);
+        return getCoefficientBlockIndex(
+            scanlineIndex,
+            iMcuIndex,
+            iVBlock,
+            hBlock,
+            hSamples,
+            vSamples,
+            numMcuPerScanline,
+            true
+        );
+    }
+}
+
 export async function parseJpeg(
     source: string | Uint8Array,
 ): Promise<ImageDataLike> {
@@ -462,13 +496,15 @@ export async function parseJpegFromBuffer(
 
     let width = 0;
     let height = 0;
+    let paddedWidth = 0;
+    let paddedHeight = 0;
     let restartInterval = 0;
     const optionalSegments = new Map<JpegMarker, Uint8Array>();
     const quantizationTables = new Map<number, QuantizationTable>();
     const imageComponents: ImageComponent[] = [];
     const acHuffmanTables = new Map<number, HuffmanTree>();
     const dcHuffmanTables = new Map<number, HuffmanTree>();
-    let scanData: Int16Array[] = [];
+    let scanData: Int32Array[] = [];
 
     let soiFound = false;
 
@@ -523,20 +559,38 @@ export async function parseJpegFromBuffer(
                     console.log(`${marker === JpegMarker.SOF0 ? 'SOF0' : 'SOF2'}: ${width}x${height}`);
 
                     const numComponents = reader.readUint8();
+
                     for (let i = 0; i < numComponents; i++) {
                         const compId = reader.readUint8();
                         const hv = reader.readUint8();
                         const hFactor = hv >> 4;
                         const vFactor = hv & 0xF;
                         const quantId = reader.readUint8();
-                        imageComponents.push({
+                        const component = {
                             id: compId,
                             hFactor,
                             vFactor,
                             quantId,
-                        });
+                        };
+                        imageComponents.push(component);
                         console.log(`component ${compId}: hFactor=${hFactor}, vFactor=${vFactor}, quantId=${quantId}`);
                     }
+
+                    const maxHFactor = Math.max(...imageComponents.map(c => c.hFactor));
+                    const maxVFactor = Math.max(...imageComponents.map(c => c.vFactor));
+
+                    // Calculate padded dimensions to accommodate complete MCUs
+                    const mcuWidth = maxHFactor * 8;
+                    const mcuHeight = maxVFactor * 8;
+                    const numMCUsH = Math.ceil(width / mcuWidth);
+                    const numMCUsV = Math.ceil(height / mcuHeight);
+                    paddedWidth = numMCUsH * mcuWidth;
+                    paddedHeight = numMCUsV * mcuHeight;
+
+                    console.log(`Image dimensions: ${width}x${height}`);
+                    console.log(`MCU dimensions: ${mcuWidth}x${mcuHeight}`);
+                    console.log(`Padded dimensions: ${paddedWidth}x${paddedHeight}`);
+
                     break;
                 }
 
@@ -647,9 +701,15 @@ export async function parseJpegFromBuffer(
                     reader.readUint16(); // skip length
 
                     const numScanComponents = reader.readUint8();
-                    // console.log(`numScanComponents=${numScanComponents}`);
+                    console.log(`SOS: numScanComponents=${numScanComponents}`);
 
                     const scanComponents: StartOfScanComponent[] = [];
+
+                    // Debug: verify image components before scan
+                    console.log("Image components before scan processing:");
+                    imageComponents.forEach((comp, idx) => {
+                        console.log(`Component ${idx}: id=${comp.id}, hFactor=${comp.hFactor}, vFactor=${comp.vFactor}`);
+                    });
 
                     for (let i = 0; i < numScanComponents; i++) {
                         const scanCompId = reader.readUint8();
@@ -657,17 +717,16 @@ export async function parseJpegFromBuffer(
                         const acId = tdta & 0xF;
                         const dcId = tdta >> 4;
 
-                        // console.log(`scanCompId=${scanCompId}, tdta=${tdta}, acId=${acId}, dcId=${dcId}`);
-
                         const imageComponent = imageComponents.find(c => c.id === scanCompId);
                         if (!imageComponent) {
                             throw new CorruptError(`Scan component ${scanCompId} does not match any image component`);
                         }
 
+                        console.log(`Scan component ${i}: id=${scanCompId}, acId=${acId}, dcId=${dcId}, hFactor=${imageComponent.hFactor}, vFactor=${imageComponent.vFactor}`);
+
                         if (!dcHuffmanTables.has(dcId)) {
                             throw new CorruptError(`DC Huffman table ${dcId} not found`);
                         }
-                        // AC table validation will be done later when actually needed
 
                         scanComponents.push({
                             id: scanCompId,
@@ -677,192 +736,298 @@ export async function parseJpegFromBuffer(
                         });
                     }
 
+                    // Debug: verify scan components
+                    console.log("Scan components after setup:");
+                    scanComponents.forEach((comp, idx) => {
+                        console.log(`Scan component ${idx}: id=${comp.id}, hFactor=${comp.imageComponent.hFactor}, vFactor=${comp.imageComponent.vFactor}`);
+                    });
+
                     const Ss = reader.readUint8();
                     const Se = reader.readUint8();
                     const ahal = reader.readUint8();
                     const ah = ahal >> 4;
                     const al = ahal & 0xF;
 
-                    // console.log(`Ss=${Ss}, Se=${Se}, ah=${ah}, al=${al}`);
+                    console.log(`Ss=${Ss}, Se=${Se}, ah=${ah}, al=${al}`);
+
+                    if (ah !== 0) {
+                        throw new UnsupportedError(`ah=${ah} not supported`);
+                    }
 
                     // Progressive JPEG handling
                     if (Ss !== 0 || Se !== 63) {
                         throw new UnsupportedError(`Progressive JPEG scans not fully supported. This implementation requires baseline/sequential JPEGs with Ss=0, Se=63. Found Ss=${Ss}, Se=${Se}`);
                     }
 
-                    // allocate data for all scans
-                    // per component
-                    scanData = [
-                        new Int16Array(width * height),
-                        new Int16Array(width * height),
-                        new Int16Array(width * height),
-                    ];
+                    // Calculate MCU dimensions based on max sampling factors
+                    let maxHFactor = 0;
+                    let maxVFactor = 0;
+                    for (const comp of imageComponents) {
+                        if (comp.hFactor > maxHFactor) maxHFactor = comp.hFactor;
+                        if (comp.vFactor > maxVFactor) maxVFactor = comp.vFactor;
+                    }
 
-                    const numScanLines = Math.ceil(height / 8);
-                    const numMCUsPerScanline = Math.ceil(width / 8);
-                    // -1 because we increment before checking the restart interval
-                    let totalMcuIndex = -1;
-                    let numRestarts = 0;
+                    console.log(`MCU setup: maxHFactor=${maxHFactor}, maxVFactor=${maxVFactor}`);
+
+                    // MCU size in pixels
+                    const mcuWidth = maxHFactor * 8;
+                    const mcuHeight = maxVFactor * 8;
+
+                    // Number of MCUs needed to cover the image
+                    const numMCUsH = Math.ceil(width / mcuWidth);
+                    const numMCUsV = Math.ceil(height / mcuHeight);
+                    const totalMCUs = numMCUsH * numMCUsV;
+
+                    // Calculate the padded image dimensions (might be larger than actual image)
+                    const paddedWidth = numMCUsH * mcuWidth;
+                    const paddedHeight = numMCUsV * mcuHeight;
+
+                    console.log(`Image dimensions: ${width}x${height}`);
+                    console.log(`Padded dimensions: ${paddedWidth}x${paddedHeight}`);
+                    console.log(`MCU dimensions: ${mcuWidth}x${mcuHeight}, grid: ${numMCUsH}x${numMCUsV}, total: ${totalMCUs}`);
+
+                    // Pre-calculate number of blocks per component in an MCU
+                    const blocksPerComponentInMCU = scanComponents.map(comp => {
+                        const hBlocks = comp.imageComponent.hFactor;
+                        const vBlocks = comp.imageComponent.vFactor;
+                        console.log(`Component ${comp.id}: blocks per MCU = ${hBlocks}x${vBlocks} = ${hBlocks * vBlocks}`);
+                        return hBlocks * vBlocks;
+                    });
+
+                    // allocate data for all scans based on actual component dimensions
+                    scanData = scanComponents.map(comp => {
+                        const hFactor = comp.imageComponent.hFactor;
+                        const vFactor = comp.imageComponent.vFactor;
+                        // Calculate component dimensions based on sampling factors
+                        const componentWidth = Math.ceil(paddedWidth * (hFactor / maxHFactor));
+                        const componentHeight = Math.ceil(paddedHeight * (vFactor / maxVFactor));
+                        const numBlocks = totalMCUs * (hFactor * vFactor);
+                        console.log(`Component ${comp.id}: dimensions=${componentWidth}x${componentHeight}, numBlocks=${numBlocks}`);
+                        return new Int32Array(numBlocks * 64);
+                    });
 
                     let eob_run = 0;
-                    let diffdc = [0, 0, 0, 0];
-
+                    // JPEG DC predictors are not limited to 16-bit; use plain numbers to avoid
+                    // silent wrap-around when the running sum exceeds ±32 768.
+                    let diffdc: number[] = new Array(numScanComponents).fill(0);
+                    let totalMcuIndex = -1;  // -1 because we increment before checking the restart interval
+                    let numRestarts = 0;
 
                     let chunkData: number[] = [];
                     let chunkBitReader = new BitBuffer(new Uint8Array(chunkData), 0, 0, 0, JPEG_ENDIAN);
-                    for (let scanlineIndex = 0; scanlineIndex < numScanLines; scanlineIndex++) {
-                        for (let mcuIndex = 0; mcuIndex < numMCUsPerScanline; mcuIndex++) {
 
-                            totalMcuIndex++;
+                    function fillChunkData() {
+                        eob_run = 0;
+                        diffdc = new Array(numScanComponents).fill(0);
 
-                            if (restartInterval > 0 && totalMcuIndex % restartInterval === 0) {
-                                eob_run = 0;
-                                diffdc = [0, 0, 0, 0];
+                        if (totalMcuIndex > 0 && restartInterval > 0) {
+                            // expect a restart marker next: 0xFFDn
+                            const v0 = reader.readUint8();
+                            const v1 = reader.readUint8();
+                            if (v0 !== 0xFF) {
+                                throw new CorruptError(`Expected 0xFF but got ${v0.toString(16)}`);
+                            }
+                            if (numRestarts % 8 !== (v1 - JpegMarker.RST0)) {
+                                throw new CorruptError(`Expected restart marker ${JpegMarker.RST0 + numRestarts % 8} but got ${v1}`);
+                            }
+                            numRestarts++;
+                            if ((v1 & 0xf0) !== JpegMarker.RST0) {
+                                throw new CorruptError(`Expected restart marker but got ${v1.toString(16)}`);
+                            }
+                        }
 
-                                if (totalMcuIndex > 0) {
-                                    // expect a restart marker next: 0xFFDn
-                                    const v0 = reader.readUint8();
-                                    const v1 = reader.readUint8();
-                                    if (v0 !== 0xFF) {
-                                        throw new CorruptError(`Expected 0xFF but got ${v0.toString(16)}`);
-                                    }
-                                    // console.log(`v1=${markerName(v1)}`);
-                                    if (numRestarts % 8 !== (v1 - JpegMarker.RST0)) {
-                                        throw new CorruptError(`Expected restart marker ${JpegMarker.RST0 + numRestarts % 8} but got ${v1}`);
-                                    }
-                                    numRestarts++;
-                                    if ((v1 & 0xf0) !== JpegMarker.RST0) {
-                                        throw new CorruptError(`Expected restart marker but got ${v1.toString(16)}`);
-                                    }
-                                }
+                        // Read the entropy-coded segment for the current restart interval.
+                        // The JPEG bitstream may contain arbitrary `0xFF` fill bytes between
+                        // MCUs.  The actual marker is the *first* byte that follows the fill
+                        // bytes which is *not* another `0xFF`.  Handle the following special
+                        // cases correctly:
+                        //   • 0xFF 0x00 → stuffed data byte 0xFF (part of entropy data)
+                        //   • 0xFF Dn  → restart marker – stop reading *before* the marker
+                        //   • 0xFF ??  → any other marker (e.g. EOI) – stop as well, the outer
+                        //               segment parser will take care of it.
+                        chunkData = [];
+                        while (true) {
+                            const byte = reader.readUint8();
 
-                                // read the entropy coded data until the next restart marker, while removing stuffed bytes
-                                chunkData = [];
-                                while (true) {
-                                    const byte = reader.readUint8();
-
-                                    // Check for restart markers (0xFF followed by 0xD0-0xD7)
-                                    if (byte === 0xFF) {
-                                        const nextByte = reader.readUint8();
-                                        if (nextByte >= JpegMarker.RST0 && nextByte <= JpegMarker.RST7) {
-                                            reader.skip(-2);
-                                            // Found restart marker, stop reading
-                                            break;
-                                        }
-                                        if (nextByte == JpegMarker.EOI) {
-                                            reader.skip(-2);
-                                            // Found EOI marker, stop reading
-                                            break;
-                                        }
-                                        if (nextByte === 0x00) {
-                                            // This is a stuffed byte (0xFF 0x00), skip the 0x00
-                                            chunkData.push(byte);
-                                            continue;
-                                        } else {
-                                            // This might be another marker, push both bytes and continue
-                                            chunkData.push(byte);
-                                            chunkData.push(nextByte);
-                                            continue;
-                                        }
-                                    }
-
-                                    // Regular byte, add to chunk data
-                                    chunkData.push(byte);
-                                }
-                                // console.log(`chunkData.length=${chunkData.length}`);
-                                // console.log(`old bitreader exhaustion: ${chunkBitReader.dataIndex} of ${chunkBitReader.data.length} (left in bufer: ${chunkBitReader.bufferLen})`);
-                                if (chunkBitReader.dataIndex !== chunkBitReader.data.length) {
-                                    throw new CorruptError(`chunkBitReader NOT exhausted`);
-                                }
-                                chunkBitReader = new BitBuffer(new Uint8Array(chunkData), 0, 0, 0, JPEG_ENDIAN);
+                            if (byte !== 0xFF) {
+                                // Regular entropy byte.
+                                chunkData.push(byte);
+                                continue;
                             }
 
+                            // We have encountered 0xFF – could be fill bytes, a stuffed 0xFF
+                            // (0x00), or an actual marker.  Consume all consecutive 0xFF fill
+                            // bytes to find the *real* following byte.
+                            let nextByte = reader.readUint8();
+                            while (nextByte === 0xFF) {
+                                // Additional fill byte, keep searching.
+                                nextByte = reader.readUint8();
+                            }
+
+                            if (nextByte === 0x00) {
+                                // Stuffed 0xFF byte → part of entropy data.
+                                chunkData.push(0xFF);
+                                continue;
+                            }
+
+                            // At this point we have found a non-fill, non-stuffed byte which
+                            // *must* be a marker.
+                            if (
+                                (nextByte >= JpegMarker.RST0 && nextByte <= JpegMarker.RST7) ||
+                                nextByte === JpegMarker.EOI
+                            ) {
+                                // Legitimate in-scan markers – rewind so the outer parser can
+                                // see the marker.
+                                reader.skip(-2);
+                            } else {
+                                // Any other marker should also terminate the entropy segment –
+                                // backtrack so the outer loop can handle it.
+                                reader.skip(-2);
+                            }
+                            break; // End of entropy segment for this restart interval.
+                        }
+                        if (chunkBitReader.dataIndex !== chunkBitReader.data.length) {
+                            throw new CorruptError(`chunkBitReader NOT exhausted`);
+                        }
+                        
+                        chunkBitReader = new BitBuffer(new Uint8Array(chunkData), 0, 0, 0, JPEG_ENDIAN);
+                    }
+
+                    // fill chunks to begin with
+                    fillChunkData();
+
+                    // Process MCUs
+                    mcuLoop:
+                    for (let mcuY = 0; mcuY < numMCUsV; mcuY++) {
+                        for (let mcuX = 0; mcuX < numMCUsH; mcuX++) {
+                            totalMcuIndex++;
+                            // console.log(`Processing MCU ${mcuX},${mcuY} (totalMcuIndex=${totalMcuIndex})`);
+
+                            // Handle restart markers
+                            const requires_restart = restartInterval > 0 && totalMcuIndex % restartInterval === 0 && totalMcuIndex > 0;
+                            if (requires_restart) {
+                                fillChunkData();
+                            }
+
+                            // Process each component in the MCU
                             for (let componentIndex = 0; componentIndex < numScanComponents; componentIndex++) {
                                 const component = scanComponents[componentIndex];
+                                const imgComp = component.imageComponent;
+                                const hBlocks = imgComp.hFactor;
+                                const vBlocks = imgComp.vFactor;
 
-                                // check dc table (only required if Ss is 0)
+                                // DC coefficient
                                 const dcTable = dcHuffmanTables.get(component.dcId);
-                                if (!dcTable && Ss === 0) {
+                                if (!dcTable) {
                                     throw new CorruptError(`DC Huffman table ${component.dcId} not found`);
                                 }
 
-                                // check ac table (only required if Se > 0 or not progressive)
+                                // AC coefficients
                                 const acTable = acHuffmanTables.get(component.acId);
-                                if (!acTable && Se > 0) {
+                                if (!acTable) {
                                     throw new CorruptError(`AC Huffman table ${component.acId} not found`);
                                 }
 
-                                const numBlocksPerMcu = component.imageComponent.hFactor * component.imageComponent.vFactor;
-                                const base_index = (numMCUsPerScanline * scanlineIndex * numBlocksPerMcu + mcuIndex) * 64;
+                                // Process each block in the component
+                                for (let blockY = 0; blockY < vBlocks; blockY++) {
+                                    for (let blockX = 0; blockX < hBlocks; blockX++) {
+                                        // We must parse all blocks in an MCU that has any valid pixels,
+                                        // because the chroma components need their samples
+                                        const blockIndex = getCoefficientBlockIndex(
+                                            mcuY,
+                                            mcuX,
+                                            blockY,
+                                            blockX,
+                                            hBlocks,
+                                            vBlocks,
+                                            numMCUsH,
+                                            true // interleaved
+                                        );
+                                        const blockOffset = blockIndex * 64;
 
-                                let spectrum = Ss;
-                                if (spectrum === 0) {
-                                    let dc_value = diffdc[componentIndex];
+                                        let spectrum = Ss;
 
-                                    const dc_magnitude = dcTable!.tryParse(chunkBitReader);
-                                    if (!dc_magnitude) {
-                                        throw new CorruptError(`Invalid DC magnitude: ${dc_magnitude}`);
-                                    }
-
-                                    if (dc_magnitude.value === 0) { } else if (dc_magnitude.value >= 1 && dc_magnitude.value <= 11) {
-                                        const diff_bits = chunkBitReader.nbits(dc_magnitude.value);
-                                        const diff_value = twos_complement(diff_bits, dc_magnitude.value);
-                                        dc_value += diff_value;
-                                    } else {
-                                        throw new CorruptError(`Invalid DC magnitude: ${dc_magnitude.value}`);
-                                    }
-                                    diffdc[componentIndex] = dc_value;
-
-                                    scanData[componentIndex][base_index] = dc_value << al;
-
-                                    spectrum += 1;
-                                }
-
-                                if (spectrum <= Se && eob_run > 0) {
-                                    eob_run--;
-                                    continue;
-                                }
-
-                                for (; spectrum <= Se; spectrum++) {
-                                    const ac_bits = acTable!.tryParse(chunkBitReader);
-                                    if (!ac_bits) {
-                                        throw new CorruptError(`Invalid AC magnitude: ${ac_bits}`);
-                                    }
-
-                                    if (ac_bits.value === 0) break;
-
-                                    const num_zeros = ac_bits.value >> 4;
-                                    const ac_magnitude = ac_bits.value & 0xF;
-
-                                    if (ac_magnitude === 0) {
-                                        if (num_zeros === 15) {
-                                            spectrum += 15;
-                                            continue;
-                                        } else {
-                                            eob_run = 0;
-                                            if (num_zeros > 0) {
-                                                eob_run = bitmask(num_zeros) + chunkBitReader.nbits(num_zeros);
+                                        // decode block
+                                        if (spectrum === 0) {
+                                            let dc_magnitude = dcTable.tryParse(chunkBitReader);
+                                            if (!dc_magnitude && chunkBitReader.eof) {
+                                                // We have consumed the current entropy segment; load the
+                                                // next chunk (after the restart marker) and retry once.
+                                                fillChunkData();
+                                                dc_magnitude = dcTable.tryParse(chunkBitReader);
                                             }
-                                            break;
+                                            if (!dc_magnitude) {
+                                                if (chunkBitReader.eof && chunkBitReader.dataIndex >= chunkBitReader.data.length) {
+                                                    // Reached end of JPEG stream, stop processing blocks
+                                                    break mcuLoop;
+                                                }
+                                                throw new CorruptError("Invalid DC magnitude: null");
+                                            }
+
+                                            if (dc_magnitude.value === 0) {
+                                                // No change in DC
+                                            } else if (dc_magnitude.value >= 1 && dc_magnitude.value <= 11) {
+                                                const diff_bits = chunkBitReader.nbits(dc_magnitude.value);
+                                                const diff_value = twos_complement(diff_bits, dc_magnitude.value);
+                                                diffdc[componentIndex] += diff_value;
+                                            } else {
+                                                throw new CorruptError(`Invalid DC magnitude: ${dc_magnitude.value}`);
+                                            }
+
+                                            const final_dc_value = (diffdc[componentIndex] << al);
+                                            scanData[componentIndex][blockOffset] = final_dc_value;
+                                            spectrum += 1;
+                                        }
+
+                                        if (spectrum <= Se && eob_run > 0) {
+                                            eob_run--;
+                                            continue;
+                                        }
+
+                                        // Process AC coefficients
+                                        for (; spectrum <= Se; spectrum++) {
+                                            const ac_bits = acTable.tryParse(chunkBitReader);
+                                            if (!ac_bits) {
+                                                throw new CorruptError(`Invalid AC magnitude`);
+                                            }
+
+                                            if (ac_bits.value == 0) break;
+
+                                            const num_zeros = ac_bits.value >> 4;    // run-length of zeros
+                                            const ac_magnitude = ac_bits.value & 0x0f;  // size of coefficient
+
+                                            if (ac_magnitude === 0) {
+                                                if (num_zeros === 15) {
+                                                    spectrum += 15;
+                                                    continue;
+                                                }
+
+                                                eob_run = 0;
+                                                if (num_zeros > 0) {
+                                                    eob_run = bitmask(num_zeros) + chunkBitReader.nbits(num_zeros);
+                                                }
+                                                break;  // End of block
+                                            }
+
+                                            spectrum += num_zeros;
+                                            if (spectrum > Se) break;
+
+                                            const val_bits = chunkBitReader.nbits(ac_magnitude);
+                                            const val = twos_complement(val_bits, ac_magnitude);
+                                            const final_ac_value = (val << al);
+                                            scanData[componentIndex][blockOffset + spectrum] = final_ac_value;
                                         }
                                     }
-
-                                    spectrum += num_zeros;
-                                    if (spectrum > Se) break;
-
-                                    if (ac_magnitude >= 1 && ac_magnitude <= 10) {
-                                        ;// empty
-                                    } else {
-                                        throw new CorruptError(`Invalid AC magnitude: ${ac_magnitude}`);
-                                    }
-
-                                    const ac_val_bits = chunkBitReader.nbits(ac_magnitude);
-                                    const sample = twos_complement(ac_val_bits, ac_magnitude);
-
-                                    scanData[componentIndex][base_index + spectrum] = sample << al;
                                 }
                             }
                         }
+                    }
+
+                    // If we have consumed the entire chunk (i.e. we just reached a restart
+                    // marker that was *not* preceded by an explicit DRI interval), load the
+                    // next entropy segment so decoding can continue.
+                    if (chunkBitReader.eof) {
+                        fillChunkData();
                     }
                 }
                 break;
@@ -882,32 +1047,25 @@ export async function parseJpegFromBuffer(
         if (comp.vFactor > maxVFactor) maxVFactor = comp.vFactor;
     }
 
-    // Validate that this implementation only supports 4:4:4 (no subsampling)
-    // All components should have hFactor=1 and vFactor=1
-    for (const comp of imageComponents) {
-        if (comp.hFactor !== 1 || comp.vFactor !== 1) {
-            throw new UnsupportedError(`This IDCT implementation only supports 4:4:4 images (no subsampling). Component ${comp.id} has hFactor=${comp.hFactor}, vFactor=${comp.vFactor}`);
-        }
-    }
-
     const mcuWidth = maxHFactor * 8;
     const mcuHeight = maxVFactor * 8;
     const numMCUsH = Math.ceil(width / mcuWidth);
     const numMCUsV = Math.ceil(height / mcuHeight);
 
-    // For 4:4:4 images, all components have the same dimensions
+    // Calculate component dimensions based on sampling factors
     const componentData: Int16Array[] = [];
     for (let i = 0; i < imageComponents.length; i++) {
         const component = imageComponents[i];
-        const hFactor = component.hFactor;
-        const vFactor = component.vFactor;
-        const componentWidth = numMCUsH * hFactor * 8;
-        const componentHeight = numMCUsV * vFactor * 8;
+        const hScale = maxHFactor / component.hFactor;
+        const vScale = maxVFactor / component.vFactor;
+        const componentWidth = Math.ceil(paddedWidth / hScale);
+        const componentHeight = Math.ceil(paddedHeight / vScale);
         componentData.push(new Int16Array(componentWidth * componentHeight));
     }
 
-    // Reusable arrays for IDCT processing
-    const block = new Int16Array(64);
+    // Reusable arrays for IDCT processing – use float for the working block to avoid
+    // integer overflow during de-quantisation.
+    const block = new Float32Array(64);
     const idctBlock = new Int16Array(64);
 
     console.time("idct");
@@ -922,9 +1080,14 @@ export async function parseJpegFromBuffer(
                 const componentOut = componentData[compIdx];
                 const componentIn = scanData[compIdx];
 
-                for (let v = 0; v < component.vFactor; v++) {
-                    for (let h = 0; h < component.hFactor; h++) {
-                        const blockIndex = mcuIndex * (component.hFactor * component.vFactor) + v * component.hFactor + h;
+                // Calculate component-specific dimensions and offsets
+                const hBlocks = component.hFactor;
+                const vBlocks = component.vFactor;
+                const componentStride = Math.ceil(paddedWidth * (component.hFactor / maxHFactor));
+
+                for (let v = 0; v < vBlocks; v++) {
+                    for (let h = 0; h < hBlocks; h++) {
+                        const blockIndex = getCoefficientBlockIndex(mcuY, mcuX, v, h, hBlocks, vBlocks, numMCUsH, true);
                         const srcOffset = blockIndex * 64;
 
                         // Un-zigzag and dequantize
@@ -936,16 +1099,16 @@ export async function parseJpegFromBuffer(
                         // Reuse idctBlock array
                         fastIdct(block, idctBlock);
 
-                        const componentWidth = numMCUsH * component.hFactor * 8;
-                        const dstX = mcuX * component.hFactor * 8 + h * 8;
-                        const dstY = mcuY * component.vFactor * 8 + v * 8;
+                        const dstX = mcuX * hBlocks * 8 + h * 8;
+                        const dstY = mcuY * vBlocks * 8 + v * 8;
 
-                        // Copy block to output using a single loop to improve cache locality
-                        for (let i = 0; i < 64; i++) {
-                            const x = i & 7;  // i % 8
-                            const y = i >> 3; // Math.floor(i / 8)
-                            const dstIdx = (dstY + y) * componentWidth + (dstX + x);
-                            componentOut[dstIdx] = idctBlock[i];
+                        // Copy block to output considering component stride
+                        for (let y = 0; y < 8; y++) {
+                            const dstRow = (dstY + y) * componentStride + dstX;
+                            const srcRow = y * 8;
+                            for (let x = 0; x < 8; x++) {
+                                componentOut[dstRow + x] = idctBlock[srcRow + x];
+                            }
                         }
                     }
                 }
@@ -962,28 +1125,74 @@ export async function parseJpegFromBuffer(
         return Math.max(min, Math.min(value, max));
     }
 
-    // YCbCr to RGB conversion using lookup tables
+    // Calculate scaling factors for each component
+    const yComponent = imageComponents[0];
+    const cbComponent = imageComponents[1];
+    const crComponent = imageComponents[2];
+
+    const cbHScale = yComponent.hFactor / cbComponent.hFactor;
+    const cbVScale = yComponent.vFactor / cbComponent.vFactor;
+    const crHScale = yComponent.hFactor / crComponent.hFactor;
+    const crVScale = yComponent.vFactor / crComponent.vFactor;
+
+    // YCbCr to RGB conversion using lookup tables and interpolation for subsampled components
     for (let y = 0; y < height; y++) {
         const yOffset = y * width;
-        for (let x = 0; x < width; x++) {
-            const componentWidth = numMCUsH * 8;
-            const componentIndex = y * componentWidth + x;
-            const outIndex = (yOffset + x) * 4;
 
-            // Level shift by +128 for all components
-            const Y = componentData[0][componentIndex] + 128;
-            const Cb = componentData[1][componentIndex] + 128;
-            const Cr = componentData[2][componentIndex] + 128;
+        // Calculate source y positions and weights for chroma components
+        const cbY = Math.floor(y / cbVScale);
+        const cbYNext = Math.min(cbY + 1, Math.ceil(paddedHeight / cbVScale) - 1);
+        const cbYWeight = (y % cbVScale) / cbVScale;
+
+        const crY = Math.floor(y / crVScale);
+        const crYNext = Math.min(crY + 1, Math.ceil(paddedHeight / crVScale) - 1);
+        const crYWeight = (y % crVScale) / crVScale;
+
+        for (let x = 0; x < width; x++) {
+            // Get Y component directly from padded buffer
+            const yValue = componentData[0][y * paddedWidth + x] + 128;
+
+            // Calculate source x positions and weights for chroma components
+            const cbX = Math.floor(x / cbHScale);
+            const cbXNext = Math.min(cbX + 1, Math.ceil(paddedWidth / cbHScale) - 1);
+            const cbXWeight = (x % cbHScale) / cbHScale;
+
+            const crX = Math.floor(x / crHScale);
+            const crXNext = Math.min(crX + 1, Math.ceil(paddedWidth / crHScale) - 1);
+            const crXWeight = (x % crHScale) / crHScale;
+
+            // Bilinear interpolation for Cb component
+            const cbStride = Math.ceil(paddedWidth / cbHScale);
+            const cb00 = componentData[1][cbY * cbStride + cbX] + 128;
+            const cb01 = componentData[1][cbY * cbStride + cbXNext] + 128;
+            const cb10 = componentData[1][cbYNext * cbStride + cbX] + 128;
+            const cb11 = componentData[1][cbYNext * cbStride + cbXNext] + 128;
+
+            const cbTop = cb00 * (1 - cbXWeight) + cb01 * cbXWeight;
+            const cbBottom = cb10 * (1 - cbXWeight) + cb11 * cbXWeight;
+            const cbValue = cbTop * (1 - cbYWeight) + cbBottom * cbYWeight;
+
+            // Bilinear interpolation for Cr component
+            const crStride = Math.ceil(paddedWidth / crHScale);
+            const cr00 = componentData[2][crY * crStride + crX] + 128;
+            const cr01 = componentData[2][crY * crStride + crXNext] + 128;
+            const cr10 = componentData[2][crYNext * crStride + crX] + 128;
+            const cr11 = componentData[2][crYNext * crStride + crXNext] + 128;
+
+            const crTop = cr00 * (1 - crXWeight) + cr01 * crXWeight;
+            const crBottom = cr10 * (1 - crXWeight) + cr11 * crXWeight;
+            const crValue = crTop * (1 - crYWeight) + crBottom * crYWeight;
 
             // Clamp Y, Cb, Cr to [0, 255]
-            const yc = clamp(Y, 0, 255);
-            const cbc = clamp(Cb, 0, 255);
-            const crc = clamp(Cr, 0, 255);
+            const yc = clamp(yValue, 0, 255);
+            const cbc = clamp(cbValue, 0, 255);
+            const crc = clamp(crValue, 0, 255);
 
             // Use lookup tables for RGB conversion
-            const r = YCbCrToRGB_R[yc * 256 + crc];
-            const g = yc + YCbCrToRGB_G[cbc * 256 + crc];
-            const b = YCbCrToRGB_B[yc * 256 + cbc];
+            const outIndex = (yOffset + x) * 4;
+            const r = YCbCrToRGB_R[yc * 256 + Math.round(crc)];
+            const g = yc + YCbCrToRGB_G[Math.round(cbc) * 256 + Math.round(crc)];
+            const b = YCbCrToRGB_B[yc * 256 + Math.round(cbc)];
 
             // Clamp RGB values and write to output
             imageData[outIndex] = clamp(r, 0, 255);

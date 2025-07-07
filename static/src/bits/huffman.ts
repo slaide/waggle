@@ -212,13 +212,13 @@ export class HuffmanTree {
     tryParse(bitBuffer: BitBuffer): { value: number; length: number } | null {
         // 1) Fast table for short codes.
         if (this.fastLookup.length) {
-            if (bitBuffer.bitsBuffered < HuffmanTree.FAST_LOOKUP_BITS) {
+            if (bitBuffer.bufferLen < HuffmanTree.FAST_LOOKUP_BITS) {
                 bitBuffer.ensureBufferLength(HuffmanTree.FAST_LOOKUP_BITS);
             }
-            if (bitBuffer.bitsBuffered >= HuffmanTree.FAST_LOOKUP_BITS) {
+            if (bitBuffer.bufferLen >= HuffmanTree.FAST_LOOKUP_BITS) {
                 const bits = bitBuffer.peekn(HuffmanTree.FAST_LOOKUP_BITS);
                 const entry = this.fastLookup[bits];
-                if (entry) {
+                if (entry!=null && entry.length>0) {
                     bitBuffer.next(entry.length);
                     return entry;
                 }
@@ -232,18 +232,11 @@ export class HuffmanTree {
     private tryParseTree(bitBuffer: BitBuffer): { value: number; length: number } | null {
         let node: HuffmanBranch | HuffmanLeaf | null = this.tree;
 
-        if (node instanceof HuffmanLeaf) {
-            return { value: node.value, length: node.len };
-        }
+        bitBuffer.ensureBufferLength(this.maxCodeLen);
 
         let depth = 0;
         while (node instanceof HuffmanBranch) {
-            if (bitBuffer.bitsBuffered < 1) {
-                bitBuffer.ensureBufferLength(1);
-                if (bitBuffer.bitsBuffered < 1) return null; // EOF
-            }
-            const bit = bitBuffer.peekn(1);
-            bitBuffer.next(1);
+            const bit = bitBuffer.nbits(1);
             depth++;
 
             node = bit === 0 ? node.left : node.right;
@@ -253,6 +246,10 @@ export class HuffmanTree {
         }
 
         if (node instanceof HuffmanLeaf) {
+            const bits_remaining=node.len-depth;
+            if(bits_remaining>0){
+                bitBuffer.next(bits_remaining);
+            }
             return { value: node.value, length: node.len };
         }
         return null;

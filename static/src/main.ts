@@ -395,55 +395,62 @@ export async function main() {
     uiControls.transform.position = vec3.fromValues(-canvas_size.width/2 + 20, -canvas_size.height/2 + baseFontSize * 2, 0);
     uiObjects.push(uiControls);
     
-    try{
-        // Load and display JPEG textured quad
-        const filepath = "static/resources/images/test_images/bunny-atlas.jpg";
-        console.log(`Loading ${filepath}...`);
-        const file=await vfs.readBinary(new Path(filepath));
+    for(let [i,filePath] of [
+        "static/resources/images/test_images/bunny-atlas.jpg",
+        //"static/resources/images/test_images/cat.jpg",
+        "static/resources/images/test_images/elephant.jpg",
+        "static/resources/images/test_images/fullmoon.jpg",
+    ].entries()){
+        try{
+            // Load and display JPEG textured quad
+            const filepath = filePath;
+            console.log(`Loading ${filepath}...`);
+            const file=await vfs.readBinary(new Path(filepath));
 
 
-        console.time("parse jpeg");
-        const jpegResult = await parseJpeg(new Uint8Array(file));
-        console.timeEnd("parse jpeg");
+            console.time("parse jpeg");
+            const jpegResult = await parseJpeg(new Uint8Array(file));
+            console.timeEnd("parse jpeg");
 
 
-        console.log(`JPEG parsed: ${jpegResult.width}x${jpegResult.height} pixels`);
-        
-        // Calculate scale to fit image nicely in the scene
-        const maxDimension = Math.max(jpegResult.width, jpegResult.height);
-        const scaleFactor = 3.0 / maxDimension; // Scale so largest dimension is 3 units
-        const quadWidth = jpegResult.width * scaleFactor;
-        const quadHeight = jpegResult.height * scaleFactor;
-        
-        // Create textured quad positioned to the left of center
-        const texturedQuad = await createTexturedQuad(
-            gl,
-            quadWidth,
-            quadHeight,
-            jpegResult,
-            { x: -6, y: -1, z: -2 }, // Position to the left in 3D space
-        );
-        
-        // Add to the scene
-        scene.objects.push(texturedQuad);
-        console.log("JPEG textured quad added to scene");
-        
-        // Also create a UI version (smaller) in screen space
-        const uiQuadWidth = 200;
-        const uiQuadHeight = (jpegResult.height / jpegResult.width) * uiQuadWidth;
-        
-        const uiTexturedQuad = await createTexturedQuad(
-            gl,
-            uiQuadWidth,
-            uiQuadHeight,
-            jpegResult,
-            { x: canvas_size.width/2 - uiQuadWidth - 20, y: canvas_size.height/2 - uiQuadHeight - 20, z: 0 },
-        );
-        
-        uiObjects.push(uiTexturedQuad);
-        console.log("JPEG UI quad added to UI layer");
-    } catch (e) {
-        console.error(e);
+            console.log(`JPEG parsed: ${jpegResult.width}x${jpegResult.height} pixels for ${filepath}`);
+            
+            // Calculate scale to fit image nicely in the scene
+            const maxDimension = Math.max(jpegResult.width, jpegResult.height);
+            const scaleFactor = 3.0 / maxDimension; // Scale so largest dimension is 3 units
+            const quadWidth = jpegResult.width * scaleFactor;
+            const quadHeight = jpegResult.height * scaleFactor;
+            
+            // Create textured quad positioned to the left of center
+            const texturedQuad = await createTexturedQuad(
+                gl,
+                quadWidth,
+                quadHeight,
+                jpegResult,
+                { x: -6, y: -1, z: -2+i }, // Position to the left in 3D space
+            );
+            
+            // Add to the scene
+            scene.objects.push(texturedQuad);
+            console.log("JPEG textured quad added to scene");
+            
+            // Also create a UI version (smaller) in screen space
+            const uiQuadWidth = 200;
+            const uiQuadHeight = (jpegResult.height / jpegResult.width) * uiQuadWidth;
+            
+            const uiTexturedQuad = await createTexturedQuad(
+                gl,
+                uiQuadWidth,
+                uiQuadHeight,
+                jpegResult,
+                { x: canvas_size.width/2 - uiQuadWidth - 20, y: canvas_size.height/2 - uiQuadHeight - 20, z: 0 },
+            );
+            
+            uiObjects.push(uiTexturedQuad);
+            console.log("JPEG UI quad added to UI layer");
+        } catch (e) {
+            console.error(e);
+        }
     }
 
     // Ensure all transforms are properly calculated after loading

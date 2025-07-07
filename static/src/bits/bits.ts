@@ -66,9 +66,12 @@ export function binstr(b: number, n: number): string {
 }
 /** Bit‑mask with the lowest *n* bits set. */
 export function bitmask(n: number): number {
-    if (n === 0) return 0;
+    if (n > 32) throw new RangeError(`Cannot create bitmask with >32 bits (asked for ${n})`);
+    if (n == 32) return 0xffffffff;
     return (1 << n) - 1;
 }
+
+
 
 /**
  * Sliding 32‑bit bit‑buffer that supports both little‑endian (LSB‑first)
@@ -77,8 +80,10 @@ export function bitmask(n: number): number {
  * safe up to 32 bits.
  */
 export class BitBuffer {
-    private static readonly BYTE_BITS = 8;
-    private static readonly MAX_BITS = 32;
+    /** number of bytes in buffer */
+    private static readonly BUFFERSIZEBYTES = 4;
+    /** max bits in buffer */
+    private static readonly MAX_BITS = BitBuffer.BUFFERSIZEBYTES * 8;
 
     constructor(
         public data: Uint8Array,
@@ -88,11 +93,6 @@ export class BitBuffer {
         /** `true` → LSB‑first (right‑to‑left, as in DEFLATE); `false` → MSB‑first. */
         public readonly rtl: boolean = true,
     ) { }
-
-    /** How many unconsumed bits are still buffered. */
-    get bitsBuffered(): number {
-        return this.bufferLen;
-    }
 
     /** True if no more input bytes are available and the buffer is empty. */
     get eof(): boolean {
@@ -104,11 +104,10 @@ export class BitBuffer {
         if (n > BitBuffer.MAX_BITS)
             throw new RangeError(`Cannot request >${BitBuffer.MAX_BITS} bits (asked for ${n})`);
 
-        while (
-            this.bufferLen < n &&
-            this.dataIndex < this.data.length &&
-            this.bufferLen <= BitBuffer.MAX_BITS - BitBuffer.BYTE_BITS /* room for +8 bits */
-        ) {
+        if(this.bufferLen>=n) return;
+
+        const missingWholeBytes=Math.floor((BitBuffer.MAX_BITS-this.bufferLen)/8);
+        for (let i=0;i<missingWholeBytes && this.dataIndex<this.data.length;i++) {
             this.#pullByte();
         }
     }
@@ -119,32 +118,13 @@ export class BitBuffer {
         const byte = this.data[this.dataIndex++];
 
         if (this.rtl) {
-            // LSB‑first: new byte becomes the *high* bits in numeric order but sits
-            // at the current top of the stack (bufferLen offset)
+            // from D: this.bitbuffer|=new_data_byte<<this.bufferlen;
             this.buffer |= byte << this.bufferLen;
         } else {
-            // MSB‑first: shift existing bits up 8 positions then or‑in the new byte.
-            this.buffer = (this.buffer << 8) | byte;
+            // from D: this.bitbuffer|=new_data_byte<<(7*8-this.bufferlen);
+            this.buffer |= byte << ((BitBuffer.BUFFERSIZEBYTES - 1) * 8 - this.bufferLen);
         }
         this.bufferLen += 8;
-    }
-
-    /** Read a single bit.  Pass `true` to also consume it. */
-    bit(alsoSkip = false): number {
-        this.ensureBufferLength(1);
-        if (this.bufferLen === 0) throw new Error("Buffer underrun");
-
-        let ret: number;
-        if (this.rtl) {
-            // LSB‑first: lowest bit is the next bit.
-            ret = this.buffer & 1;
-        } else {
-            // MSB‑first: highest buffered bit is the next bit.
-            ret = (this.buffer >>> (this.bufferLen - 1)) & 1;
-        }
-
-        if (alsoSkip) this.next();
-        return ret;
     }
 
     /** Return *n* bits and CONSUME them (LSB of return = first bit read). */
@@ -152,17 +132,14 @@ export class BitBuffer {
         if (n < 1) throw new RangeError("n must be >= 1");
         this.ensureBufferLength(n);
 
-        let ret = 0;
-        if (this.rtl) {
-            // Fast path: read all at once when n <= bufferLen (always true here)
-            ret = this.buffer & bitmask(n);
-            this.next(n);
-        } else {
-            // MSB‑first: we want numeric value with MSB being first bit read
-            ret = (this.buffer >>> (this.bufferLen - n)) & bitmask(n);
-            this.next(n);
+        if (this.bufferLen < n) {
+            throw new Error(`Not enough bits: requested ${n}, have ${this.bufferLen}`);
         }
-        return ret >>> 0;
+
+        const ret = this.peekn(n);
+        this.next(n);
+
+        return ret;
     }
 
     /** Peek *n* bits without consuming. */
@@ -178,9 +155,15 @@ export class BitBuffer {
                 } (index ${this.dataIndex}/${this.data.length}).`,
             );
 
-        return this.rtl
-            ? this.buffer & bitmask(n)
-            : (this.buffer >>> (this.bufferLen - n)) & bitmask(n);
+        let ret: number;
+        if (this.rtl) {
+            ret = this.buffer & bitmask(n);
+        } else {
+            // from D: this.bitbuffer>>(ulong.sizeof*8-n);
+            ret = this.buffer >>> (BitBuffer.BUFFERSIZEBYTES * 8 - n);
+        }
+
+        return ret;
     }
 
     /** Discard *n* bits (default = 1). */
@@ -193,8 +176,10 @@ export class BitBuffer {
             this.buffer >>>= n;
             this.bufferLen -= n;
         } else {
+            // MSB-first: discard the n highest bits by shifting left
             this.bufferLen -= n;
-            this.buffer &= bitmask(this.bufferLen);
+            this.buffer <<= n;
+            this.buffer &= bitmask(BitBuffer.MAX_BITS);
         }
     }
 
